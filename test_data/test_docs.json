@@ -1,0 +1,49 @@
+[
+  {
+    "id": 1,
+    "cons": [
+      {
+        "exprs": {
+          "age": { "inc": true, "value": [1, 2] },
+          "ip": { "inc": false, "value": "localhost" },
+          "city": { "inc": true, "value": ["sh", "bj"] }
+        }
+      },
+      {
+        "exprs": {
+          "age": { "inc": true, "value": 5 }
+        }
+      }
+    ]
+  },
+  {
+    "id": 2,
+    "cons": [
+      {
+        "exprs": {
+          "age": { "inc": true, "value": 5 },
+          "city": { "inc": false, "value": "sh" },
+          "ip": { "inc": true, "value": "127.0.0.1" }
+        }
+      },
+      {
+        "exprs": {
+          "age": { "inc": true, "value": 1 }
+        }
+      }
+    ]
+  },
+  {
+    "id": 3,
+    "cons": [
+      { "exprs": { "city": { "inc": false, "value": "sh" } } },
+      {
+        "exprs": {
+          "age": { "inc": true, "value": [1, 2] },
+          "city": { "inc": true, "value": ["sh", "bj"] }
+        }
+      }
+    ]
+  }
+]
+

@@ -1,0 +1,244 @@
+package beindexer
+
+import "fmt"
+
+const (
+	NULLENTRY EntryID = 0xFFFFFFFFFFFFFFFF
+
+	MaxBEFieldID uint64 = 0xFF             // 8bit
+	MaxBEValueID uint64 = 0xFFFFFFFFFFFFFF // 56bit
+)
+
+type (
+	//Field-Value eg: age-15 all field mapping to int32
+	// <field-8bit> | <value-56bit>
+	Key uint64
+
+	EntryID uint64
+	Entries []EntryID
+
+	/* represent a posting list for one Assign */
+	// (age, 15): [1, 2, 5, 19, 22]
+	// cursor:           ^
+	PostingList struct {
+		key     Key
+		cursor  int // current cur cursor
+		entries Entries
+	}
+
+	PostingLists []*PostingList
+
+	// for a boolean expression: {"tag", "in", [1, 2, 3]}
+	// tag_2: [ID5]
+	// tag_1: [ID1, ID2, ID7]
+	FieldPostingListGroup struct {
+		current *PostingList
+		plGroup PostingLists
+	}
+	FieldPostingListGroups []*FieldPostingListGroup
+)
+
+//Key API
+func NewKey(fieldID uint64, valueID uint64) Key {
+	if fieldID > MaxBEFieldID || valueID > MaxBEValueID {
+		panic(fmt.Errorf("out of value range, <%d, %d>", fieldID, valueID))
+	}
+	return Key(fieldID<<56 | valueID)
+}
+
+func (key Key) GetFieldID() uint64 {
+	return uint64(key >> 56 & 0xFF)
+}
+
+func (key Key) GetValueID() uint64 {
+	return uint64(key) & MaxBEValueID
+}
+
+//Entries sort API
+func (s Entries) Len() int           { return len(s) }
+func (s Entries) Swap(i, j int)      { s[i], s[j] = s[j], s[i] }
+func (s Entries) Less(i, j int) bool { return s[i] < s[j] }
+
+func (s Entries) DocString() []string {
+	res := []string{}
+	for _, eid := range s {
+		res = append(res, eid.DocString())
+	}
+	return res
+}
+
+func NewEntryID(id ConjID, incl bool) EntryID {
+	if !incl {
+		return EntryID(id << 16)
+	}
+	return EntryID((id << 16) | 0x01)
+}
+
+func (entry EntryID) IsExclude() bool {
+	return entry&0x01 == 0
+}
+
+func (entry EntryID) IsInclude() bool {
+	return entry&0x01 > 0
+}
+
+func (entry EntryID) GetConjID() ConjID {
+	return ConjID(entry >> 16)
+}
+
+func (entry EntryID) IsNULLEntry() bool {
+	return entry == NULLENTRY
+}
+
+func (entry EntryID) DocString() string {
+	return fmt.Sprintf("<%d,%t>", entry.GetConjID().DocID(), entry.IsInclude())
+}
+
+func NewPostingList(key Key, entries Entries) *PostingList {
+	return &PostingList{
+		key:     key,
+		cursor:  0,
+		entries: entries,
+	}
+}
+
+func (pl *PostingList) ReachEnd() bool {
+	return pl.entries == nil || len(pl.entries) <= pl.cursor
+}
+
+func (pl *PostingList) GetCurEntryID() EntryID {
+	if pl.ReachEnd() {
+		return NULLENTRY
+	}
+	return pl.entries[pl.cursor]
+}
+
+func (pl *PostingList) Skip(id EntryID) EntryID {
+	entry := pl.GetCurEntryID()
+	if entry > id {
+		return entry
+	}
+
+	leftIdx := pl.cursor
+	rightIdx := len(pl.entries)
+	var mid int
+	for leftIdx < rightIdx {
+		mid = (leftIdx + rightIdx) >> 1
+		tId := pl.entries[mid]
+		if tId <= id {
+			leftIdx = mid + 1
+		} else {
+			rightIdx = mid
+		}
+		if leftIdx >= len(pl.entries) || pl.entries[leftIdx] > id {
+			break
+		}
+	}
+	pl.cursor = leftIdx
+	return pl.GetCurEntryID()
+}
+
+func (pl *PostingList) SkipTo(id EntryID) EntryID {
+	entry := pl.GetCurEntryID()
+	if entry > id {
+		return entry
+	}
+	leftIdx := pl.cursor
+	rightIdx := len(pl.entries)
+	var mid int
+	for leftIdx < rightIdx {
+		mid = (leftIdx + rightIdx) >> 1
+		tId := pl.entries[mid]
+		if tId >= id {
+			rightIdx = mid
+		} else {
+			leftIdx = mid + 1
+		}
+		if leftIdx >= len(pl.entries) || pl.entries[leftIdx] >= id {
+			break
+		}
+	}
+	pl.cursor = leftIdx
+	return pl.GetCurEntryID()
+}
+
+//FieldPostingGroups sort API
+func (s FieldPostingListGroups) Len() int      { return len(s) }
+func (s FieldPostingListGroups) Swap(i, j int) { s[i], s[j] = s[j], s[i] }
+func (s FieldPostingListGroups) Less(i, j int) bool {
+	return s[i].GetCurEntryID() < s[j].GetCurEntryID()
+}
+
+func NewFieldPostingListGroup(pls ...*PostingList) *FieldPostingListGroup {
+	plg := &FieldPostingListGroup{
+		current: nil,
+		plGroup: pls,
+	}
+	for _, pl := range plg.plGroup {
+		if plg.current == nil ||
+			pl.GetCurEntryID() < plg.current.GetCurEntryID() {
+
+			plg.current = pl
+		}
+	}
+	return plg
+}
+
+func (plg *FieldPostingListGroup) AddPostingList(pl *PostingList) {
+	plg.plGroup = append(plg.plGroup, pl)
+	if plg.current == nil {
+		plg.current = pl
+		return
+	}
+	if pl.GetCurEntryID() < plg.current.GetCurEntryID() {
+		plg.current = pl
+	}
+}
+
+func (plg *FieldPostingListGroup) GetCurConjID() ConjID {
+	return plg.GetCurEntryID().GetConjID()
+}
+
+func (plg *FieldPostingListGroup) GetCurEntryID() EntryID {
+	return plg.current.GetCurEntryID()
+}
+
+func (plg *FieldPostingListGroup) Skip(id EntryID) (newMin EntryID) {
+	newMin = NULLENTRY
+	for _, pl := range plg.plGroup {
+		if tId := pl.Skip(id); tId < newMin {
+			newMin = id
+			plg.current = pl
+		}
+	}
+	return
+}
+
+func (plg *FieldPostingListGroup) SkipTo(id EntryID) (newMin EntryID) {
+	newMin = NULLENTRY
+	for _, pl := range plg.plGroup {
+		if tId := pl.SkipTo(id); tId < newMin {
+			newMin = id
+			plg.current = pl
+		}
+	}
+	return
+}
+
+func (plg *FieldPostingListGroup) DumpPostingList() []byte {
+	/*
+		for (auto& pl : p_lists_) {
+		EntryId cur_id = pl.GetCurEntryID();
+		oss << pl.attr.first << "#" << pl.attr.second
+		<< ", cur:" << cur_id
+		<< ", doc:" << ConjUtil::GetDocumentID(EntryUtil::GetConjunctionId(cur_id))
+		<< ":[";
+		for (auto& id : *pl.id_list) {
+		oss << ConjUtil::GetDocumentID(EntryUtil::GetConjunctionId(id))
+		<< ", ";
+		}
+		oss << "]\n";
+		}
+	*/
+	return nil
+}

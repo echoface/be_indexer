@@ -34,6 +34,5 @@ func (doc *Document) Prepare() {
 	for idx, conj := range doc.Cons {
 		size := conj.CalcConjSize()
 		conj.id = NewConjID(doc.ID, idx, size)
-		fmt.Println("doc:", doc.ID, " conj idx:", idx, " size:", conj.size)
 	}
 }

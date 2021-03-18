@@ -1,6 +1,9 @@
 package beindexer
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 const (
 	NULLENTRY EntryID = 0xFFFFFFFFFFFFFFFF
@@ -91,6 +94,9 @@ func (entry EntryID) IsNULLEntry() bool {
 }
 
 func (entry EntryID) DocString() string {
+	if entry.IsNULLEntry() {
+		return "<nil,nil>"
+	}
 	return fmt.Sprintf("<%d,%t>", entry.GetConjID().DocID(), entry.IsInclude())
 }
 
@@ -169,6 +175,16 @@ func (s FieldPostingListGroups) Less(i, j int) bool {
 	return s[i].GetCurEntryID() < s[j].GetCurEntryID()
 }
 
+func (s FieldPostingListGroups) Dump() string {
+	sb := &strings.Builder{}
+	sb.WriteString(fmt.Sprintf("total plgs:%d\n", len(s)))
+	for idx, pl := range s {
+		sb.WriteString(fmt.Sprintf("%d:", idx))
+		sb.WriteString(fmt.Sprintf("%v\n", pl.DumpPostingList()))
+	}
+	return sb.String()
+}
+
 func NewFieldPostingListGroup(pls ...*PostingList) *FieldPostingListGroup {
 	plg := &FieldPostingListGroup{
 		current: nil,
@@ -225,20 +241,12 @@ func (plg *FieldPostingListGroup) SkipTo(id EntryID) (newMin EntryID) {
 	return
 }
 
-func (plg *FieldPostingListGroup) DumpPostingList() []byte {
-	/*
-		for (auto& pl : p_lists_) {
-		EntryId cur_id = pl.GetCurEntryID();
-		oss << pl.attr.first << "#" << pl.attr.second
-		<< ", cur:" << cur_id
-		<< ", doc:" << ConjUtil::GetDocumentID(EntryUtil::GetConjunctionId(cur_id))
-		<< ":[";
-		for (auto& id : *pl.id_list) {
-		oss << ConjUtil::GetDocumentID(EntryUtil::GetConjunctionId(id))
-		<< ", ";
-		}
-		oss << "]\n";
-		}
-	*/
-	return nil
+func (plg *FieldPostingListGroup) DumpPostingList() string {
+	sb := &strings.Builder{}
+	for idx, pl := range plg.plGroup {
+		sb.WriteString(fmt.Sprintf("\n"))
+		sb.WriteString(fmt.Sprintf("idx:%d#%d#cur:%v", idx, pl.key, pl.GetCurEntryID().DocString()))
+		sb.WriteString(fmt.Sprintf(" entries:%v", pl.entries.DocString()))
+	}
+	return sb.String()
 }

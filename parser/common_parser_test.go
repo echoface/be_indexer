@@ -16,17 +16,17 @@ func TestCommonStrParser_ParseValue(t *testing.T) {
 	fmt.Println(r, e)
 
 	r, e = parser.ParseValue([]string{"gonghuan", "hello"})
-	fmt.Println(r, e)
+	fmt.Println("result:", r, e)
 
 	r, e = parser.ParseValue("gonghuan")
-	fmt.Println(r, e)
+	fmt.Println("result:", r, e)
 
 	r, e = parser.ParseValue(12)
-	fmt.Println(r, e)
+	fmt.Println("result:", r, e)
 
 	r, e = parser.ParseValue([3]int64{1, 2, 3})
-	fmt.Println(r, e)
+	fmt.Println("result:", r, e)
 
 	r, e = parser.ParseValue([3]string{"gonghuan", "hello", "1"})
-	fmt.Println(r, e)
+	fmt.Println("result:", r, e)
 }

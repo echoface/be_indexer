@@ -9,12 +9,12 @@ type (
 	FieldOption struct {
 		Parser string
 	}
+
 	IndexerSettings struct {
 		FieldConfig map[string]FieldOption
 	}
 
 	IndexerBuilder struct {
-		MaxK      int
 		Documents map[int32]*Document
 	}
 )
@@ -46,16 +46,16 @@ func (b *IndexerBuilder) buildDocEntries(indexer *BEIndex, doc *Document, parser
 
 	for _, conj := range doc.Cons {
 
-		kSizeEntries := indexer.NewKSizeEntriesIfNeeded(conj.size)
-
 		if conj.size == 0 {
-			kSizeEntries.AppendEntryID(indexer.wildCardKey(), NewEntryID(conj.id, true))
+			indexer.wildcardEntries = append(indexer.wildcardEntries, NewEntryID(conj.id, true))
 		}
-
+		kSizeEntries := indexer.NewKSizeEntriesIfNeeded(conj.size)
 		for field, expr := range conj.Expressions {
-			ids, e := parser.ParseValue(expr.Value)
+
+			desc := indexer.getFieldDesc(field)
+			ids, e := desc.Parser.ParseValue(expr.Value)
 			if e != nil {
-				fmt.Println("parse failed, value:", expr.Value, " e:", e.Error())
+				fmt.Printf("field %s parse failed, value:%v, e:%s", field, expr.Value, e.Error())
 				break
 			}
 
@@ -76,9 +76,7 @@ func (b *IndexerBuilder) BuildIndex() *BEIndex {
 	indexer := NewBEIndex(idGen)
 	for _, doc := range b.Documents {
 
-		fmt.Println("start gen entries for doc:", doc.ID)
 		b.buildDocEntries(indexer, doc, comParser)
-
 	}
 	indexer.CompleteIndex()
 

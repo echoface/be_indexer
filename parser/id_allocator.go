@@ -27,11 +27,13 @@ func (alloc *IDAllocatorImpl) TotalIDCount() uint64 {
 }
 
 func (alloc *IDAllocatorImpl) FindNumID(v int64) (value uint64, found bool) {
-	return 0, false
+	value, found = alloc.numBox[v]
+	return
 }
 
 func (alloc *IDAllocatorImpl) FindStringID(v *string) (value uint64, found bool) {
-	return 0, false
+	value, found = alloc.strBox[*v]
+	return
 }
 
 func (alloc *IDAllocatorImpl) AllocNumID(v int64) uint64 {

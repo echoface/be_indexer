@@ -21,14 +21,9 @@
     "cons": [
       {
         "exprs": {
-          "age": { "inc": true, "value": 5 },
-          "city": { "inc": false, "value": "sh" },
-          "ip": { "inc": true, "value": "127.0.0.1" }
-        }
-      },
-      {
-        "exprs": {
-          "age": { "inc": true, "value": 1 }
+          "city": { "inc": true, "value": "sh" },
+          "ip": { "inc": false, "value": "127.0.0.1" },
+          "tag": { "inc": true, "value": ["tag1","tag2"]}
         }
       }
     ]
@@ -36,7 +31,7 @@
   {
     "id": 3,
     "cons": [
-      { "exprs": { "city": { "inc": false, "value": "sh" } } },
+      { "exprs": { "ip": { "inc": false, "value": "localhost" } } },
       {
         "exprs": {
           "age": { "inc": true, "value": [1, 2] },

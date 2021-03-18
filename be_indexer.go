@@ -8,10 +8,6 @@ import (
 	"strings"
 )
 
-const (
-	wildCardField = "__wildcard__"
-)
-
 type (
 	FieldDesc struct {
 		Parser parser.FieldValueParser
@@ -25,21 +21,26 @@ type (
 	BEIndex struct {
 		sizeEntries     []*KSizeEntries
 		idAllocator     parser.IDAllocator
-		fieldDesc       map[BEField]FieldDesc
-		wildcardEntries Entries
+		fieldDesc       map[BEField]*FieldDesc
 		fieldToID       map[BEField]uint64
 		idToField       map[uint64]BEField
+		wildcardKey     Key
+		wildcardEntries Entries
 	}
 )
 
 func NewBEIndex(idGen parser.IDAllocator) *BEIndex {
 	index := &BEIndex{
 		idAllocator: idGen,
-		fieldDesc:   make(map[BEField]FieldDesc),
+		fieldDesc:   make(map[BEField]*FieldDesc),
 		sizeEntries: make([]*KSizeEntries, 0),
 		fieldToID:   make(map[BEField]uint64),
 		idToField:   make(map[uint64]BEField),
 	}
+	index.fieldDesc["__inner__"] = &FieldDesc{
+		Parser: parser.NewCommonStrParser(idGen),
+	}
+	index.wildcardKey = NewKey(index.FieldID("__wildcard__"), 0)
 	return index
 }
 
@@ -51,6 +52,13 @@ func (bi *BEIndex) FieldID(field BEField) uint64 {
 	bi.idToField[v] = field
 	bi.fieldToID[field] = v
 	return v
+}
+
+func (bi *BEIndex) getFieldDesc(field BEField) *FieldDesc {
+	if desc, ok := bi.fieldDesc[field]; ok {
+		return desc
+	}
+	return bi.fieldDesc["__inner__"]
 }
 
 func (bi *BEIndex) StringKey(key Key) string {
@@ -102,7 +110,6 @@ func (bi *BEIndex) NewKSizeEntriesIfNeeded(k int) *KSizeEntries {
 				plEntries: make(map[Key]Entries),
 			}
 		}
-		fmt.Println("old kentries:", bi.sizeEntries, " new:", newSizeEntries)
 		bi.sizeEntries = newSizeEntries
 	}
 	return bi.sizeEntries[k]
@@ -119,32 +126,29 @@ func (bi *BEIndex) CompleteIndex() {
 	for _, sizeEntries := range bi.sizeEntries {
 		sizeEntries.makeEntriesSorted()
 	}
-	bi.wildcardEntries = bi.GetKSizeEntries(0).getEntries(bi.wildCardKey())
-}
-
-func (bi *BEIndex) wildCardKey() Key {
-	return NewKey(bi.FieldID(wildCardField), 0)
+	if bi.wildcardEntries.Len() > 0 {
+		sort.Sort(bi.wildcardEntries)
+	}
 }
 
 func (bi *BEIndex) initPostingList(k int, queries Assignments) FieldPostingListGroups {
 	result := make([]*FieldPostingListGroup, 0, len(queries))
-	if k == 0 && bi.wildcardEntries != nil {
-		pl := NewPostingList(bi.wildCardKey(), bi.wildcardEntries)
+	if k == 0 && len(bi.wildcardEntries) > 0 {
+		pl := NewPostingList(bi.wildcardKey, bi.wildcardEntries)
 		result = append(result, NewFieldPostingListGroup(pl))
 	}
 
 	kSizeEntries := bi.GetKSizeEntries(k)
 	for field, v := range queries {
-		fieldDesc, ok := bi.fieldDesc[field]
-		if !ok {
-			continue
-		}
+
+		fieldDesc := bi.getFieldDesc(field)
 		ids, e := fieldDesc.Parser.ValueIDs(v)
 		if e != nil {
 			panic(e)
 		}
 
 		fieldID := bi.FieldID(field)
+		fmt.Println("field id:", field, fieldID, " values:", ids)
 
 		pls := PostingLists{}
 		for _, id := range ids {
@@ -171,17 +175,25 @@ func (bi *BEIndex) retrieveK(plgList FieldPostingListGroups, k int) (result []in
 		endEID := plgList[tempK-1].GetCurEntryID()
 
 		nextID := endEID
-		if eid == endEID && eid.IsInclude() {
-			result = append(result, eid.GetConjID().DocID())
+		if eid == endEID {
+
 			nextID = endEID + 1
-		} else {
-			for i := tempK; i < plgList.Len(); i++ {
-				if plgList[i].GetCurConjID() != eid.GetConjID() {
-					break
+
+			if eid.IsInclude() {
+
+				result = append(result, eid.GetConjID().DocID())
+
+			} else { //exclude
+
+				for i := tempK; i < plgList.Len(); i++ {
+					if plgList[i].GetCurConjID() != eid.GetConjID() {
+						break
+					}
+					plgList[i].SkipTo(nextID)
 				}
-				plgList[i].SkipTo(endEID)
 			}
 		}
+		// 推进游标
 		for i := 0; i < tempK; i++ {
 			plgList[i].SkipTo(nextID)
 		}
@@ -199,10 +211,11 @@ func (bi *BEIndex) Retrieve(queries Assignments) (result []int32, err error) {
 			tempK = 1
 		}
 		plgList := bi.initPostingList(k, queries)
+		fmt.Printf("k:%d, tempK:%d, plgList:%d \n", k, tempK, len(plgList))
 		if len(plgList) < tempK {
 			continue
 		}
-
+		plgList.Dump()
 		res := bi.retrieveK(plgList, tempK)
 
 		result = append(result, res...)

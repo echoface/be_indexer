@@ -9,37 +9,6 @@ import (
 
 func buildTestDoc() []*Document {
 
-	//doc := NewDocument(1)
-	//
-	//conj := NewConjunction().
-	//	In("age", []int{1, 2, 5}).
-	//	In("city", []string{"sh", "bj"}).
-	//	NotIn("ip", "localhost")
-	//doc.AddConjunction(conj)
-	//
-	//conj = NewConjunction().
-	//	In("age", 5).
-	//	In("ip", "127.0.0.1")
-	//doc.AddConjunction(conj)
-	//
-	//// doc2
-	//doc2 := NewDocument(2)
-	//conj = NewConjunction().
-	//	NotIn("city", "sh").
-	//	In("age", 5)
-	//doc2.AddConjunction(conj)
-	//
-	//// doc3
-	//doc3 := NewDocument(3)
-	//conj = NewConjunction().
-	//	NotIn("city", "sh")
-	//doc3.AddConjunction(conj)
-	//
-	//conj = NewConjunction().
-	//	In("age", []int{1, 2}).
-	//	In("city", []string{"sh", "bj"})
-	//doc3.AddConjunction(conj)
-
 	docs := make([]*Document, 0)
 	content, e := ioutil.ReadFile("./test_data/test_docs.json")
 	if e != nil {
@@ -71,4 +40,17 @@ func TestBEIndex_Retrieve(t *testing.T) {
 	indexer := builder.BuildIndex()
 
 	fmt.Println(indexer.DumpSizeEntries())
+
+	result, e := indexer.Retrieve(map[BEField]Values{
+		"age": []int{5},
+	})
+	fmt.Println(e, result)
+
+	result, e = indexer.Retrieve(map[BEField]Values{
+		"age":  []int{1},
+		"city": "sh",
+		"tag:": "tag2",
+	})
+	fmt.Println(e, result)
+
 }

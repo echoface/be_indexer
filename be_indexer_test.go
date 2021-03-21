@@ -29,6 +29,8 @@ func EntriesToDocs(entries Entries) (res []int32) {
 }
 
 func TestBEIndex_Retrieve(t *testing.T) {
+	logLevel = infoLevel
+
 	builder := IndexerBuilder{
 		Documents: make(map[int32]*Document),
 	}
@@ -42,14 +44,19 @@ func TestBEIndex_Retrieve(t *testing.T) {
 	fmt.Println(indexer.DumpSizeEntries())
 
 	result, e := indexer.Retrieve(map[BEField]Values{
-		"age": []int{5},
+		"age": NewValues(5),
 	})
 	fmt.Println(e, result)
 
 	result, e = indexer.Retrieve(map[BEField]Values{
-		"age":  []int{1},
-		"city": "sh",
-		"tag:": "tag2",
+		"ip": NewStrValues("localhost"),
+	})
+	fmt.Println(e, result)
+
+	result, e = indexer.Retrieve(map[BEField]Values{
+		"age":  NewIntValues(1),
+		"city": NewStrValues("sh"),
+		"tag":  NewValues("tag1"),
 	})
 	fmt.Println(e, result)
 

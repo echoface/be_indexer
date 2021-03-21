@@ -131,6 +131,19 @@ func (bi *BEIndex) CompleteIndex() {
 	}
 }
 
+func (bi *BEIndex) parseQueryIDS(field BEField, values Values) (res []uint64, err error) {
+	desc := bi.getFieldDesc(field)
+	for _, value := range values {
+		ids, err := desc.Parser.ParseAssign(value)
+		if err != nil {
+			Logger.Errorf("value can't be parsed, %+v \n", value)
+			continue
+		}
+		res = append(res, ids...)
+	}
+	return res, nil
+}
+
 func (bi *BEIndex) initPostingList(k int, queries Assignments) FieldPostingListGroups {
 	result := make([]*FieldPostingListGroup, 0, len(queries))
 	if k == 0 && len(bi.wildcardEntries) > 0 {
@@ -139,16 +152,16 @@ func (bi *BEIndex) initPostingList(k int, queries Assignments) FieldPostingListG
 	}
 
 	kSizeEntries := bi.GetKSizeEntries(k)
-	for field, v := range queries {
+	for field, values := range queries {
 
-		fieldDesc := bi.getFieldDesc(field)
-		ids, e := fieldDesc.Parser.ValueIDs(v)
-		if e != nil {
-			panic(e)
+		ids, err := bi.parseQueryIDS(field, values)
+		if err != nil {
+			Logger.Errorf("parse query assign fail, e:%s\n", err.Error())
+			continue
 		}
-
 		fieldID := bi.FieldID(field)
-		fmt.Println("field id:", field, fieldID, " values:", ids)
+
+		Logger.Infof("field:%s query ids:%v\n", field, ids)
 
 		pls := PostingLists{}
 		for _, id := range ids {
@@ -180,7 +193,7 @@ func (bi *BEIndex) retrieveK(plgList FieldPostingListGroups, k int) (result []in
 			nextID = endEID + 1
 
 			if eid.IsInclude() {
-
+				Logger.Infof("k:%d, retrieve doc:%d\n", tempK, eid.GetConjID().DocID())
 				result = append(result, eid.GetConjID().DocID())
 
 			} else { //exclude
@@ -211,7 +224,6 @@ func (bi *BEIndex) Retrieve(queries Assignments) (result []int32, err error) {
 			tempK = 1
 		}
 		plgList := bi.initPostingList(k, queries)
-		fmt.Printf("k:%d, tempK:%d, plgList:%d \n", k, tempK, len(plgList))
 		if len(plgList) < tempK {
 			continue
 		}
@@ -225,6 +237,12 @@ func (bi *BEIndex) Retrieve(queries Assignments) (result []int32, err error) {
 
 func (bi *BEIndex) DumpSizeEntries() string {
 	sb := strings.Builder{}
+	sb.WriteString(fmt.Sprintf("Z:>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>\n"))
+	sb.WriteString(bi.StringKey(bi.wildcardKey))
+	sb.WriteString(":")
+	sb.WriteString(fmt.Sprintf("%v", bi.wildcardEntries.DocString()))
+	sb.WriteString("\n")
+
 	for idx, ke := range bi.sizeEntries {
 		sb.WriteString(fmt.Sprintf("K:%d >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>\n", idx))
 		for k, entries := range ke.plEntries {

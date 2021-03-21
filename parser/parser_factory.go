@@ -7,11 +7,6 @@ var (
 )
 
 type (
-	FieldValueParser interface {
-		ValueIDs(v interface{}) ([]uint64, error)
-		ParseValue(v interface{}) ([]uint64, error)
-	}
-
 	Builder func(allocator IDAllocator) FieldValueParser
 )
 

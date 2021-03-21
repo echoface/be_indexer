@@ -44,6 +44,7 @@ func (b *IndexerBuilder) buildDocEntries(indexer *BEIndex, doc *Document, parser
 
 	doc.Prepare()
 
+FORCONJ:
 	for _, conj := range doc.Cons {
 
 		if conj.size == 0 {
@@ -53,10 +54,16 @@ func (b *IndexerBuilder) buildDocEntries(indexer *BEIndex, doc *Document, parser
 		for field, expr := range conj.Expressions {
 
 			desc := indexer.getFieldDesc(field)
-			ids, e := desc.Parser.ParseValue(expr.Value)
-			if e != nil {
-				fmt.Printf("field %s parse failed, value:%v, e:%s", field, expr.Value, e.Error())
-				break
+
+			var ids []uint64
+			for _, value := range expr.Value {
+				res, e := desc.Parser.ParseValue(value)
+				if e != nil {
+					Logger.Errorf("field %s parse failed\n", field)
+					Logger.Errorf("value %+v parse fail detail:%+v\n", value, e)
+					break FORCONJ
+				}
+				ids = append(ids, res...)
 			}
 
 			fieldID := indexer.FieldID(field)

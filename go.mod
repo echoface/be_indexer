@@ -1,4 +1,4 @@
-module be_indexer
+module github.com/HuanGong/be_indexer
 
 go 1.15
 

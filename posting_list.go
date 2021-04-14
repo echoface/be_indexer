@@ -1,4 +1,4 @@
-package beindexer
+package be_indexer
 
 import (
 	"fmt"
@@ -223,7 +223,7 @@ func (plg *FieldPostingListGroup) Skip(id EntryID) (newMin EntryID) {
 	newMin = NULLENTRY
 	for _, pl := range plg.plGroup {
 		if tId := pl.Skip(id); tId < newMin {
-			newMin = id
+			newMin = tId
 			plg.current = pl
 		}
 	}
@@ -234,7 +234,7 @@ func (plg *FieldPostingListGroup) SkipTo(id EntryID) (newMin EntryID) {
 	newMin = NULLENTRY
 	for _, pl := range plg.plGroup {
 		if tId := pl.SkipTo(id); tId < newMin {
-			newMin = id
+			newMin = tId
 			plg.current = pl
 		}
 	}

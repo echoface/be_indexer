@@ -1,8 +1,8 @@
-package beindexer
+package be_indexer
 
 import (
-	"be_indexer/parser"
 	"fmt"
+	"github.com/HuanGong/be_indexer/parser"
 )
 
 type (
@@ -23,6 +23,15 @@ type (
 
 	Assignments map[BEField]Values
 )
+
+func (ass Assignments) Size() (size int) {
+	for _, v := range ass {
+		if len(v) > 0 {
+			size++
+		}
+	}
+	return size
+}
 
 func NewBoolExpr(field BEField, inc bool, v Values) *BoolExprs {
 	expr := &BoolExprs{
@@ -61,7 +70,7 @@ func NewIntValues(v int, o ...int) (res []interface{}) {
 	return
 }
 
-func NewInt32Values(v int32, o ...int) (res []interface{}) {
+func NewInt32Values(v int32, o ...int32) (res []interface{}) {
 	res = make([]interface{}, len(o)+1)
 	res[0] = v
 	for idx, optV := range o {
@@ -70,7 +79,7 @@ func NewInt32Values(v int32, o ...int) (res []interface{}) {
 	return
 }
 
-func NewInt64Values(v int64, o ...int) (res []interface{}) {
+func NewInt64Values(v int64, o ...int64) (res []interface{}) {
 	res = make([]interface{}, len(o)+1)
 	res[0] = v
 	for idx, optV := range o {

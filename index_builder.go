@@ -1,8 +1,8 @@
-package beindexer
+package be_indexer
 
 import (
-	"be_indexer/parser"
 	"fmt"
+	"github.com/HuanGong/be_indexer/parser"
 )
 
 type (

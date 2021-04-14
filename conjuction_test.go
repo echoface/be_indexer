@@ -1,4 +1,4 @@
-package beindexer
+package be_indexer
 
 import (
 	"github.com/smartystreets/goconvey/convey"

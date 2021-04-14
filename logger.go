@@ -1,4 +1,4 @@
-package beindexer
+package be_indexer
 
 import "fmt"
 
@@ -24,21 +24,21 @@ type (
 )
 
 func (l *DefaultLogger) Debugf(format string, v ...interface{}) {
-	if LogLevel < debugLevel {
+	if LogLevel > debugLevel {
 		return
 	}
 	fmt.Printf(format, v...)
 }
 
 func (l *DefaultLogger) Infof(format string, v ...interface{}) {
-	if LogLevel < infoLevel {
+	if LogLevel > infoLevel {
 		return
 	}
 	fmt.Printf(format, v...)
 }
 
 func (l *DefaultLogger) Errorf(format string, v ...interface{}) {
-	if LogLevel < errorLevel {
+	if LogLevel > errorLevel {
 		return
 	}
 	fmt.Printf(format, v...)

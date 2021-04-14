@@ -1,9 +1,9 @@
-package beindexer
+package be_indexer
 
 import (
-	"be_indexer/parser"
-	"be_indexer/util"
 	"fmt"
+	"github.com/HuanGong/be_indexer/parser"
+	"github.com/HuanGong/be_indexer/util"
 	"sort"
 	"strings"
 )
@@ -195,12 +195,11 @@ func (bi *BEIndex) initPostingList(k int, queries Assignments) FieldPostingListG
 }
 
 func (bi *BEIndex) retrieveK(plgList FieldPostingListGroups, k int) (result []int32) {
-	tempK := k
-	for !plgList[tempK-1].GetCurEntryID().IsNULLEntry() {
-		sort.Sort(plgList)
+	sort.Sort(plgList)
+	for !plgList[k-1].GetCurEntryID().IsNULLEntry() {
 
 		eid := plgList[0].GetCurEntryID()
-		endEID := plgList[tempK-1].GetCurEntryID()
+		endEID := plgList[k-1].GetCurEntryID()
 
 		nextID := endEID
 		if eid == endEID {
@@ -208,12 +207,12 @@ func (bi *BEIndex) retrieveK(plgList FieldPostingListGroups, k int) (result []in
 			nextID = endEID + 1
 
 			if eid.IsInclude() {
-				Logger.Infof("k:%d, retrieve doc:%d\n", tempK, eid.GetConjID().DocID())
+				Logger.Infof("k:%d, retrieve doc:%d\n", k, eid.GetConjID().DocID())
 				result = append(result, eid.GetConjID().DocID())
 
 			} else { //exclude
 
-				for i := tempK; i < plgList.Len(); i++ {
+				for i := k; i < plgList.Len(); i++ {
 					if plgList[i].GetCurConjID() != eid.GetConjID() {
 						break
 					}
@@ -222,30 +221,28 @@ func (bi *BEIndex) retrieveK(plgList FieldPostingListGroups, k int) (result []in
 			}
 		}
 		// 推进游标
-		for i := 0; i < tempK; i++ {
+		for i := 0; i < k; i++ {
 			plgList[i].SkipTo(nextID)
 		}
+		sort.Sort(plgList)
 	}
 	return result
 }
 
 func (bi *BEIndex) Retrieve(queries Assignments) (result []int32, err error) {
 
-	k := util.MinInt(len(queries), bi.maxK())
-	for ; k >= 0; k-- {
+	for k := util.MinInt(queries.Size(), bi.maxK()); k >= 0; k-- {
+
+		plgList := bi.initPostingList(k, queries)
 
 		tempK := k
 		if tempK == 0 {
 			tempK = 1
 		}
-		plgList := bi.initPostingList(k, queries)
 		if len(plgList) < tempK {
 			continue
 		}
-		fmt.Println("K:", k, ", plgList:", plgList.Dump())
 		res := bi.retrieveK(plgList, tempK)
-
-		fmt.Println("K:", k, ", res:", res)
 		result = append(result, res...)
 	}
 	return result, nil

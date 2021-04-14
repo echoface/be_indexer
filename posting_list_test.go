@@ -1,10 +1,11 @@
-package beindexer
+package be_indexer
 
 import (
 	"fmt"
-	"github.com/smartystreets/goconvey/convey"
 	"sort"
 	"testing"
+
+	"github.com/smartystreets/goconvey/convey"
 )
 
 func TestPostingList_Skip(t *testing.T) {
@@ -59,4 +60,60 @@ func TestEntries_Key(t *testing.T) {
 	f := NewKey(MaxBEFieldID, MaxBEValueID)
 	fmt.Printf("%x\n", f.GetFieldID())
 	fmt.Printf("%x\n", f.GetValueID())
+}
+
+func TestPostingList_SkipTo(t *testing.T) {
+	plg := FieldPostingListGroup{
+		current: nil,
+		plGroup: PostingLists{
+			{
+				cursor:  0,
+				entries: []EntryID{17, 32, 37},
+			},
+			{
+				cursor:  0,
+				entries: []EntryID{17, 33},
+			},
+			{
+				cursor:  0,
+				entries: []EntryID{19, 60},
+			},
+			{
+				cursor:  0,
+				entries: []EntryID{53, 54},
+			},
+		},
+	}
+	plg.current = plg.plGroup[0]
+
+	convey.Convey("test SkipTo", t, func() {
+		plg.SkipTo(19)
+		fmt.Println("current:", plg.current)
+		fmt.Println("curEID:", plg.GetCurEntryID())
+		fmt.Println("curent cursor:", plg.current.cursor)
+	})
+}
+
+func TestPostingList_SkipTo2(t *testing.T) {
+	plg := FieldPostingListGroup{
+		current: nil,
+		plGroup: PostingLists{
+			{
+				cursor:  0,
+				entries: []EntryID{28},
+			},
+			{
+				cursor:  0,
+				entries: []EntryID{28},
+			},
+		},
+	}
+	plg.current = plg.plGroup[0]
+
+	convey.Convey("test SkipTo with only one element", t, func() {
+		plg.SkipTo(29)
+		fmt.Println("current:", plg.current)
+		fmt.Println("curEID:", plg.GetCurEntryID())
+		fmt.Println("curent cursor:", plg.current.cursor)
+	})
 }

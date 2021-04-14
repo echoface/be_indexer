@@ -1,11 +1,11 @@
 package main
 
 import (
-	beindexer "be_indexer"
-	"be_indexer/parser"
-	"be_indexer/util"
 	"encoding/json"
 	"fmt"
+	"github.com/HuanGong/be_indexer"
+	"github.com/HuanGong/be_indexer/parser"
+	"github.com/HuanGong/be_indexer/util"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -13,10 +13,10 @@ import (
 )
 
 func main() {
-	builder := beindexer.NewIndexerBuilder()
+	builder := be_indexer.NewIndexerBuilder()
 
-	var docs []*beindexer.Document
-	filepath.Walk("./docs", func(path string, info os.FileInfo, err error) error {
+	var docs []*be_indexer.Document
+	_ = filepath.Walk("./docs", func(path string, info os.FileInfo, err error) error {
 		if err != nil || info.IsDir() || !strings.HasSuffix(path, ".json") {
 			return nil
 		}
@@ -25,7 +25,7 @@ func main() {
 			fmt.Println("read file fail:", content)
 			return nil
 		}
-		doc := &beindexer.Document{}
+		doc := &be_indexer.Document{}
 		if e = json.Unmarshal(content, &doc); e != nil {
 			fmt.Println("decode document fail:", e.Error())
 			return e
@@ -42,9 +42,9 @@ func main() {
 	indexer := builder.BuildIndex()
 	fmt.Println(indexer.DumpSizeEntries())
 
-	res, _ := indexer.Retrieve(map[beindexer.BEField]beindexer.Values{
-		"age":  beindexer.NewValues(19),
-		"city": beindexer.NewValues("gz"),
+	res, _ := indexer.Retrieve(map[be_indexer.BEField]be_indexer.Values{
+		"age":  be_indexer.NewValues(19),
+		"city": be_indexer.NewValues("gz"),
 	})
 	fmt.Println("result:", res)
 	if !util.ContainInt32(res, 1) {

@@ -176,8 +176,6 @@ func (bi *BEIndex) initPostingList(k int, queries Assignments) FieldPostingListG
 		}
 		fieldID := bi.FieldID(field)
 
-		Logger.Infof("field:%s query ids:%v\n", field, ids)
-
 		pls := PostingLists{}
 		for _, id := range ids {
 			key := NewKey(fieldID, id)
@@ -216,7 +214,7 @@ func (bi *BEIndex) retrieveK(plgList FieldPostingListGroups, k int) (result []in
 					if plgList[i].GetCurConjID() != eid.GetConjID() {
 						break
 					}
-					plgList[i].SkipTo(nextID)
+					plgList[i].Skip(nextID)
 				}
 			}
 		}
@@ -244,6 +242,7 @@ func (bi *BEIndex) Retrieve(queries Assignments) (result []int32, err error) {
 		}
 		res := bi.retrieveK(plgList, tempK)
 		result = append(result, res...)
+		Logger.Debugf("k:%d,res:%+v,entries:%s", k, res, plgList.Dump())
 	}
 	return result, nil
 }

@@ -3,13 +3,13 @@ package be_indexer
 import "fmt"
 
 const (
-	debugLevel = iota
-	infoLevel
-	errorLevel
+	DebugLevel = iota
+	InfoLevel
+	ErrorLevel
 )
 
 var (
-	LogLevel int           = debugLevel // control defaultLogger log level
+	LogLevel int           = DebugLevel // control defaultLogger log level
 	Logger   BEIndexLogger = &DefaultLogger{}
 )
 
@@ -24,21 +24,21 @@ type (
 )
 
 func (l *DefaultLogger) Debugf(format string, v ...interface{}) {
-	if LogLevel > debugLevel {
+	if LogLevel > DebugLevel {
 		return
 	}
 	fmt.Printf(format, v...)
 }
 
 func (l *DefaultLogger) Infof(format string, v ...interface{}) {
-	if LogLevel > infoLevel {
+	if LogLevel > InfoLevel {
 		return
 	}
 	fmt.Printf(format, v...)
 }
 
 func (l *DefaultLogger) Errorf(format string, v ...interface{}) {
-	if LogLevel > errorLevel {
+	if LogLevel > ErrorLevel {
 		return
 	}
 	fmt.Printf(format, v...)

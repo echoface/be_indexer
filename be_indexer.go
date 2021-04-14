@@ -242,9 +242,10 @@ func (bi *BEIndex) Retrieve(queries Assignments) (result []int32, err error) {
 		if len(plgList) < tempK {
 			continue
 		}
-		plgList.Dump()
+		fmt.Println("K:", k, ", plgList:", plgList.Dump())
 		res := bi.retrieveK(plgList, tempK)
 
+		fmt.Println("K:", k, ", res:", res)
 		result = append(result, res...)
 	}
 	return result, nil

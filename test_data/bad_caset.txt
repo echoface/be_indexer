@@ -1,0 +1,37 @@
+=== RUN   TestBEIndex_Retrieve2
+K: 2 , plgList: total plgs:2
+0:
+idx:0#72057594037927949#cur:<23,true> entries:[<23,true> <33,true> <37,true> <81,true>]
+idx:1#72057594037927947#cur:<73,true> entries:[<73,true> <81,true>]
+1:
+idx:0#144115188075855878#cur:<3,true> entries:[<3,true>]
+
+K: 2 , res: []
+K: 3 , plgList: total plgs:3
+0:
+idx:0#72057594037927938#cur:<9,true> entries:[<9,true> <40,true> <62,true> <69,true> <74,true> <87,true> <90,true> <91,true> <93,true> <94,true> <97,true>]
+idx:1#72057594037927946#cur:<7,true> entries:[<7,true> <11,true> <38,true> <41,true> <50,true> <55,true> <71,true> <96,true> <97,true>]
+1:
+idx:0#144115188075855875#cur:<62,true> entries:[<62,true> <65,true> <69,true> <75,true>]
+2:
+idx:0#288230376151711762#cur:<21,true> entries:[<21,true>]
+idx:1#288230376151711756#cur:<50,true> entries:[<50,true> <57,true> <66,true> <75,true> <79,true> <82,true>]
+idx:2#288230376151711745#cur:<77,true> entries:[<77,true> <93,true>]
+idx:3#288230376151711763#cur:<41,true> entries:[<41,true> <43,true> <87,true> <91,true> <94,true> <97,true>]
+
+K: 3 , res: []
+K: 2 , plgList: total plgs:2
+0:
+idx:0#288230376151711762#cur:<17,true> entries:[<17,true> <32,true> <37,true>]
+idx:1#288230376151711756#cur:<19,true> entries:[<19,true> <60,true>]
+idx:2#288230376151711745#cur:<53,true> entries:[<53,true> <54,true>]
+idx:3#288230376151711763#cur:<17,true> entries:[<17,true> <33,true>]
+1:
+idx:0#72057594037927938#cur:<10,true> entries:[<10,true> <19,true> <27,true> <32,true> <54,true> <81,true>]
+idx:1#72057594037927946#cur:<3,true> entries:[<3,true> <19,true> <35,true> <81,true>]
+
+K: 2 , res: [32]
+queries:A:[17 1], B:[3], C:[], D:[6 15 7 10]
+noneIdxRes:3, idxRes:1
+IdxRes:map[32:{"ID":32,"A":[12,17,2,13,3,15],"B":null,"C":null,"D":[5,6]}]
+noneIdxRes:map[19:{"ID":19,"A":[16,19,4,0,11,1,17],"B":null,"C":null,"D":[9,15,19,14,5]} 32:{"ID":32,"A":[12,17,2,13,3,15],"B":null,"C":null,"D":[5,6]} 54:{"ID":54,"A":[0,18,15,12,4,8,17],"B":null,"C":null,"D":[3,14,7]}]

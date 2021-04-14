@@ -99,6 +99,10 @@ func valueMatch(values, queries []int) bool {
 	}
 	return false
 }
+func (t *MockTargeting) String() string {
+	b, _ := json.Marshal(t)
+	return string(b)
+}
 
 func (t *MockTargeting) Match(a, b, c, d []int) bool {
 	if !valueMatch(t.A, a) {
@@ -180,9 +184,11 @@ func TestBEIndex_Retrieve2(t *testing.T) {
 			idxRes[id] = targets[id]
 		}
 		if len(idxRes) != len(noneIdxRes) {
-			fmt.Println(index.DumpSizeEntries())
 			fmt.Printf("queries:A:%+v, B:%+v, C:%+v, D:%+v\n", A, B, C, D)
-			fmt.Printf("noneIdxRes:%d, idxRes:%d", len(noneIdxRes), len(idxRes))
+			fmt.Printf("noneIdxRes:%d, idxRes:%d\n", len(noneIdxRes), len(idxRes))
+			fmt.Printf("IdxRes:%+v\n", idxRes)
+			fmt.Printf("noneIdxRes:%+v\n", noneIdxRes)
+			fmt.Println(index.DumpSizeEntries())
 			panic(nil)
 		}
 	}

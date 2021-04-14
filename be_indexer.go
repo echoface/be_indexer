@@ -13,6 +13,14 @@ type (
 		Parser parser.FieldValueParser
 	}
 
+	FieldOption struct {
+		Parser string
+	}
+
+	IndexerSettings struct {
+		FieldConfig map[BEField]FieldOption
+	}
+
 	KSizeEntries struct {
 		// posting list entries(sorted); eg: <age, 15>: []EntryID{1, 2, 3}
 		plEntries map[Key]Entries
@@ -37,11 +45,23 @@ func NewBEIndex(idGen parser.IDAllocator) *BEIndex {
 		fieldToID:   make(map[BEField]uint64),
 		idToField:   make(map[uint64]BEField),
 	}
-	index.fieldDesc["__inner__"] = &FieldDesc{
-		Parser: parser.NewCommonStrParser(idGen),
-	}
 	index.wildcardKey = NewKey(index.FieldID("__wildcard__"), 0)
 	return index
+}
+
+func (bi *BEIndex) ConfigureIndexer(settings *IndexerSettings) {
+	for field, conf := range settings.FieldConfig {
+		valueParser := parser.NewParser(conf.Parser, bi.idAllocator)
+		if valueParser == nil {
+			valueParser = parser.NewParser(parser.CommonParser, bi.idAllocator)
+		}
+		bi.fieldDesc[field] = &FieldDesc{
+			Parser: valueParser,
+		}
+	}
+	bi.fieldDesc["__inner__"] = &FieldDesc{
+		Parser: parser.NewCommonStrParser(bi.idAllocator),
+	}
 }
 
 func (bi *BEIndex) FieldID(field BEField) uint64 {
@@ -54,7 +74,7 @@ func (bi *BEIndex) FieldID(field BEField) uint64 {
 	return v
 }
 
-func (bi *BEIndex) getFieldDesc(field BEField) *FieldDesc {
+func (bi *BEIndex) GetFieldDesc(field BEField) *FieldDesc {
 	if desc, ok := bi.fieldDesc[field]; ok {
 		return desc
 	}
@@ -99,30 +119,23 @@ func (kse *KSizeEntries) getEntries(key Key) Entries {
 }
 
 func (bi *BEIndex) NewKSizeEntriesIfNeeded(k int) *KSizeEntries {
-	if k >= len(bi.sizeEntries) {
-		newSizeEntries := make([]*KSizeEntries, k+1)
-		for idx, _ := range newSizeEntries {
-			if idx < len(bi.sizeEntries) {
-				newSizeEntries[idx] = bi.sizeEntries[idx]
-				continue
-			}
-			newSizeEntries[idx] = &KSizeEntries{
-				plEntries: make(map[Key]Entries),
-			}
+	for k >= len(bi.sizeEntries) {
+		newSizeEntries := &KSizeEntries{
+			plEntries: make(map[Key]Entries),
 		}
-		bi.sizeEntries = newSizeEntries
+		bi.sizeEntries = append(bi.sizeEntries, newSizeEntries)
 	}
 	return bi.sizeEntries[k]
 }
 
-func (bi *BEIndex) GetKSizeEntries(k int) *KSizeEntries {
+func (bi *BEIndex) getKSizeEntries(k int) *KSizeEntries {
 	if k >= len(bi.sizeEntries) {
 		panic(fmt.Errorf("k:[%d] out of range", k))
 	}
 	return bi.sizeEntries[k]
 }
 
-func (bi *BEIndex) CompleteIndex() {
+func (bi *BEIndex) completeIndex() {
 	for _, sizeEntries := range bi.sizeEntries {
 		sizeEntries.makeEntriesSorted()
 	}
@@ -132,14 +145,16 @@ func (bi *BEIndex) CompleteIndex() {
 }
 
 func (bi *BEIndex) parseQueryIDS(field BEField, values Values) (res []uint64, err error) {
-	desc := bi.getFieldDesc(field)
+
+	desc := bi.GetFieldDesc(field)
+
 	for _, value := range values {
-		ids, err := desc.Parser.ParseAssign(value)
-		if err != nil {
+		if ids, err := desc.Parser.ParseAssign(value); err != nil {
 			Logger.Errorf("value can't be parsed, %+v \n", value)
 			continue
+		} else {
+			res = append(res, ids...)
 		}
-		res = append(res, ids...)
 	}
 	return res, nil
 }
@@ -151,7 +166,7 @@ func (bi *BEIndex) initPostingList(k int, queries Assignments) FieldPostingListG
 		result = append(result, NewFieldPostingListGroup(pl))
 	}
 
-	kSizeEntries := bi.GetKSizeEntries(k)
+	kSizeEntries := bi.getKSizeEntries(k)
 	for field, values := range queries {
 
 		ids, err := bi.parseQueryIDS(field, values)

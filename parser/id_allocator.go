@@ -32,6 +32,9 @@ func (alloc *IDAllocatorImpl) FindNumID(v int64) (value uint64, found bool) {
 }
 
 func (alloc *IDAllocatorImpl) FindStringID(v *string) (value uint64, found bool) {
+	if v == nil {
+		return 0, false
+	}
 	value, found = alloc.strBox[*v]
 	return
 }

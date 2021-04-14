@@ -5,7 +5,6 @@ import (
 )
 
 type (
-	// 如果序列化/反序列化生成需要手动调用
 	Document struct {
 		ID   int32          `json:"id"`   //只支持int32最大值个Doc
 		Cons []*Conjunction `json:"cons"` //conjunction之间的关系是或，具体描述可以看论文的表述

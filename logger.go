@@ -2,16 +2,15 @@ package beindexer
 
 import "fmt"
 
-var (
-	logLevel int // control defaultLogger log level
-
-	Logger BEIndexLogger = &DefaultLogger{}
+const (
+	debugLevel = iota
+	infoLevel
+	errorLevel
 )
 
-const (
-	errorLevel = iota
-	infoLevel
-	debugLevel
+var (
+	LogLevel int           = debugLevel // control defaultLogger log level
+	Logger   BEIndexLogger = &DefaultLogger{}
 )
 
 type (
@@ -25,21 +24,21 @@ type (
 )
 
 func (l *DefaultLogger) Debugf(format string, v ...interface{}) {
-	if logLevel > debugLevel {
+	if LogLevel < debugLevel {
 		return
 	}
 	fmt.Printf(format, v...)
 }
 
 func (l *DefaultLogger) Infof(format string, v ...interface{}) {
-	if logLevel > infoLevel {
+	if LogLevel < infoLevel {
 		return
 	}
 	fmt.Printf(format, v...)
 }
 
 func (l *DefaultLogger) Errorf(format string, v ...interface{}) {
-	if logLevel > errorLevel {
+	if LogLevel < errorLevel {
 		return
 	}
 	fmt.Printf(format, v...)

@@ -35,13 +35,6 @@ func NewConjunction() *Conjunction {
 	}
 }
 
-/*append boolean expression, don't allow same field add to one conjunction*/
-func (conj *Conjunction) AddExpression(exprs ...*BoolExprs) {
-	for _, expr := range exprs {
-		conj.AddBoolExpr(expr)
-	}
-}
-
 // any value in values is a **true** expression
 func (conj *Conjunction) In(field BEField, values Values) *Conjunction {
 	conj.addExpression(field, true, values)
@@ -59,6 +52,16 @@ func (conj *Conjunction) AddBoolExpr(expr *BoolExprs) *Conjunction {
 	return conj
 }
 
+/*
+append boolean expression,
+don't allow same field added twice in one conjunction
+*/
+func (conj *Conjunction) AddBoolExprs(exprs ...*BoolExprs) {
+	for _, expr := range exprs {
+		conj.AddBoolExpr(expr)
+	}
+}
+
 func (conj *Conjunction) addExpression(field BEField, inc bool, values Values) {
 	if _, ok := conj.Expressions[field]; ok {
 		panic(errors.New("conj don't allow one field show up twice"))
@@ -69,11 +72,12 @@ func (conj *Conjunction) addExpression(field BEField, inc bool, values Values) {
 	}
 }
 
-func (conj *Conjunction) CalcConjSize() int {
+func (conj *Conjunction) CalcConjSize() (size int) {
 	for _, bv := range conj.Expressions {
 		if bv.Incl {
-			conj.size++
+			size++
 		}
 	}
-	return conj.size
+	conj.size = size
+	return
 }

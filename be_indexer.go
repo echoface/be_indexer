@@ -10,6 +10,8 @@ import (
 
 type (
 	FieldDesc struct {
+		ID     uint64
+		Field  BEField
 		Parser parser.FieldValueParser
 	}
 
@@ -26,12 +28,15 @@ type (
 		plEntries map[Key]Entries
 	}
 
+	RetrieveContext struct {
+		idAssigns map[BEField][]uint64
+	}
+
 	BEIndex struct {
 		sizeEntries     []*KSizeEntries
 		idAllocator     parser.IDAllocator
 		fieldDesc       map[BEField]*FieldDesc
-		fieldToID       map[BEField]uint64
-		idToField       map[uint64]BEField
+		idToField       map[uint64]*FieldDesc
 		wildcardKey     Key
 		wildcardEntries Entries
 	}
@@ -41,44 +46,56 @@ func NewBEIndex(idGen parser.IDAllocator) *BEIndex {
 	index := &BEIndex{
 		idAllocator: idGen,
 		fieldDesc:   make(map[BEField]*FieldDesc),
+		idToField:   make(map[uint64]*FieldDesc),
 		sizeEntries: make([]*KSizeEntries, 0),
-		fieldToID:   make(map[BEField]uint64),
-		idToField:   make(map[uint64]BEField),
 	}
-	index.wildcardKey = NewKey(index.FieldID("__wildcard__"), 0)
+	wildcardDesc := index.configureField("__wildcard__", FieldOption{
+		Parser: parser.CommonParser,
+	})
+	index.wildcardKey = NewKey(wildcardDesc.ID, 0)
 	return index
 }
 
 func (bi *BEIndex) ConfigureIndexer(settings *IndexerSettings) {
-	for field, conf := range settings.FieldConfig {
-		valueParser := parser.NewParser(conf.Parser, bi.idAllocator)
-		if valueParser == nil {
-			valueParser = parser.NewParser(parser.CommonParser, bi.idAllocator)
-		}
-		bi.fieldDesc[field] = &FieldDesc{
-			Parser: valueParser,
-		}
-	}
-	bi.fieldDesc["__inner__"] = &FieldDesc{
-		Parser: parser.NewCommonStrParser(bi.idAllocator),
+	for field, option := range settings.FieldConfig {
+		bi.configureField(field, option)
 	}
 }
 
-func (bi *BEIndex) FieldID(field BEField) uint64 {
-	if v, ok := bi.fieldToID[field]; ok {
-		return v
+func (bi *BEIndex) configureField(field BEField, option FieldOption) *FieldDesc {
+	if _, ok := bi.fieldDesc[field]; ok {
+		panic(fmt.Errorf("can't configure field twice, bz field id can only match one ID"))
 	}
-	v := uint64(len(bi.fieldToID))
-	bi.idToField[v] = field
-	bi.fieldToID[field] = v
-	return v
+
+	valueParser := parser.NewParser(option.Parser, bi.idAllocator)
+	if valueParser == nil {
+		valueParser = parser.NewParser(parser.CommonParser, bi.idAllocator)
+	}
+	desc := &FieldDesc{
+		Field:  field,
+		Parser: valueParser,
+		ID:     uint64(len(bi.fieldDesc)),
+	}
+
+	bi.fieldDesc[field] = desc
+	bi.idToField[desc.ID] = desc
+	Logger.Infof("configure field:%s, fieldID:%d\n", field, desc.ID)
+
+	return desc
 }
 
-func (bi *BEIndex) GetFieldDesc(field BEField) *FieldDesc {
+func (bi *BEIndex) GetOrNewFieldDesc(field BEField) *FieldDesc {
 	if desc, ok := bi.fieldDesc[field]; ok {
 		return desc
 	}
-	return bi.fieldDesc["__inner__"]
+	return bi.configureField(field, FieldOption{
+		Parser: parser.CommonParser,
+	})
+}
+
+func (bi *BEIndex) hasField(field BEField) bool {
+	_, ok := bi.fieldDesc[field]
+	return ok
 }
 
 func (bi *BEIndex) StringKey(key Key) string {
@@ -87,7 +104,7 @@ func (bi *BEIndex) StringKey(key Key) string {
 
 func (bi *BEIndex) getFieldFromID(v uint64) BEField {
 	if field, ok := bi.idToField[v]; ok {
-		return field
+		return field.Field
 	}
 	return ""
 }
@@ -118,6 +135,7 @@ func (kse *KSizeEntries) getEntries(key Key) Entries {
 	return nil
 }
 
+//GetOrNewSizeEntries(k int) *KSizeEntries
 func (bi *BEIndex) NewKSizeEntriesIfNeeded(k int) *KSizeEntries {
 	for k >= len(bi.sizeEntries) {
 		newSizeEntries := &KSizeEntries{
@@ -144,54 +162,63 @@ func (bi *BEIndex) completeIndex() {
 	}
 }
 
-func (bi *BEIndex) parseQueryIDS(field BEField, values Values) (res []uint64, err error) {
+// parse queries value to value id list
+func (bi *BEIndex) parseQueries(queries Assignments) (map[BEField][]uint64, error) {
+	idAssigns := make(map[BEField][]uint64, 0)
 
-	desc := bi.GetFieldDesc(field)
-
-	for _, value := range values {
-		if ids, err := desc.Parser.ParseAssign(value); err != nil {
-			Logger.Errorf("value can't be parsed, %+v \n", value)
+	for field, values := range queries {
+		if !bi.hasField(field) {
 			continue
-		} else {
+		}
+
+		desc, ok := bi.fieldDesc[field]
+		if !ok { //no such field, ignore it(ps: bz it will not match any doc)
+			continue
+		}
+
+		res := make([]uint64, 0, len(values)/2+1)
+		for _, value := range values {
+			ids, err := desc.Parser.ParseAssign(value)
+			if err != nil {
+				Logger.Errorf("field:%s, value:%+v can't be parsed, err:%s\n", field, value, err.Error())
+				return nil, fmt.Errorf("query assign parse fail,field:%s e:%s\n", field, err.Error())
+			}
 			res = append(res, ids...)
 		}
+		idAssigns[field] = res
 	}
-	return res, nil
+	return idAssigns, nil
 }
 
-func (bi *BEIndex) initPostingList(k int, queries Assignments) FieldPostingListGroups {
-	result := make([]*FieldPostingListGroup, 0, len(queries))
+func (bi *BEIndex) initPostingList(ctx *RetrieveContext, k int) FieldPostingListGroups {
+
+	plgs := make([]*FieldPostingListGroup, 0, len(ctx.idAssigns))
+
 	if k == 0 && len(bi.wildcardEntries) > 0 {
 		pl := NewPostingList(bi.wildcardKey, bi.wildcardEntries)
-		result = append(result, NewFieldPostingListGroup(pl))
+		plgs = append(plgs, NewFieldPostingListGroup(pl))
 	}
 
 	kSizeEntries := bi.getKSizeEntries(k)
-	for field, values := range queries {
+	for field, ids := range ctx.idAssigns {
 
-		ids, err := bi.parseQueryIDS(field, values)
-		if err != nil {
-			Logger.Errorf("parse query assign fail, e:%s\n", err.Error())
-			continue
-		}
-		fieldID := bi.FieldID(field)
+		desc := bi.fieldDesc[field]
 
 		pls := PostingLists{}
 		for _, id := range ids {
-			key := NewKey(fieldID, id)
-			entries := kSizeEntries.getEntries(key)
-			if len(entries) > 0 {
+			key := NewKey(desc.ID, id)
+			if entries := kSizeEntries.getEntries(key); len(entries) > 0 {
 				pls = append(pls, NewPostingList(key, entries))
 			}
 		}
-
 		if len(pls) > 0 {
-			result = append(result, NewFieldPostingListGroup(pls...))
+			plgs = append(plgs, NewFieldPostingListGroup(pls...))
 		}
 	}
-	return result
+	return plgs
 }
 
+// retrieveK MOVE TO: FieldPostingListGroups ?
 func (bi *BEIndex) retrieveK(plgList FieldPostingListGroups, k int) (result []int32) {
 	sort.Sort(plgList)
 	for !plgList[k-1].GetCurEntryID().IsNULLEntry() {
@@ -205,7 +232,6 @@ func (bi *BEIndex) retrieveK(plgList FieldPostingListGroups, k int) (result []in
 			nextID = endEID + 1
 
 			if eid.IsInclude() {
-				Logger.Infof("k:%d, retrieve doc:%d\n", k, eid.GetConjID().DocID())
 				result = append(result, eid.GetConjID().DocID())
 
 			} else { //exclude
@@ -224,25 +250,36 @@ func (bi *BEIndex) retrieveK(plgList FieldPostingListGroups, k int) (result []in
 		}
 		sort.Sort(plgList)
 	}
+	Logger.Debugf("k:%d, retrieve docs:%+v\n", k, result)
 	return result
 }
 
 func (bi *BEIndex) Retrieve(queries Assignments) (result []int32, err error) {
 
+	idAssigns, err := bi.parseQueries(queries)
+	if err != nil {
+		Logger.Errorf("invalid query assigns:%s", err.Error())
+		return nil, err
+	}
+
+	ctx := &RetrieveContext{
+		idAssigns: idAssigns,
+	}
+
 	for k := util.MinInt(queries.Size(), bi.maxK()); k >= 0; k-- {
 
-		plgList := bi.initPostingList(k, queries)
+		plgs := bi.initPostingList(ctx, k)
 
 		tempK := k
 		if tempK == 0 {
 			tempK = 1
 		}
-		if len(plgList) < tempK {
+		if len(plgs) < tempK {
 			continue
 		}
-		res := bi.retrieveK(plgList, tempK)
+		res := bi.retrieveK(plgs, tempK)
 		result = append(result, res...)
-		Logger.Debugf("k:%d,res:%+v,entries:%s", k, res, plgList.Dump())
+		Logger.Debugf("k:%d,res:%+v,entries:%s", k, res, plgs.Dump())
 	}
 	return result, nil
 }

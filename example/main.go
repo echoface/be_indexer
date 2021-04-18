@@ -43,8 +43,8 @@ func main() {
 	fmt.Println(indexer.DumpSizeEntries())
 
 	res, _ := indexer.Retrieve(map[be_indexer.BEField]be_indexer.Values{
-		"age":  be_indexer.NewValues(19),
-		"city": be_indexer.NewValues("gz"),
+		"age":  be_indexer.NewValues2(19),
+		"city": be_indexer.NewValues2("gz"),
 	})
 	fmt.Println("result:", res)
 	if !util.ContainInt32(res, 1) {

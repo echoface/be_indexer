@@ -46,19 +46,19 @@ func TestBEIndex_Retrieve(t *testing.T) {
 	fmt.Println(indexer.DumpSizeEntries())
 
 	result, e := indexer.Retrieve(map[BEField]Values{
-		"age": NewValues(5),
+		"age": NewValues2(5),
 	})
 	fmt.Println(e, result)
 
 	result, e = indexer.Retrieve(map[BEField]Values{
-		"ip": NewStrValues("localhost"),
+		"ip": NewStrValues2("localhost"),
 	})
 	fmt.Println(e, result)
 
 	result, e = indexer.Retrieve(map[BEField]Values{
-		"age":  NewIntValues(1),
-		"city": NewStrValues("sh"),
-		"tag":  NewValues("tag1"),
+		"age":  NewIntValues2(1),
+		"city": NewStrValues2("sh"),
+		"tag":  NewValues2("tag1"),
 	})
 	fmt.Println(e, result)
 }
@@ -74,16 +74,16 @@ type MockTargeting struct {
 func (t *MockTargeting) ToConj() *Conjunction {
 	conj := NewConjunction()
 	if len(t.A) > 0 {
-		conj.In("A", NewIntValues(t.A[0], t.A[1:]...))
+		conj.In("A", NewIntValues(t.A...))
 	}
 	if len(t.B) > 0 {
-		conj.In("B", NewIntValues(t.B[0], t.B[1:]...))
+		conj.In("B", NewIntValues(t.B...))
 	}
 	if len(t.C) > 0 {
-		conj.In("C", NewIntValues(t.C[0], t.C[1:]...))
+		conj.In("C", NewIntValues(t.C...))
 	}
 	if len(t.D) > 0 {
-		conj.In("D", NewIntValues(t.D[0], t.D[1:]...))
+		conj.In("D", NewIntValues(t.D...))
 	}
 	return conj
 }
@@ -132,7 +132,7 @@ func TestBEIndex_Retrieve2(t *testing.T) {
 	b := NewIndexerBuilder()
 	targets := map[int32]*MockTargeting{}
 
-	for i := 1; i < 5000; i++ {
+	for i := 1; i < 10000; i++ {
 		target := &MockTargeting{
 			ID: int32(i),
 			A:  randValue(10),
@@ -169,16 +169,16 @@ func TestBEIndex_Retrieve2(t *testing.T) {
 		}
 		assigns := Assignments{}
 		if len(A) > 0 {
-			assigns["A"] = NewIntValues(A[0], A[1:]...)
+			assigns["A"] = NewIntValues(A...)
 		}
 		if len(B) > 0 {
-			assigns["B"] = NewIntValues(B[0], B[1:]...)
+			assigns["B"] = NewIntValues(B...)
 		}
 		if len(C) > 0 {
-			assigns["C"] = NewIntValues(C[0], C[1:]...)
+			assigns["C"] = NewIntValues(C...)
 		}
 		if len(D) > 0 {
-			assigns["D"] = NewIntValues(D[0], D[1:]...)
+			assigns["D"] = NewIntValues(D...)
 		}
 		ids, _ := index.Retrieve(assigns)
 		for _, id := range ids {
@@ -189,6 +189,8 @@ func TestBEIndex_Retrieve2(t *testing.T) {
 			fmt.Printf("noneIdxRes:%d, idxRes:%d\n", len(noneIdxRes), len(idxRes))
 			fmt.Printf("IdxRes:%+v\n", idxRes)
 			fmt.Printf("noneIdxRes:%+v\n", noneIdxRes)
+			r, _ := index.parseQueries(assigns)
+			fmt.Printf("parsedQueries:%+v", r)
 			fmt.Println(index.DumpSizeEntries())
 			panic(nil)
 		}
@@ -253,8 +255,8 @@ func TestBEIndex_Retrieve4(t *testing.T) {
 
 	doc := NewDocument(12)
 	conj := NewConjunction()
-	conj.In("tag", NewInt32Values(1))
-	conj.NotIn("age", NewInt32Values(40, 50, 60, 70))
+	conj.In("tag", NewInt32Values2(1))
+	conj.NotIn("age", NewInt32Values2(40, 50, 60, 70))
 
 	doc.AddConjunction(conj)
 
@@ -263,16 +265,16 @@ func TestBEIndex_Retrieve4(t *testing.T) {
 	indexer := builder.BuildIndex()
 
 	fmt.Println(indexer.Retrieve(Assignments{
-		"age": NewInt32Values(1),
+		"age": NewInt32Values2(1),
 	}))
 
 	fmt.Println(indexer.Retrieve(Assignments{
-		"age": NewInt32Values(25),
-		"tag": NewInt32Values(1),
+		"age": NewInt32Values2(25),
+		"tag": NewInt32Values2(1),
 	}))
 
 	fmt.Println(indexer.Retrieve(Assignments{
-		"age": NewIntValues(40),
-		"tag": NewInt32Values(1),
+		"age": NewIntValues2(40),
+		"tag": NewInt32Values2(1),
 	}))
 }

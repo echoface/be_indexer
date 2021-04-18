@@ -57,7 +57,7 @@ FORCONJ:
 
 		for field, expr := range conj.Expressions {
 
-			desc := indexer.GetFieldDesc(field)
+			desc := indexer.GetOrNewFieldDesc(field)
 
 			var ids []uint64
 			for _, value := range expr.Value {
@@ -70,10 +70,9 @@ FORCONJ:
 				}
 			}
 
-			fieldID := indexer.FieldID(field)
 			entryID := NewEntryID(conj.id, expr.Incl)
 			for _, id := range ids {
-				kSizeEntries.AppendEntryID(NewKey(fieldID, id), entryID)
+				kSizeEntries.AppendEntryID(NewKey(desc.ID, id), entryID)
 			}
 		}
 	}

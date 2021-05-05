@@ -9,10 +9,52 @@
 
 这个Golang版本基本上是之前实现的C++版本的clone,[C++实现移步](https://github.com/HuanGong/ltio/blob/master/components/boolean_indexer)
 
-声明:
-   如果被用到或者被应用，请留下star并标明作者出处.
+## usage:
+
+```go
+func main() {
+    builder := IndexerBuilder{
+        Documents: make(map[int32]*Document),
+    }
+
+    for _, doc := range buildTestDoc() {
+        builder.AddDocument(doc)
+    }
+
+    indexer := builder.BuildIndex()
+
+    //fmt.Println(indexer.DumpSizeEntries())
+
+    result, e := indexer.Retrieve(map[BEField]Values{
+        "age": NewValues2(5),
+    })
+    fmt.Println(e, result)
+
+    result, e = indexer.Retrieve(map[BEField]Values{
+        "ip": NewStrValues2("localhost"),
+    })
+    fmt.Println(e, result)
+
+    result, e = indexer.Retrieve(map[BEField]Values{
+        "age":  NewIntValues2(1),
+        "city": NewStrValues2("sh"),
+        "tag":  NewValues2("tag1"),
+    })
+    fmt.Println(e, result)
+}
+```
 
 使用限制：
-- 每一个document最多拥有255个conjunction
-- document id最大限制值为:`2^31`,超过这个数量考虑partition
-- 支持值类型非浮点数值、string类型的值(因为背后还是基于值的倒排表)
+- 文档ID最大值限制为:`2^32`
+- 每个文档最多拥有256个Conjunction
+- 每个DNF最大支持组合条件(field)个数：256
+- 支持任何可以通过parse值化的类型，见parser的定义
+- 最大值数量限制：数值/字符串各2^56个（约7.205...e16）
+
+# Copyright and License
+
+Copyright (C) 2018, by HuanGong [gonghuan.dev@gmail.com](mailto:gonghuan.dev@gmail.com).
+
+Under the Apache License, Version 2.0.
+
+See the [LICENSE](LICENSE) file for details.

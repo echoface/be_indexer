@@ -1,4 +1,4 @@
-module github.com/HuanGong/be_indexer
+module github.com/echoface/be_indexer
 
 go 1.15
 

@@ -3,7 +3,7 @@ package be_indexer
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/HuanGong/be_indexer/util"
+	"github.com/echoface/be_indexer/util"
 	"io/ioutil"
 	"math/rand"
 	"testing"
@@ -23,7 +23,7 @@ func buildTestDoc() []*Document {
 	return docs
 }
 
-func EntriesToDocs(entries Entries) (res []int32) {
+func EntriesToDocs(entries Entries) (res []DocID) {
 	for _, eid := range entries {
 		res = append(res, eid.GetConjID().DocID())
 	}
@@ -34,7 +34,7 @@ func TestBEIndex_Retrieve(t *testing.T) {
 	LogLevel = InfoLevel
 
 	builder := IndexerBuilder{
-		Documents: make(map[int32]*Document),
+		Documents: make(map[DocID]*Document),
 	}
 
 	for _, doc := range buildTestDoc() {
@@ -64,7 +64,7 @@ func TestBEIndex_Retrieve(t *testing.T) {
 }
 
 type MockTargeting struct {
-	ID int32
+	ID DocID
 	A  []int
 	B  []int
 	C  []int
@@ -130,11 +130,11 @@ func randValue(cnt int) (res []int) {
 
 func TestBEIndex_Retrieve2(t *testing.T) {
 	b := NewIndexerBuilder()
-	targets := map[int32]*MockTargeting{}
+	targets := map[DocID]*MockTargeting{}
 
 	for i := 1; i < 10000; i++ {
 		target := &MockTargeting{
-			ID: int32(i),
+			ID: DocID(i),
 			A:  randValue(10),
 			B:  randValue(5),
 			C:  randValue(2),
@@ -147,14 +147,14 @@ func TestBEIndex_Retrieve2(t *testing.T) {
 			doc.AddConjunction(conj)
 			b.AddDocument(doc)
 
-			targets[int32(i)] = target
+			targets[DocID(i)] = target
 		}
 	}
 
 	index := b.BuildIndex()
 
-	idxRes := map[int32]*MockTargeting{}
-	noneIdxRes := map[int32]*MockTargeting{}
+	idxRes := map[DocID]*MockTargeting{}
+	noneIdxRes := map[DocID]*MockTargeting{}
 
 	for i := 0; i < 1000; i++ {
 		A := randValue(10)
@@ -209,7 +209,7 @@ idx:1#288230376151711757#cur:<nil,nil> entries:[<19,true> <60,true>]
 idx:2#288230376151711747#cur:<nil,nil> entries:[<53,true> <54,true>]
 idx:3#288230376151711744#cur:<nil,nil> entries:[<17,true> <33,true>]
 */
-func DocIDToIncludeEntries(ids []int32, k int) (res []EntryID) {
+func DocIDToIncludeEntries(ids []DocID, k int) (res []EntryID) {
 	for _, id := range ids {
 		res = append(res, NewEntryID(NewConjID(id, 0, k), true))
 	}
@@ -220,24 +220,24 @@ func TestBEIndex_Retrieve3(t *testing.T) {
 	plgs := FieldPostingListGroups{
 		NewFieldPostingListGroup(PostingLists{
 			{
-				entries: DocIDToIncludeEntries([]int32{17, 32, 37}, 2),
+				entries: DocIDToIncludeEntries([]DocID{17, 32, 37}, 2),
 			},
 			{
-				entries: DocIDToIncludeEntries([]int32{17, 33}, 2),
+				entries: DocIDToIncludeEntries(DocIDList{17, 33}, 2),
 			},
 			{
-				entries: DocIDToIncludeEntries([]int32{19, 60}, 2),
+				entries: DocIDToIncludeEntries(DocIDList{19, 60}, 2),
 			},
 			{
-				entries: DocIDToIncludeEntries([]int32{53, 54}, 2),
+				entries: DocIDToIncludeEntries(DocIDList{53, 54}, 2),
 			},
 		}...),
 		NewFieldPostingListGroup(PostingLists{
 			{
-				entries: DocIDToIncludeEntries([]int32{10, 19, 27, 32, 54, 81}, 2),
+				entries: DocIDToIncludeEntries(DocIDList{10, 19, 27, 32, 54, 81}, 2),
 			},
 			{
-				entries: DocIDToIncludeEntries([]int32{3, 19, 35, 81}, 2),
+				entries: DocIDToIncludeEntries(DocIDList{3, 19, 35, 81}, 2),
 			},
 		}...),
 	}

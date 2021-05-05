@@ -2,19 +2,19 @@ package be_indexer
 
 import (
 	"fmt"
-	"github.com/HuanGong/be_indexer/parser"
+	"github.com/echoface/be_indexer/parser"
 )
 
 type (
 	IndexerBuilder struct {
-		Documents map[int32]*Document
+		Documents map[DocID]*Document
 		settings  IndexerSettings
 	}
 )
 
 func NewIndexerBuilder() *IndexerBuilder {
 	return &IndexerBuilder{
-		Documents: make(map[int32]*Document),
+		Documents: make(map[DocID]*Document),
 		settings: IndexerSettings{
 			FieldConfig: make(map[BEField]FieldOption),
 		},
@@ -34,7 +34,7 @@ func (b *IndexerBuilder) AddDocument(doc *Document) {
 	b.Documents[doc.ID] = doc
 }
 
-func (b *IndexerBuilder) RemoveDocument(doc int32) bool {
+func (b *IndexerBuilder) RemoveDocument(doc DocID) bool {
 	_, hit := b.Documents[doc]
 	if hit {
 		delete(b.Documents, doc)

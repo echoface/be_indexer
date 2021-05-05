@@ -3,9 +3,8 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/HuanGong/be_indexer"
-	"github.com/HuanGong/be_indexer/parser"
-	"github.com/HuanGong/be_indexer/util"
+	"github.com/echoface/be_indexer"
+	"github.com/echoface/be_indexer/parser"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -47,7 +46,7 @@ func main() {
 		"city": be_indexer.NewValues2("gz"),
 	})
 	fmt.Println("result:", res)
-	if !util.ContainInt32(res, 1) {
+	if !res.Contain(1) {
 		panic(fmt.Errorf("should has result 1"))
 	}
 }

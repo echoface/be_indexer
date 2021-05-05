@@ -3,6 +3,7 @@ package be_indexer
 import "errors"
 
 type (
+	//ConjID max support 56bit len
 	ConjID uint64
 
 	Conjunction struct {
@@ -12,7 +13,7 @@ type (
 	}
 )
 
-func NewConjID(docID int32, index, size int) ConjID {
+func NewConjID(docID DocID, index, size int) ConjID {
 	u := (uint64(docID) << 16) | (uint64(index) << 8) | uint64(size)
 	return ConjID(u)
 }
@@ -25,8 +26,8 @@ func (id ConjID) Index() int {
 	return int((id >> 8) & 0xFF)
 }
 
-func (id ConjID) DocID() int32 {
-	return int32((id >> 16) & 0xFFFFFFFF)
+func (id ConjID) DocID() DocID {
+	return DocID((id >> 16) & 0xFFFFFFFF)
 }
 
 func NewConjunction() *Conjunction {
@@ -69,6 +70,9 @@ func (conj *Conjunction) addExpression(field BEField, inc bool, values Values) {
 	conj.Expressions[field] = &BoolValues{
 		Incl:  inc,
 		Value: values,
+	}
+	if len(conj.Expressions) > 0xFF {
+		panic(errors.New("too much indexing field, maximum 256 field supported"))
 	}
 }
 

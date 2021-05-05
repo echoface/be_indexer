@@ -14,7 +14,7 @@ func TestNewConjID(t *testing.T) {
 			{12, 1, 20},
 		}
 		for _, cs := range cases {
-			id := NewConjID(int32(cs[0]), cs[1], cs[2])
+			id := NewConjID(DocID(cs[0]), cs[1], cs[2])
 			convey.So(id.DocID(), convey.ShouldEqual, cs[0])
 			convey.So(id.Index(), convey.ShouldEqual, cs[1])
 			convey.So(id.Size(), convey.ShouldEqual, cs[2])

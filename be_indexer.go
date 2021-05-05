@@ -2,8 +2,8 @@ package be_indexer
 
 import (
 	"fmt"
-	"github.com/HuanGong/be_indexer/parser"
-	"github.com/HuanGong/be_indexer/util"
+	"github.com/echoface/be_indexer/parser"
+	"github.com/echoface/be_indexer/util"
 	"sort"
 	"strings"
 )
@@ -219,7 +219,7 @@ func (bi *BEIndex) initPostingList(ctx *RetrieveContext, k int) FieldPostingList
 }
 
 // retrieveK MOVE TO: FieldPostingListGroups ?
-func (bi *BEIndex) retrieveK(plgList FieldPostingListGroups, k int) (result []int32) {
+func (bi *BEIndex) retrieveK(plgList FieldPostingListGroups, k int) (result []DocID) {
 	sort.Sort(plgList)
 	for !plgList[k-1].GetCurEntryID().IsNULLEntry() {
 
@@ -254,7 +254,7 @@ func (bi *BEIndex) retrieveK(plgList FieldPostingListGroups, k int) (result []in
 	return result
 }
 
-func (bi *BEIndex) Retrieve(queries Assignments) (result []int32, err error) {
+func (bi *BEIndex) Retrieve(queries Assignments) (result DocIDList, err error) {
 
 	idAssigns, err := bi.parseQueries(queries)
 	if err != nil {

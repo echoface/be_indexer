@@ -2,7 +2,7 @@ package be_indexer
 
 import (
 	"fmt"
-	"github.com/HuanGong/be_indexer/parser"
+	"github.com/echoface/be_indexer/parser"
 )
 
 type (

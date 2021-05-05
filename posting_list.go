@@ -63,13 +63,14 @@ func (s Entries) Swap(i, j int)      { s[i], s[j] = s[j], s[i] }
 func (s Entries) Less(i, j int) bool { return s[i] < s[j] }
 
 func (s Entries) DocString() []string {
-	res := []string{}
+	res := make([]string, 0, len(s))
 	for _, eid := range s {
 		res = append(res, eid.DocString())
 	}
 	return res
 }
 
+//NewEntryID |-- ConjID(48bit) --|-- empty(15bit) -- | --incl/excl(1bit) --|
 func NewEntryID(id ConjID, incl bool) EntryID {
 	if !incl {
 		return EntryID(id << 16)

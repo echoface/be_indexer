@@ -54,26 +54,33 @@ FORCONJ:
 		}
 
 		kSizeEntries := indexer.NewKSizeEntriesIfNeeded(conj.size)
+		type pair struct {
+			key   Key
+			entry EntryID
+		}
+		var pairs []*pair
 
 		for field, expr := range conj.Expressions {
-
 			desc := indexer.GetOrNewFieldDesc(field)
+			entryID := NewEntryID(conj.id, expr.Incl)
 
-			var ids []uint64
 			for _, value := range expr.Value {
-				if res, e := desc.Parser.ParseValue(value); e == nil {
-					ids = append(ids, res...)
-				} else {
+				res, e := desc.Parser.ParseValue(value)
+				if e != nil {
 					Logger.Errorf("field %s parse failed\n", field)
-					Logger.Errorf("value %+v parse fail detail:%+v\n", value, e)
-					break FORCONJ
+					Logger.Errorf("doc:%d, value %+v parse fail err detail:%+v\n", conj.id.DocID(), value, e)
+					continue FORCONJ //break FORCONJ, conjunction as logic unit, just skip this conj if any error occur
+				}
+				for _, id := range res {
+					pairs = append(pairs, &pair{
+						key:   NewKey(desc.ID, id),
+						entry: entryID,
+					})
 				}
 			}
-
-			entryID := NewEntryID(conj.id, expr.Incl)
-			for _, id := range ids {
-				kSizeEntries.AppendEntryID(NewKey(desc.ID, id), entryID)
-			}
+		}
+		for _, v := range pairs {
+			kSizeEntries.AppendEntryID(v.key, v.entry)
 		}
 	}
 }

@@ -7,7 +7,7 @@
 - 在线广告、某些功能模块借助其可以实现非常优雅的代码实现
 - 论文没有提及的多值查询的问题没有直接给出实现提示，但是实际应用中都特别需要支持
 
-这个Golang版本基本上是之前实现的C++版本的clone,[C++实现移步](https://github.com/HuanGong/ltio/blob/master/components/boolean_indexer)
+这个Golang版本基本上是之前实现的C++版本的clone,[C++实现移步](https://github.com/echoface/ltio/blob/master/components/boolean_indexer)
 
 ## usage:
 

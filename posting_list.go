@@ -120,7 +120,26 @@ func (pl *PostingList) GetCurEntryID() EntryID {
 	return pl.entries[pl.cursor]
 }
 
+func (pl *PostingList) LinearSkip(id EntryID) EntryID {
+	entry := pl.GetCurEntryID()
+	if entry > id {
+		return entry
+	}
+
+	size := len(pl.entries)
+	idx := pl.cursor
+	for ; idx < size; idx++ {
+		if pl.entries[idx] > id {
+			break
+		}
+	}
+	pl.cursor = idx
+	return pl.GetCurEntryID()
+}
+
 func (pl *PostingList) Skip(id EntryID) EntryID {
+	//return pl.LinearSkip(id)
+
 	entry := pl.GetCurEntryID()
 	if entry > id {
 		return entry
@@ -145,9 +164,28 @@ func (pl *PostingList) Skip(id EntryID) EntryID {
 	return pl.GetCurEntryID()
 }
 
-func (pl *PostingList) SkipTo(id EntryID) EntryID {
+func (pl *PostingList) LinearSkipTo(id EntryID) EntryID {
 	entry := pl.GetCurEntryID()
-	if entry > id {
+	if entry >= id {
+		return entry
+	}
+
+	size := len(pl.entries)
+	idx := pl.cursor
+	for ; idx < size; idx++ {
+		if pl.entries[idx] >= id {
+			break
+		}
+	}
+	pl.cursor = idx
+	return pl.GetCurEntryID()
+}
+
+func (pl *PostingList) SkipTo(id EntryID) EntryID {
+	//return pl.LinearSkipTo(id)
+
+	entry := pl.GetCurEntryID()
+	if entry >= id {
 		return entry
 	}
 	leftIdx := pl.cursor

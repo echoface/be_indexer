@@ -42,7 +42,7 @@ func (b *IndexerBuilder) RemoveDocument(doc DocID) bool {
 	return hit
 }
 
-func (b *IndexerBuilder) buildDocEntries(indexer *BEIndex, doc *Document, parser parser.FieldValueParser) {
+func (b *IndexerBuilder) buildDocEntries(indexer *BEIndex, doc *Document) {
 
 	doc.Prepare()
 
@@ -81,6 +81,7 @@ FORCONJ:
 		}
 		for _, v := range pairs {
 			kSizeEntries.AppendEntryID(v.key, v.entry)
+			indexer.unionEntries.AppendEntryID(v.key, v.entry)
 		}
 	}
 }
@@ -88,14 +89,13 @@ FORCONJ:
 func (b *IndexerBuilder) BuildIndex() *BEIndex {
 
 	idGen := parser.NewIDAllocatorImpl()
-	comParser := parser.NewCommonStrParser(idGen)
 
 	indexer := NewBEIndex(idGen)
 
 	indexer.ConfigureIndexer(&b.settings)
 
 	for _, doc := range b.Documents {
-		b.buildDocEntries(indexer, doc, comParser)
+		b.buildDocEntries(indexer, doc)
 	}
 	indexer.completeIndex()
 

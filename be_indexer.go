@@ -34,6 +34,7 @@ type (
 
 	BEIndex struct {
 		sizeEntries     []*KSizeEntries
+		unionEntries    *KSizeEntries
 		idAllocator     parser.IDAllocator
 		fieldDesc       map[BEField]*FieldDesc
 		idToField       map[uint64]*FieldDesc
@@ -48,6 +49,9 @@ func NewBEIndex(idGen parser.IDAllocator) *BEIndex {
 		fieldDesc:   make(map[BEField]*FieldDesc),
 		idToField:   make(map[uint64]*FieldDesc),
 		sizeEntries: make([]*KSizeEntries, 0),
+		unionEntries: &KSizeEntries{
+			plEntries: make(map[Key]Entries, 0),
+		},
 	}
 	wildcardDesc := index.configureField("__wildcard__", FieldOption{
 		Parser: parser.CommonParser,
@@ -153,6 +157,10 @@ func (bi *BEIndex) getKSizeEntries(k int) *KSizeEntries {
 	return bi.sizeEntries[k]
 }
 
+func (bi *BEIndex) GetUnionSizeEntries() *KSizeEntries {
+	return bi.unionEntries
+}
+
 func (bi *BEIndex) completeIndex() {
 	for _, sizeEntries := range bi.sizeEntries {
 		sizeEntries.makeEntriesSorted()
@@ -160,6 +168,7 @@ func (bi *BEIndex) completeIndex() {
 	if bi.wildcardEntries.Len() > 0 {
 		sort.Sort(bi.wildcardEntries)
 	}
+	bi.unionEntries.makeEntriesSorted()
 }
 
 // parse queries value to value id list
@@ -284,6 +293,90 @@ func (bi *BEIndex) Retrieve(queries Assignments) (result DocIDList, err error) {
 	return result, nil
 }
 
+func (bi *BEIndex) UnionRetrieve(queries Assignments) (result DocIDList, err error) {
+
+	idAssigns, err := bi.parseQueries(queries)
+	if err != nil {
+		Logger.Errorf("invalid query assigns:%s", err.Error())
+		return nil, err
+	}
+
+	ctx := &RetrieveContext{
+		idAssigns: idAssigns,
+	}
+
+	plgs := make(FieldPostingListGroups, 0, len(ctx.idAssigns))
+
+	if len(bi.wildcardEntries) > 0 {
+		pl := NewPostingList(bi.wildcardKey, bi.wildcardEntries)
+		plgs = append(plgs, NewFieldPostingListGroup(pl))
+	}
+
+	for field, ids := range ctx.idAssigns {
+		desc := bi.fieldDesc[field]
+
+		pls := PostingLists{}
+		for _, id := range ids {
+			key := NewKey(desc.ID, id)
+			if entries := bi.unionEntries.getEntries(key); len(entries) > 0 {
+				pls = append(pls, NewPostingList(key, entries))
+			}
+		}
+		if len(pls) > 0 {
+			plgs = append(plgs, NewFieldPostingListGroup(pls...))
+		}
+	}
+
+	plgsCount := len(plgs)
+	if plgsCount == 0 {
+		return result, nil
+	}
+
+	Logger.Debugf("plgs count:%d", plgsCount, plgs.Dump())
+	sort.Sort(plgs)
+	for !plgs[0].GetCurEntryID().IsNULLEntry() {
+
+		eid := plgs[0].GetCurEntryID()
+
+		k := eid.GetConjID().Size()
+		if k == 0 {
+			k = 1
+		}
+
+		nextID := eid + 1
+
+		endEID := plgs[plgsCount-1].GetCurEntryID()
+		if k <= plgsCount {
+			endEID = plgs[k-1].GetCurEntryID()
+		}
+
+		if eid == endEID && k <= plgsCount {
+
+			nextID = endEID + 1
+
+			if eid.IsInclude() {
+
+				result = append(result, eid.GetConjID().DocID())
+
+			} else { //exclude
+
+				for i := k; i < plgs.Len(); i++ {
+					if plgs[i].GetCurConjID() != eid.GetConjID() {
+						break
+					}
+					plgs[i].Skip(nextID)
+				}
+			}
+		}
+		// 推进游标
+		for i := 0; i < util.MinInt(k, plgsCount); i++ {
+			plgs[i].SkipTo(nextID)
+		}
+		sort.Sort(plgs)
+	}
+	return result, nil
+}
+
 func (bi *BEIndex) DumpSizeEntries() string {
 	sb := strings.Builder{}
 	sb.WriteString(fmt.Sprintf("Z:>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>\n"))
@@ -300,6 +393,23 @@ func (bi *BEIndex) DumpSizeEntries() string {
 			sb.WriteString(fmt.Sprintf("%v", entries.DocString()))
 			sb.WriteString("\n")
 		}
+	}
+	return sb.String()
+}
+
+func (bi *BEIndex) DumpUnionEntries() string {
+	sb := strings.Builder{}
+
+	sb.WriteString(fmt.Sprintf("Z:>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>\n"))
+	sb.WriteString(bi.StringKey(bi.wildcardKey))
+	sb.WriteString(":")
+	sb.WriteString(fmt.Sprintf("%v", bi.wildcardEntries.DocString()))
+	sb.WriteString("\n")
+	for k, entries := range bi.unionEntries.plEntries {
+		sb.WriteString(bi.StringKey(k))
+		sb.WriteString(":")
+		sb.WriteString(fmt.Sprintf("%v", entries.DocString()))
+		sb.WriteString("\n")
 	}
 	return sb.String()
 }

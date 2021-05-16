@@ -25,6 +25,8 @@ type (
 
 	KSizeEntries struct {
 		// posting list entries(sorted); eg: <age, 15>: []EntryID{1, 2, 3}
+		maxLen    int64 // max length of Entries
+		avgLen    int64 // avg length of Entries
 		plEntries map[Key]Entries
 	}
 
@@ -118,8 +120,16 @@ func (bi *BEIndex) maxK() int {
 }
 
 func (kse *KSizeEntries) makeEntriesSorted() {
+	var total int64
 	for _, entries := range kse.plEntries {
 		sort.Sort(entries)
+		if kse.maxLen < int64(len(entries)) {
+			kse.maxLen = int64(len(entries))
+		}
+		total += int64(len(entries))
+	}
+	if len(kse.plEntries) > 0 {
+		kse.avgLen = total / int64(len(kse.plEntries))
 	}
 }
 
@@ -173,7 +183,7 @@ func (bi *BEIndex) completeIndex() {
 
 // parse queries value to value id list
 func (bi *BEIndex) parseQueries(queries Assignments) (map[BEField][]uint64, error) {
-	idAssigns := make(map[BEField][]uint64, 0)
+	idAssigns := make(map[BEField][]uint64, len(queries))
 
 	for field, values := range queries {
 		if !bi.hasField(field) {
@@ -185,7 +195,7 @@ func (bi *BEIndex) parseQueries(queries Assignments) (map[BEField][]uint64, erro
 			continue
 		}
 
-		res := make([]uint64, 0, len(values)/2+1)
+		res := make([]uint64, 0, len(values))
 		for _, value := range values {
 			ids, err := desc.Parser.ParseAssign(value)
 			if err != nil {
@@ -213,7 +223,7 @@ func (bi *BEIndex) initPostingList(ctx *RetrieveContext, k int) FieldPostingList
 
 		desc := bi.fieldDesc[field]
 
-		pls := PostingLists{}
+		pls := make(PostingLists, 0, len(ids))
 		for _, id := range ids {
 			key := NewKey(desc.ID, id)
 			if entries := kSizeEntries.getEntries(key); len(entries) > 0 {
@@ -229,7 +239,10 @@ func (bi *BEIndex) initPostingList(ctx *RetrieveContext, k int) FieldPostingList
 
 // retrieveK MOVE TO: FieldPostingListGroups ?
 func (bi *BEIndex) retrieveK(plgList FieldPostingListGroups, k int) (result []DocID) {
-	sort.Sort(plgList)
+	result = make([]DocID, 0, 256)
+
+	//sort.Sort(plgList)
+	SortPostingListGroups(plgList)
 	for !plgList[k-1].GetCurEntryID().IsNULLEntry() {
 
 		eid := plgList[0].GetCurEntryID()
@@ -257,9 +270,9 @@ func (bi *BEIndex) retrieveK(plgList FieldPostingListGroups, k int) (result []Do
 		for i := 0; i < k; i++ {
 			plgList[i].SkipTo(nextID)
 		}
-		sort.Sort(plgList)
+		//sort.Sort(plgList)
+		SortPostingListGroups(plgList)
 	}
-	Logger.Debugf("k:%d, retrieve docs:%+v\n", k, result)
 	return result
 }
 
@@ -288,7 +301,6 @@ func (bi *BEIndex) Retrieve(queries Assignments) (result DocIDList, err error) {
 		}
 		res := bi.retrieveK(plgs, tempK)
 		result = append(result, res...)
-		Logger.Debugf("k:%d,res:%+v,entries:%s", k, res, plgs.Dump())
 	}
 	return result, nil
 }
@@ -305,7 +317,7 @@ func (bi *BEIndex) UnionRetrieve(queries Assignments) (result DocIDList, err err
 		idAssigns: idAssigns,
 	}
 
-	plgs := make(FieldPostingListGroups, 0, len(ctx.idAssigns))
+	plgs := make([]*FieldPostingListGroup, 0, len(ctx.idAssigns))
 
 	if len(bi.wildcardEntries) > 0 {
 		pl := NewPostingList(bi.wildcardKey, bi.wildcardEntries)
@@ -315,7 +327,7 @@ func (bi *BEIndex) UnionRetrieve(queries Assignments) (result DocIDList, err err
 	for field, ids := range ctx.idAssigns {
 		desc := bi.fieldDesc[field]
 
-		pls := PostingLists{}
+		pls := make([]*PostingList, 0, len(ids))
 		for _, id := range ids {
 			key := NewKey(desc.ID, id)
 			if entries := bi.unionEntries.getEntries(key); len(entries) > 0 {
@@ -327,30 +339,38 @@ func (bi *BEIndex) UnionRetrieve(queries Assignments) (result DocIDList, err err
 		}
 	}
 
-	plgsCount := len(plgs)
-	if plgsCount == 0 {
+	if len(plgs) == 0 {
 		return result, nil
 	}
 
-	Logger.Debugf("plgs count:%d", plgsCount, plgs.Dump())
-	sort.Sort(plgs)
-	for !plgs[0].GetCurEntryID().IsNULLEntry() {
+	result = make([]DocID, 0, 128)
 
+	SortPostingListGroups(plgs)
+PICKDOC:
+	for {
 		eid := plgs[0].GetCurEntryID()
 
+		// K mean for this plgs, a doc match need k number same eid in every plg
 		k := eid.GetConjID().Size()
 		if k == 0 {
 			k = 1
 		}
-
-		nextID := eid + 1
-
-		endEID := plgs[plgsCount-1].GetCurEntryID()
-		if k <= plgsCount {
-			endEID = plgs[k-1].GetCurEntryID()
+		// remove finished posting list
+		for plgs[len(plgs)-1].GetCurEntryID().IsNULLEntry() {
+			plgs = plgs[:len(plgs)-1]
+		}
+		// mean any conjunction its size = k will not match, wil can fast skip to min entry that conjunction size > k
+		if k > len(plgs) {
+			break PICKDOC
 		}
 
-		if eid == endEID && k <= plgsCount {
+		// k <= plgsCount
+		// check whether eid  plgs[k-1].GetCurEntryID equal
+		endEID := plgs[k-1].GetCurEntryID()
+
+		nextID := endEID
+
+		if eid == endEID {
 
 			nextID = endEID + 1
 
@@ -360,7 +380,7 @@ func (bi *BEIndex) UnionRetrieve(queries Assignments) (result DocIDList, err err
 
 			} else { //exclude
 
-				for i := k; i < plgs.Len(); i++ {
+				for i := k; i < len(plgs); i++ {
 					if plgs[i].GetCurConjID() != eid.GetConjID() {
 						break
 					}
@@ -369,10 +389,11 @@ func (bi *BEIndex) UnionRetrieve(queries Assignments) (result DocIDList, err err
 			}
 		}
 		// 推进游标
-		for i := 0; i < util.MinInt(k, plgsCount); i++ {
+		for i := 0; i < k; i++ {
 			plgs[i].SkipTo(nextID)
 		}
-		sort.Sort(plgs)
+
+		SortPostingListGroups(plgs)
 	}
 	return result, nil
 }
@@ -386,13 +407,24 @@ func (bi *BEIndex) DumpSizeEntries() string {
 	sb.WriteString("\n")
 
 	for idx, ke := range bi.sizeEntries {
-		sb.WriteString(fmt.Sprintf("K:%d >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>\n", idx))
+		sb.WriteString(fmt.Sprintf("K:%d  avgLen:%d maxLen:%d >>>>>>\n", idx, ke.avgLen, ke.maxLen))
 		for k, entries := range ke.plEntries {
 			sb.WriteString(bi.StringKey(k))
 			sb.WriteString(":")
 			sb.WriteString(fmt.Sprintf("%v", entries.DocString()))
 			sb.WriteString("\n")
 		}
+	}
+	return sb.String()
+}
+
+func (bi *BEIndex) DumpEntriesSummary() string {
+	sb := strings.Builder{}
+	sb.WriteString(fmt.Sprintf("wildcard entries length:%d >>>>>>\n", len(bi.wildcardEntries)))
+	ues := bi.GetUnionSizeEntries()
+	sb.WriteString(fmt.Sprintf("unionEntries avgLen:%d maxLen:%d >>>>>>\n", ues.avgLen, ues.maxLen))
+	for k, kse := range bi.sizeEntries {
+		sb.WriteString(fmt.Sprintf("SizeEntries k:%d avgLen:%d maxLen:%d >>>>>>\n", k, kse.avgLen, kse.maxLen))
 	}
 	return sb.String()
 }
@@ -405,6 +437,8 @@ func (bi *BEIndex) DumpUnionEntries() string {
 	sb.WriteString(":")
 	sb.WriteString(fmt.Sprintf("%v", bi.wildcardEntries.DocString()))
 	sb.WriteString("\n")
+	sb.WriteString(fmt.Sprintf("unionEntries avgLen:%d maxLen:%d >>>>>>\n",
+		bi.unionEntries.avgLen, bi.unionEntries.maxLen))
 	for k, entries := range bi.unionEntries.plEntries {
 		sb.WriteString(bi.StringKey(k))
 		sb.WriteString(":")

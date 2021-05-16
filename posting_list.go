@@ -10,6 +10,8 @@ const (
 
 	MaxBEFieldID uint64 = 0xFF             // 8bit
 	MaxBEValueID uint64 = 0xFFFFFFFFFFFFFF // 56bit
+
+	LinearSearchLengthThreshold = 128
 )
 
 type (
@@ -109,12 +111,8 @@ func NewPostingList(key Key, entries Entries) *PostingList {
 	}
 }
 
-func (pl *PostingList) ReachEnd() bool {
-	return pl.entries == nil || len(pl.entries) <= pl.cursor
-}
-
 func (pl *PostingList) GetCurEntryID() EntryID {
-	if pl.ReachEnd() {
+	if len(pl.entries) <= pl.cursor {
 		return NULLENTRY
 	}
 	return pl.entries[pl.cursor]
@@ -125,42 +123,39 @@ func (pl *PostingList) LinearSkip(id EntryID) EntryID {
 	if entry > id {
 		return entry
 	}
-
 	size := len(pl.entries)
-	idx := pl.cursor
-	for ; idx < size; idx++ {
-		if pl.entries[idx] > id {
-			break
-		}
+	for ; pl.cursor < size && pl.entries[pl.cursor] <= id; pl.cursor++ {
 	}
-	pl.cursor = idx
 	return pl.GetCurEntryID()
 }
 
 func (pl *PostingList) Skip(id EntryID) EntryID {
-	//return pl.LinearSkip(id)
 
 	entry := pl.GetCurEntryID()
 	if entry > id {
 		return entry
 	}
 
-	leftIdx := pl.cursor
-	rightIdx := len(pl.entries)
+	//according generated asm code, for a reference slice, len() have overhead
+	size := len(pl.entries)
+
+	rightIdx := size
 	var mid int
-	for leftIdx < rightIdx {
-		mid = (leftIdx + rightIdx) >> 1
-		tId := pl.entries[mid]
-		if tId <= id {
-			leftIdx = mid + 1
+	for pl.cursor < rightIdx {
+		if rightIdx-pl.cursor < LinearSearchLengthThreshold {
+			return pl.LinearSkip(id)
+		}
+
+		mid = (pl.cursor + rightIdx) >> 1
+		if pl.entries[mid] <= id {
+			pl.cursor = mid + 1
 		} else {
 			rightIdx = mid
 		}
-		if leftIdx >= len(pl.entries) || pl.entries[leftIdx] > id {
+		if pl.cursor >= size || pl.entries[pl.cursor] > id {
 			break
 		}
 	}
-	pl.cursor = leftIdx
 	return pl.GetCurEntryID()
 }
 
@@ -169,41 +164,37 @@ func (pl *PostingList) LinearSkipTo(id EntryID) EntryID {
 	if entry >= id {
 		return entry
 	}
-
 	size := len(pl.entries)
-	idx := pl.cursor
-	for ; idx < size; idx++ {
-		if pl.entries[idx] >= id {
-			break
-		}
+	for ; pl.cursor < size && pl.entries[pl.cursor] < id; pl.cursor++ {
 	}
-	pl.cursor = idx
 	return pl.GetCurEntryID()
 }
 
 func (pl *PostingList) SkipTo(id EntryID) EntryID {
-	//return pl.LinearSkipTo(id)
-
 	entry := pl.GetCurEntryID()
 	if entry >= id {
 		return entry
 	}
-	leftIdx := pl.cursor
-	rightIdx := len(pl.entries)
+
+	//according generated asm code, for a reference slice, len() have overhead
+	size := len(pl.entries)
+	rightIdx := size
+
 	var mid int
-	for leftIdx < rightIdx {
-		mid = (leftIdx + rightIdx) >> 1
-		tId := pl.entries[mid]
-		if tId >= id {
+	for pl.cursor < rightIdx {
+		if rightIdx-pl.cursor < LinearSearchLengthThreshold {
+			return pl.LinearSkipTo(id)
+		}
+		mid = (pl.cursor + rightIdx) >> 1
+		if pl.entries[mid] >= id {
 			rightIdx = mid
 		} else {
-			leftIdx = mid + 1
+			pl.cursor = mid + 1
 		}
-		if leftIdx >= len(pl.entries) || pl.entries[leftIdx] >= id {
+		if pl.cursor >= size || pl.entries[pl.cursor] >= id {
 			break
 		}
 	}
-	pl.cursor = leftIdx
 	return pl.GetCurEntryID()
 }
 
@@ -212,6 +203,27 @@ func (s FieldPostingListGroups) Len() int      { return len(s) }
 func (s FieldPostingListGroups) Swap(i, j int) { s[i], s[j] = s[j], s[i] }
 func (s FieldPostingListGroups) Less(i, j int) bool {
 	return s[i].GetCurEntryID() < s[j].GetCurEntryID()
+}
+
+func SortPostingListGroups(plgs []*FieldPostingListGroup) {
+	x := len(plgs)
+	if x <= 1 {
+		return
+	}
+	// Do ShellSort pass with gap 6
+	// It could be written in this simplified form cause b-a <= 12
+	if x <= 12 { // make it seems sorted
+		for i := 6; i < x; i++ {
+			if plgs[i].GetCurEntryID() < plgs[i-6].GetCurEntryID() {
+				plgs[i], plgs[i-6] = plgs[i-6], plgs[i]
+			}
+		}
+	}
+	for i := 1; i < x; i++ {
+		for j := i; j > 0 && plgs[j].GetCurEntryID() < plgs[j-1].GetCurEntryID(); j-- {
+			plgs[j], plgs[j-1] = plgs[j-1], plgs[j]
+		}
+	}
 }
 
 func (s FieldPostingListGroups) Dump() string {

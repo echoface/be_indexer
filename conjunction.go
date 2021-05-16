@@ -13,21 +13,22 @@ type (
 	}
 )
 
+//NewConjID (reserved(16))| size(8bit) | index(8bit)  | docID(32bit)
 func NewConjID(docID DocID, index, size int) ConjID {
-	u := (uint64(docID) << 16) | (uint64(index) << 8) | uint64(size)
+	u := (uint64(size) << 40) | (uint64(index) << 32) | (uint64(docID))
 	return ConjID(u)
 }
 
-func (id ConjID) Size() int {
-	return int(id & 0xFF)
+func (id ConjID) Index() int {
+	return int((id >> 32) & 0xFF)
 }
 
-func (id ConjID) Index() int {
-	return int((id >> 8) & 0xFF)
+func (id ConjID) Size() int {
+	return int((id >> 40) & 0xFF)
 }
 
 func (id ConjID) DocID() DocID {
-	return DocID((id >> 16) & 0xFFFFFFFF)
+	return DocID(id & 0xFFFFFFFF)
 }
 
 func NewConjunction() *Conjunction {

@@ -16,12 +16,18 @@ func TestPostingList_Skip(t *testing.T) {
 			entries: []EntryID{1, 2, 3, 10, 10, 10, 11, 12, 15, 15, 22, 111, 111},
 		}
 		convey.So(pl.Skip(0), convey.ShouldEqual, 1)
+
 		convey.So(pl.Skip(1), convey.ShouldEqual, 2)
+		fmt.Println("skip test finish, 01")
 		convey.So(pl.Skip(10), convey.ShouldEqual, 11)
+		fmt.Println("skip test finish, 02")
 		convey.So(pl.Skip(15), convey.ShouldEqual, 22)
+		fmt.Println("skip test finish, 03")
 		convey.So(pl.Skip(111), convey.ShouldEqual, NULLENTRY)
+		fmt.Println("skip test finish, 04")
 		convey.So(pl.Skip(2), convey.ShouldEqual, NULLENTRY)
 	})
+	fmt.Println("skip test finish")
 
 	convey.Convey("skip to test", t, func() {
 		pl := PostingList{
@@ -44,6 +50,7 @@ func TestPostingList_Skip(t *testing.T) {
 		convey.So(pl.cursor, convey.ShouldEqual, len(pl.entries)-2)
 		convey.So(pl.SkipTo(1000), convey.ShouldEqual, NULLENTRY)
 	})
+	fmt.Println("skipto test finish")
 }
 
 func TestEntries_Less(t *testing.T) {

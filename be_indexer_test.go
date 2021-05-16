@@ -155,7 +155,7 @@ func TestBEIndex_Retrieve2(t *testing.T) {
 	}
 
 	index := b.BuildIndex()
-
+	fmt.Println("summary", index.DumpEntriesSummary())
 	type Q struct {
 		A []int
 		B []int
@@ -166,7 +166,7 @@ func TestBEIndex_Retrieve2(t *testing.T) {
 	var Qs []Q
 	var assigns []Assignments
 
-	for i := 0; i < 1; i++ {
+	for i := 0; i < 1000; i++ {
 		q := Q{
 			A: randValue(1),
 			B: randValue(2),

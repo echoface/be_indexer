@@ -2,10 +2,13 @@ package main
 
 import (
 	"encoding/json"
+	"flag"
 	"fmt"
 	"github.com/echoface/be_indexer"
 	"github.com/echoface/be_indexer/util"
 	"math/rand"
+	"os"
+	"runtime/pprof"
 	"time"
 )
 
@@ -69,24 +72,34 @@ func (t *MockTargeting) Match(a, b, c, d []int) bool {
 func randValue(cnt int) (res []int) {
 	cnt = rand.Int() % cnt
 	for i := 0; i < cnt; i++ {
-		res = append(res, rand.Intn(2000))
+		res = append(res, rand.Intn(200))
 	}
 	return util.DistinctInt(res)
 }
 
+var docCount int
+var enableProfiling bool
+
+func init() {
+	flag.IntVar(&docCount, "c", 100000, "index document count")
+	flag.BoolVar(&enableProfiling, "profile", false, "enable cpu profiling")
+}
+
 func main() {
+	flag.Parse()
+
 	b := be_indexer.NewIndexerBuilder()
 	targets := map[be_indexer.DocID]*MockTargeting{}
 
 	be_indexer.LogLevel = be_indexer.ErrorLevel
 
-	for i := 1; i < 100000; i++ {
+	for i := 1; i < docCount; i++ {
 		target := &MockTargeting{
 			ID: be_indexer.DocID(i),
-			A:  randValue(10),
-			B:  randValue(50),
-			C:  randValue(100),
-			D:  randValue(150),
+			A:  randValue(3),
+			B:  randValue(5),
+			C:  randValue(10),
+			D:  randValue(30),
 		}
 
 		conj := target.ToConj()
@@ -100,6 +113,7 @@ func main() {
 	}
 
 	index := b.BuildIndex()
+	fmt.Println("entries summary:", index.DumpEntriesSummary())
 
 	type Q struct {
 		A []int
@@ -111,12 +125,12 @@ func main() {
 	var Qs []Q
 	var assigns []be_indexer.Assignments
 
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 1000; i++ {
 		q := Q{
-			A: randValue(1),
-			B: randValue(2),
-			C: randValue(2),
-			D: randValue(1),
+			A: randValue(10),
+			B: randValue(5),
+			C: randValue(3),
+			D: randValue(2),
 		}
 		Qs = append(Qs, q)
 		assign := be_indexer.Assignments{}
@@ -137,43 +151,54 @@ func main() {
 
 	idxRes := make(map[int][]be_indexer.DocID)
 	idxUnionRes := make(map[int][]be_indexer.DocID)
-	noneIdxRes := make(map[int][]be_indexer.DocID)
+	//noneIdxRes := make(map[int][]be_indexer.DocID)
 
-	start := time.Now().UnixNano() / 1000000
-	for idx, q := range Qs {
-		for id, target := range targets {
-			if target.Match(q.A, q.B, q.C, q.D) {
-				noneIdxRes[idx] = append(noneIdxRes[idx], id)
-			}
+	if enableProfiling {
+		f, err := os.OpenFile("cpu.prof", os.O_RDWR|os.O_CREATE, 0644)
+		if err != nil {
+			panic(err)
 		}
+		pprof.StartCPUProfile(f)
+		defer func() {
+			pprof.StopCPUProfile()
+			f.Close()
+			time.Sleep(time.Second)
+		}()
 	}
+	start := time.Now().UnixNano() / 1000000
+	//for idx, q := range Qs {
+	//	for id, target := range targets {
+	//		if target.Match(q.A, q.B, q.C, q.D) {
+	//			noneIdxRes[idx] = append(noneIdxRes[idx], id)
+	//		}
+	//	}
+	//}
 	fmt.Printf("NontIndexQuery Take %d(ms)\n", time.Now().UnixNano()/1000000-start)
 
 	start = time.Now().UnixNano() / 1000000
 	for idx, ass := range assigns {
 		ids, _ := index.Retrieve(ass)
 		idxRes[idx] = ids
-		if len(noneIdxRes[idx]) != len(ids) {
-			fmt.Println("idxRes:", ids)
-			fmt.Println("noneIdxRes:", noneIdxRes[idx])
-			fmt.Println(index.DumpSizeEntries())
-
-			panic(nil)
-		}
+		//if len(noneIdxRes[idx]) != len(ids) {
+		//	fmt.Println("idxRes:", ids)
+		//	fmt.Println("noneIdxRes:", noneIdxRes[idx])
+		//	fmt.Println(index.DumpSizeEntries())
+		//
+		//	panic(nil)
+		//}
 	}
 	fmt.Printf("IndexQuery Take %d(ms)\n", time.Now().UnixNano()/1000000-start)
-
+	time.Sleep(1 * time.Second)
 	start = time.Now().UnixNano() / 1000000
 	for idx, ass := range assigns {
 		ids, _ := index.UnionRetrieve(ass)
 		idxUnionRes[idx] = ids
-		if len(ids) != len(noneIdxRes[idx]) {
-			fmt.Printf("unionIdxRes:%+v\n", ids)
-			fmt.Printf("noneIdxRes:%+v\n", noneIdxRes[idx])
-			fmt.Println(index.DumpUnionEntries())
-			panic(nil)
-		}
+		//if len(ids) != len(noneIdxRes[idx]) {
+		//	fmt.Printf("unionIdxRes:%+v\n", ids)
+		//	fmt.Printf("noneIdxRes:%+v\n", noneIdxRes[idx])
+		//	fmt.Println(index.DumpUnionEntries())
+		//	panic(nil)
+		//}
 	}
 	fmt.Printf("UnionIndexQuery Take %d(ms)\n", time.Now().UnixNano()/1000000-start)
-
 }

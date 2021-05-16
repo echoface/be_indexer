@@ -24,13 +24,6 @@ func buildTestDoc() []*Document {
 	return docs
 }
 
-func EntriesToDocs(entries Entries) (res []DocID) {
-	for _, eid := range entries {
-		res = append(res, eid.GetConjID().DocID())
-	}
-	return
-}
-
 func TestBEIndex_Retrieve(t *testing.T) {
 	LogLevel = InfoLevel
 
@@ -44,7 +37,7 @@ func TestBEIndex_Retrieve(t *testing.T) {
 
 	indexer := builder.BuildIndex()
 
-	fmt.Println(indexer.DumpSizeEntries())
+	fmt.Println(indexer.DumpEntries())
 
 	result, e := indexer.Retrieve(map[BEField]Values{
 		"age": NewValues2(5),
@@ -155,7 +148,10 @@ func TestBEIndex_Retrieve2(t *testing.T) {
 	}
 
 	index := b.BuildIndex()
+	compactedIndex := b.BuildCompactedIndex()
 	fmt.Println("summary", index.DumpEntriesSummary())
+	fmt.Println("compactedIndex summary", compactedIndex.DumpEntriesSummary())
+
 	type Q struct {
 		A []int
 		B []int
@@ -166,7 +162,7 @@ func TestBEIndex_Retrieve2(t *testing.T) {
 	var Qs []Q
 	var assigns []Assignments
 
-	for i := 0; i < 1000; i++ {
+	for i := 0; i < 10000; i++ {
 		q := Q{
 			A: randValue(1),
 			B: randValue(2),
@@ -211,7 +207,7 @@ func TestBEIndex_Retrieve2(t *testing.T) {
 		if len(noneIdxRes[idx]) != len(ids) {
 			fmt.Println("idxRes:", ids)
 			fmt.Println("noneIdxRes:", noneIdxRes[idx])
-			fmt.Println(index.DumpSizeEntries())
+			fmt.Println(index.DumpEntries())
 
 			panic(nil)
 		}
@@ -220,12 +216,12 @@ func TestBEIndex_Retrieve2(t *testing.T) {
 
 	start = time.Now().UnixNano() / 1000000
 	for idx, ass := range assigns {
-		ids, _ := index.UnionRetrieve(ass)
+		ids, _ := compactedIndex.Retrieve(ass)
 		idxUnionRes[idx] = ids
 		if len(ids) != len(noneIdxRes[idx]) {
 			fmt.Printf("unionIdxRes:%+v\n", ids)
 			fmt.Printf("noneIdxRes:%+v\n", noneIdxRes[idx])
-			fmt.Println(index.DumpUnionEntries())
+			fmt.Println(index.DumpEntries())
 			panic(nil)
 		}
 	}
@@ -252,8 +248,8 @@ func DocIDToIncludeEntries(ids []DocID, k int) (res []EntryID) {
 }
 
 func TestBEIndex_Retrieve3(t *testing.T) {
-	plgs := FieldPostingListGroups{
-		NewFieldPostingListGroup(PostingLists{
+	plgs := FieldScannerGroups{
+		NewFieldPostingListGroup(EntriesScanners{
 			{
 				entries: DocIDToIncludeEntries([]DocID{17, 32, 37}, 2),
 			},
@@ -267,7 +263,7 @@ func TestBEIndex_Retrieve3(t *testing.T) {
 				entries: DocIDToIncludeEntries(DocIDList{53, 54}, 2),
 			},
 		}...),
-		NewFieldPostingListGroup(PostingLists{
+		NewFieldPostingListGroup(EntriesScanners{
 			{
 				entries: DocIDToIncludeEntries(DocIDList{10, 19, 27, 32, 54, 81}, 2),
 			},
@@ -280,7 +276,7 @@ func TestBEIndex_Retrieve3(t *testing.T) {
 		plg.current = plg.plGroup[0]
 	}
 
-	index := &BEIndex{}
+	index := &SizeGroupedBEIndex{}
 	fmt.Println(index.retrieveK(plgs, 2))
 }
 
@@ -302,24 +298,12 @@ func TestBEIndex_Retrieve4(t *testing.T) {
 	fmt.Println(indexer.Retrieve(Assignments{
 		"age": NewInt32Values2(1),
 	}))
-	fmt.Println(indexer.UnionRetrieve(Assignments{
-		"age": NewInt32Values2(1),
-	}))
-
 	fmt.Println(indexer.Retrieve(Assignments{
-		"age": NewInt32Values2(25),
-		"tag": NewInt32Values2(1),
-	}))
-	fmt.Println(indexer.UnionRetrieve(Assignments{
 		"age": NewInt32Values2(25),
 		"tag": NewInt32Values2(1),
 	}))
 
 	fmt.Println(indexer.Retrieve(Assignments{
-		"age": NewIntValues2(40),
-		"tag": NewInt32Values2(1),
-	}))
-	fmt.Println(indexer.UnionRetrieve(Assignments{
 		"age": NewIntValues2(40),
 		"tag": NewInt32Values2(1),
 	}))

@@ -42,7 +42,7 @@ func (b *IndexerBuilder) RemoveDocument(doc DocID) bool {
 	return hit
 }
 
-func (b *IndexerBuilder) buildDocEntries(indexer *BEIndex, doc *Document) {
+func (b *IndexerBuilder) buildDocEntries(indexer BEIndex, doc *Document) {
 
 	doc.Prepare()
 
@@ -50,10 +50,10 @@ FORCONJ:
 	for _, conj := range doc.Cons {
 
 		if conj.size == 0 {
-			indexer.wildcardEntries = append(indexer.wildcardEntries, NewEntryID(conj.id, true))
+			indexer.appendWildcardEntryID(NewEntryID(conj.id, true))
 		}
 
-		kSizeEntries := indexer.NewKSizeEntriesIfNeeded(conj.size)
+		kSizeEntries := indexer.newPostingEntriesIfNeeded(conj.size)
 		type pair struct {
 			key   Key
 			entry EntryID
@@ -61,7 +61,7 @@ FORCONJ:
 		var pairs []*pair
 
 		for field, expr := range conj.Expressions {
-			desc := indexer.GetOrNewFieldDesc(field)
+			desc := indexer.newFieldDescIfNeeded(field)
 			entryID := NewEntryID(conj.id, expr.Incl)
 
 			for _, value := range expr.Value {
@@ -81,16 +81,31 @@ FORCONJ:
 		}
 		for _, v := range pairs {
 			kSizeEntries.AppendEntryID(v.key, v.entry)
-			indexer.unionEntries.AppendEntryID(v.key, v.entry)
 		}
 	}
 }
 
-func (b *IndexerBuilder) BuildIndex() *BEIndex {
+func (b *IndexerBuilder) BuildIndex() BEIndex {
 
 	idGen := parser.NewIDAllocatorImpl()
 
-	indexer := NewBEIndex(idGen)
+	indexer := NewSizeGroupedBEIndex(idGen)
+
+	indexer.ConfigureIndexer(&b.settings)
+
+	for _, doc := range b.Documents {
+		b.buildDocEntries(indexer, doc)
+	}
+	indexer.completeIndex()
+
+	return indexer
+}
+
+func (b *IndexerBuilder) BuildCompactedIndex() BEIndex {
+
+	idGen := parser.NewIDAllocatorImpl()
+
+	indexer := NewCompactedBEIndex(idGen)
 
 	indexer.ConfigureIndexer(&b.settings)
 

@@ -113,7 +113,10 @@ func main() {
 	}
 
 	index := b.BuildIndex()
-	fmt.Println("entries summary:", index.DumpEntriesSummary())
+	fmt.Println("index summary:", index.DumpEntriesSummary())
+
+	compactedIndex := b.BuildCompactedIndex()
+	fmt.Println("compactedIndex summary:", compactedIndex.DumpEntriesSummary())
 
 	type Q struct {
 		A []int
@@ -187,11 +190,11 @@ func main() {
 		//	panic(nil)
 		//}
 	}
-	fmt.Printf("IndexQuery Take %d(ms)\n", time.Now().UnixNano()/1000000-start)
-	time.Sleep(1 * time.Second)
+	fmt.Printf("SizeGroupedIndexQuery Take %d(ms)\n", time.Now().UnixNano()/1000000-start)
+
 	start = time.Now().UnixNano() / 1000000
 	for idx, ass := range assigns {
-		ids, _ := index.UnionRetrieve(ass)
+		ids, _ := compactedIndex.Retrieve(ass)
 		idxUnionRes[idx] = ids
 		//if len(ids) != len(noneIdxRes[idx]) {
 		//	fmt.Printf("unionIdxRes:%+v\n", ids)
@@ -200,5 +203,5 @@ func main() {
 		//	panic(nil)
 		//}
 	}
-	fmt.Printf("UnionIndexQuery Take %d(ms)\n", time.Now().UnixNano()/1000000-start)
+	fmt.Printf("CompactedIndexQuery Take %d(ms)\n", time.Now().UnixNano()/1000000-start)
 }

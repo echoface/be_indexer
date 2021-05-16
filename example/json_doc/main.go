@@ -39,7 +39,7 @@ func main() {
 	builder.SetFieldParser("age", parser.NumRangeParser)
 
 	indexer := builder.BuildIndex()
-	fmt.Println(indexer.DumpSizeEntries())
+	fmt.Println(indexer.DumpEntries())
 
 	res, _ := indexer.Retrieve(map[be_indexer.BEField]be_indexer.Values{
 		"age":  be_indexer.NewValues2(19),

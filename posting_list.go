@@ -2,6 +2,7 @@ package be_indexer
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -10,6 +11,8 @@ const (
 
 	MaxBEFieldID uint64 = 0xFF             // 8bit
 	MaxBEValueID uint64 = 0xFFFFFFFFFFFFFF // 56bit
+
+	LinearSearchLengthThreshold = 128
 )
 
 type (
@@ -23,22 +26,29 @@ type (
 	/* represent a posting list for one Assign */
 	// (age, 15): [1, 2, 5, 19, 22]
 	// cursor:           ^
-	PostingList struct {
+	EntriesScanner struct {
 		key     Key
 		cursor  int // current cur cursor
 		entries Entries
 	}
 
-	PostingLists []*PostingList
+	EntriesScanners []*EntriesScanner
 
 	// for a boolean expression: {"tag", "in", [1, 2, 3]}
 	// tag_2: [ID5]
 	// tag_1: [ID1, ID2, ID7]
-	FieldPostingListGroup struct {
-		current *PostingList
-		plGroup PostingLists
+	FieldScannerGroup struct {
+		current *EntriesScanner
+		plGroup EntriesScanners
 	}
-	FieldPostingListGroups []*FieldPostingListGroup
+	FieldScannerGroups []*FieldScannerGroup
+
+	// PostingEntries posting list entries(sorted); eg: <age, 15>: []EntryID{1, 2, 3}
+	PostingEntries struct {
+		maxLen    int64 // max length of Entries
+		avgLen    int64 // avg length of Entries
+		plEntries map[Key]Entries
+	}
 )
 
 //Key API
@@ -101,82 +111,130 @@ func (entry EntryID) DocString() string {
 	return fmt.Sprintf("<%d,%t>", entry.GetConjID().DocID(), entry.IsInclude())
 }
 
-func NewPostingList(key Key, entries Entries) *PostingList {
-	return &PostingList{
+func NewPostingList(key Key, entries Entries) *EntriesScanner {
+	return &EntriesScanner{
 		key:     key,
 		cursor:  0,
 		entries: entries,
 	}
 }
 
-func (pl *PostingList) ReachEnd() bool {
-	return pl.entries == nil || len(pl.entries) <= pl.cursor
-}
-
-func (pl *PostingList) GetCurEntryID() EntryID {
-	if pl.ReachEnd() {
+func (sc *EntriesScanner) GetCurEntryID() EntryID {
+	if len(sc.entries) <= sc.cursor {
 		return NULLENTRY
 	}
-	return pl.entries[pl.cursor]
+	return sc.entries[sc.cursor]
 }
 
-func (pl *PostingList) Skip(id EntryID) EntryID {
-	entry := pl.GetCurEntryID()
+func (sc *EntriesScanner) LinearSkip(id EntryID) EntryID {
+	entry := sc.GetCurEntryID()
+	if entry > id {
+		return entry
+	}
+	size := len(sc.entries)
+	for ; sc.cursor < size && sc.entries[sc.cursor] <= id; sc.cursor++ {
+	}
+	return sc.GetCurEntryID()
+}
+
+func (sc *EntriesScanner) Skip(id EntryID) EntryID {
+
+	entry := sc.GetCurEntryID()
 	if entry > id {
 		return entry
 	}
 
-	leftIdx := pl.cursor
-	rightIdx := len(pl.entries)
+	//according generated asm code, for a reference slice, len() have overhead
+	size := len(sc.entries)
+
+	rightIdx := size
 	var mid int
-	for leftIdx < rightIdx {
-		mid = (leftIdx + rightIdx) >> 1
-		tId := pl.entries[mid]
-		if tId <= id {
-			leftIdx = mid + 1
+	for sc.cursor < rightIdx {
+		if rightIdx-sc.cursor < LinearSearchLengthThreshold {
+			return sc.LinearSkip(id)
+		}
+
+		mid = (sc.cursor + rightIdx) >> 1
+		if sc.entries[mid] <= id {
+			sc.cursor = mid + 1
 		} else {
 			rightIdx = mid
 		}
-		if leftIdx >= len(pl.entries) || pl.entries[leftIdx] > id {
+		if sc.cursor >= size || sc.entries[sc.cursor] > id {
 			break
 		}
 	}
-	pl.cursor = leftIdx
-	return pl.GetCurEntryID()
+	return sc.GetCurEntryID()
 }
 
-func (pl *PostingList) SkipTo(id EntryID) EntryID {
-	entry := pl.GetCurEntryID()
-	if entry > id {
+func (sc *EntriesScanner) LinearSkipTo(id EntryID) EntryID {
+	entry := sc.GetCurEntryID()
+	if entry >= id {
 		return entry
 	}
-	leftIdx := pl.cursor
-	rightIdx := len(pl.entries)
+	size := len(sc.entries)
+	for ; sc.cursor < size && sc.entries[sc.cursor] < id; sc.cursor++ {
+	}
+	return sc.GetCurEntryID()
+}
+
+func (sc *EntriesScanner) SkipTo(id EntryID) EntryID {
+	entry := sc.GetCurEntryID()
+	if entry >= id {
+		return entry
+	}
+
+	//according generated asm code, for a reference slice, len() have overhead
+	size := len(sc.entries)
+	rightIdx := size
+
 	var mid int
-	for leftIdx < rightIdx {
-		mid = (leftIdx + rightIdx) >> 1
-		tId := pl.entries[mid]
-		if tId >= id {
+	for sc.cursor < rightIdx {
+		if rightIdx-sc.cursor < LinearSearchLengthThreshold {
+			return sc.LinearSkipTo(id)
+		}
+		mid = (sc.cursor + rightIdx) >> 1
+		if sc.entries[mid] >= id {
 			rightIdx = mid
 		} else {
-			leftIdx = mid + 1
+			sc.cursor = mid + 1
 		}
-		if leftIdx >= len(pl.entries) || pl.entries[leftIdx] >= id {
+		if sc.cursor >= size || sc.entries[sc.cursor] >= id {
 			break
 		}
 	}
-	pl.cursor = leftIdx
-	return pl.GetCurEntryID()
+	return sc.GetCurEntryID()
 }
 
 //FieldPostingGroups sort API
-func (s FieldPostingListGroups) Len() int      { return len(s) }
-func (s FieldPostingListGroups) Swap(i, j int) { s[i], s[j] = s[j], s[i] }
-func (s FieldPostingListGroups) Less(i, j int) bool {
+func (s FieldScannerGroups) Len() int      { return len(s) }
+func (s FieldScannerGroups) Swap(i, j int) { s[i], s[j] = s[j], s[i] }
+func (s FieldScannerGroups) Less(i, j int) bool {
 	return s[i].GetCurEntryID() < s[j].GetCurEntryID()
 }
 
-func (s FieldPostingListGroups) Dump() string {
+func SortPostingListGroups(plgs []*FieldScannerGroup) {
+	x := len(plgs)
+	if x <= 1 {
+		return
+	}
+	// Do ShellSort pass with gap 6
+	// It could be written in this simplified form cause b-a <= 12
+	if x <= 12 { // make it seems sorted
+		for i := 6; i < x; i++ {
+			if plgs[i].GetCurEntryID() < plgs[i-6].GetCurEntryID() {
+				plgs[i], plgs[i-6] = plgs[i-6], plgs[i]
+			}
+		}
+	}
+	for i := 1; i < x; i++ {
+		for j := i; j > 0 && plgs[j].GetCurEntryID() < plgs[j-1].GetCurEntryID(); j-- {
+			plgs[j], plgs[j-1] = plgs[j-1], plgs[j]
+		}
+	}
+}
+
+func (s FieldScannerGroups) Dump() string {
 	sb := &strings.Builder{}
 	sb.WriteString(fmt.Sprintf("total plgs:%d\n", len(s)))
 	for idx, pl := range s {
@@ -186,8 +244,8 @@ func (s FieldPostingListGroups) Dump() string {
 	return sb.String()
 }
 
-func NewFieldPostingListGroup(pls ...*PostingList) *FieldPostingListGroup {
-	plg := &FieldPostingListGroup{
+func NewFieldPostingListGroup(pls ...*EntriesScanner) *FieldScannerGroup {
+	plg := &FieldScannerGroup{
 		current: nil,
 		plGroup: pls,
 	}
@@ -201,53 +259,83 @@ func NewFieldPostingListGroup(pls ...*PostingList) *FieldPostingListGroup {
 	return plg
 }
 
-func (plg *FieldPostingListGroup) AddPostingList(pl *PostingList) {
-	plg.plGroup = append(plg.plGroup, pl)
-	if plg.current == nil {
-		plg.current = pl
+func (sg *FieldScannerGroup) AddPostingList(pl *EntriesScanner) {
+	sg.plGroup = append(sg.plGroup, pl)
+	if sg.current == nil {
+		sg.current = pl
 		return
 	}
-	if pl.GetCurEntryID() < plg.current.GetCurEntryID() {
-		plg.current = pl
+	if pl.GetCurEntryID() < sg.current.GetCurEntryID() {
+		sg.current = pl
 	}
 }
 
-func (plg *FieldPostingListGroup) GetCurConjID() ConjID {
-	return plg.GetCurEntryID().GetConjID()
+func (sg *FieldScannerGroup) GetCurConjID() ConjID {
+	return sg.GetCurEntryID().GetConjID()
 }
 
-func (plg *FieldPostingListGroup) GetCurEntryID() EntryID {
-	return plg.current.GetCurEntryID()
+func (sg *FieldScannerGroup) GetCurEntryID() EntryID {
+	return sg.current.GetCurEntryID()
 }
 
-func (plg *FieldPostingListGroup) Skip(id EntryID) (newMin EntryID) {
+func (sg *FieldScannerGroup) Skip(id EntryID) (newMin EntryID) {
 	newMin = NULLENTRY
-	for _, pl := range plg.plGroup {
+	for _, pl := range sg.plGroup {
 		if tId := pl.Skip(id); tId < newMin {
 			newMin = tId
-			plg.current = pl
+			sg.current = pl
 		}
 	}
 	return
 }
 
-func (plg *FieldPostingListGroup) SkipTo(id EntryID) (newMin EntryID) {
+func (sg *FieldScannerGroup) SkipTo(id EntryID) (newMin EntryID) {
 	newMin = NULLENTRY
-	for _, pl := range plg.plGroup {
+	for _, pl := range sg.plGroup {
 		if tId := pl.SkipTo(id); tId < newMin {
 			newMin = tId
-			plg.current = pl
+			sg.current = pl
 		}
 	}
 	return
 }
 
-func (plg *FieldPostingListGroup) DumpPostingList() string {
+func (sg *FieldScannerGroup) DumpPostingList() string {
 	sb := &strings.Builder{}
-	for idx, pl := range plg.plGroup {
+	for idx, pl := range sg.plGroup {
 		sb.WriteString(fmt.Sprintf("\n"))
 		sb.WriteString(fmt.Sprintf("idx:%d#%d#cur:%v", idx, pl.key, pl.GetCurEntryID().DocString()))
 		sb.WriteString(fmt.Sprintf(" entries:%v", pl.entries.DocString()))
 	}
 	return sb.String()
+}
+
+func (kse *PostingEntries) AppendEntryID(key Key, id EntryID) {
+	entries, hit := kse.plEntries[key]
+	if !hit {
+		kse.plEntries[key] = Entries{id}
+	}
+	entries = append(entries, id)
+	kse.plEntries[key] = entries
+}
+
+func (kse *PostingEntries) getEntries(key Key) Entries {
+	if entries, hit := kse.plEntries[key]; hit {
+		return entries
+	}
+	return nil
+}
+
+func (kse *PostingEntries) makeEntriesSorted() {
+	var total int64
+	for _, entries := range kse.plEntries {
+		sort.Sort(entries)
+		if kse.maxLen < int64(len(entries)) {
+			kse.maxLen = int64(len(entries))
+		}
+		total += int64(len(entries))
+	}
+	if len(kse.plEntries) > 0 {
+		kse.avgLen = total / int64(len(kse.plEntries))
+	}
 }

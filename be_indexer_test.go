@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"math/rand"
 	"testing"
+	"time"
 )
 
 func buildTestDoc() []*Document {
@@ -23,13 +24,6 @@ func buildTestDoc() []*Document {
 	return docs
 }
 
-func EntriesToDocs(entries Entries) (res []DocID) {
-	for _, eid := range entries {
-		res = append(res, eid.GetConjID().DocID())
-	}
-	return
-}
-
 func TestBEIndex_Retrieve(t *testing.T) {
 	LogLevel = InfoLevel
 
@@ -43,7 +37,7 @@ func TestBEIndex_Retrieve(t *testing.T) {
 
 	indexer := builder.BuildIndex()
 
-	fmt.Println(indexer.DumpSizeEntries())
+	fmt.Println(indexer.DumpEntries())
 
 	result, e := indexer.Retrieve(map[BEField]Values{
 		"age": NewValues2(5),
@@ -123,7 +117,7 @@ func (t *MockTargeting) Match(a, b, c, d []int) bool {
 func randValue(cnt int) (res []int) {
 	cnt = rand.Int() % cnt
 	for i := 0; i < cnt; i++ {
-		res = append(res, rand.Intn(20))
+		res = append(res, rand.Intn(2000))
 	}
 	return util.DistinctInt(res)
 }
@@ -132,13 +126,15 @@ func TestBEIndex_Retrieve2(t *testing.T) {
 	b := NewIndexerBuilder()
 	targets := map[DocID]*MockTargeting{}
 
-	for i := 1; i < 10000; i++ {
+	LogLevel = ErrorLevel
+
+	for i := 1; i < 100000; i++ {
 		target := &MockTargeting{
 			ID: DocID(i),
 			A:  randValue(10),
-			B:  randValue(5),
-			C:  randValue(2),
-			D:  randValue(6),
+			B:  randValue(50),
+			C:  randValue(100),
+			D:  randValue(150),
 		}
 
 		conj := target.ToConj()
@@ -152,49 +148,84 @@ func TestBEIndex_Retrieve2(t *testing.T) {
 	}
 
 	index := b.BuildIndex()
+	compactedIndex := b.BuildCompactedIndex()
+	fmt.Println("summary", index.DumpEntriesSummary())
+	fmt.Println("compactedIndex summary", compactedIndex.DumpEntriesSummary())
 
-	idxRes := map[DocID]*MockTargeting{}
-	noneIdxRes := map[DocID]*MockTargeting{}
+	type Q struct {
+		A []int
+		B []int
+		C []int
+		D []int
+	}
 
-	for i := 0; i < 1000; i++ {
-		A := randValue(10)
-		B := randValue(5)
-		C := randValue(2)
-		D := randValue(6)
+	var Qs []Q
+	var assigns []Assignments
 
+	for i := 0; i < 10000; i++ {
+		q := Q{
+			A: randValue(1),
+			B: randValue(2),
+			C: randValue(2),
+			D: randValue(1),
+		}
+		Qs = append(Qs, q)
+		assign := Assignments{}
+		if len(q.A) > 0 {
+			assign["A"] = NewIntValues(q.A...)
+		}
+		if len(q.B) > 0 {
+			assign["B"] = NewIntValues(q.B...)
+		}
+		if len(q.C) > 0 {
+			assign["C"] = NewIntValues(q.C...)
+		}
+		if len(q.D) > 0 {
+			assign["D"] = NewIntValues(q.D...)
+		}
+		assigns = append(assigns, assign)
+	}
+
+	idxRes := make(map[int][]DocID)
+	idxUnionRes := make(map[int][]DocID)
+	noneIdxRes := make(map[int][]DocID)
+
+	start := time.Now().UnixNano() / 1000000
+	for idx, q := range Qs {
 		for id, target := range targets {
-			if target.Match(A, B, C, D) {
-				noneIdxRes[id] = target
+			if target.Match(q.A, q.B, q.C, q.D) {
+				noneIdxRes[idx] = append(noneIdxRes[idx], id)
 			}
 		}
-		assigns := Assignments{}
-		if len(A) > 0 {
-			assigns["A"] = NewIntValues(A...)
-		}
-		if len(B) > 0 {
-			assigns["B"] = NewIntValues(B...)
-		}
-		if len(C) > 0 {
-			assigns["C"] = NewIntValues(C...)
-		}
-		if len(D) > 0 {
-			assigns["D"] = NewIntValues(D...)
-		}
-		ids, _ := index.Retrieve(assigns)
-		for _, id := range ids {
-			idxRes[id] = targets[id]
-		}
-		if len(idxRes) != len(noneIdxRes) {
-			fmt.Printf("queries:A:%+v, B:%+v, C:%+v, D:%+v\n", A, B, C, D)
-			fmt.Printf("noneIdxRes:%d, idxRes:%d\n", len(noneIdxRes), len(idxRes))
-			fmt.Printf("IdxRes:%+v\n", idxRes)
-			fmt.Printf("noneIdxRes:%+v\n", noneIdxRes)
-			r, _ := index.parseQueries(assigns)
-			fmt.Printf("parsedQueries:%+v", r)
-			fmt.Println(index.DumpSizeEntries())
+	}
+	fmt.Printf("NontIndexQuery Take %d(ms)\n", time.Now().UnixNano()/1000000-start)
+
+	start = time.Now().UnixNano() / 1000000
+	for idx, ass := range assigns {
+		ids, _ := index.Retrieve(ass)
+		idxRes[idx] = ids
+		if len(noneIdxRes[idx]) != len(ids) {
+			fmt.Println("idxRes:", ids)
+			fmt.Println("noneIdxRes:", noneIdxRes[idx])
+			fmt.Println(index.DumpEntries())
+
 			panic(nil)
 		}
 	}
+	fmt.Printf("IndexQuery Take %d(ms)\n", time.Now().UnixNano()/1000000-start)
+
+	start = time.Now().UnixNano() / 1000000
+	for idx, ass := range assigns {
+		ids, _ := compactedIndex.Retrieve(ass)
+		idxUnionRes[idx] = ids
+		if len(ids) != len(noneIdxRes[idx]) {
+			fmt.Printf("unionIdxRes:%+v\n", ids)
+			fmt.Printf("noneIdxRes:%+v\n", noneIdxRes[idx])
+			fmt.Println(index.DumpEntries())
+			panic(nil)
+		}
+	}
+	fmt.Printf("UnionIndexQuery Take %d(ms)\n", time.Now().UnixNano()/1000000-start)
 }
 
 /*
@@ -217,8 +248,8 @@ func DocIDToIncludeEntries(ids []DocID, k int) (res []EntryID) {
 }
 
 func TestBEIndex_Retrieve3(t *testing.T) {
-	plgs := FieldPostingListGroups{
-		NewFieldPostingListGroup(PostingLists{
+	plgs := FieldScannerGroups{
+		NewFieldPostingListGroup(EntriesScanners{
 			{
 				entries: DocIDToIncludeEntries([]DocID{17, 32, 37}, 2),
 			},
@@ -232,7 +263,7 @@ func TestBEIndex_Retrieve3(t *testing.T) {
 				entries: DocIDToIncludeEntries(DocIDList{53, 54}, 2),
 			},
 		}...),
-		NewFieldPostingListGroup(PostingLists{
+		NewFieldPostingListGroup(EntriesScanners{
 			{
 				entries: DocIDToIncludeEntries(DocIDList{10, 19, 27, 32, 54, 81}, 2),
 			},
@@ -245,7 +276,7 @@ func TestBEIndex_Retrieve3(t *testing.T) {
 		plg.current = plg.plGroup[0]
 	}
 
-	index := &BEIndex{}
+	index := &SizeGroupedBEIndex{}
 	fmt.Println(index.retrieveK(plgs, 2))
 }
 
@@ -267,7 +298,6 @@ func TestBEIndex_Retrieve4(t *testing.T) {
 	fmt.Println(indexer.Retrieve(Assignments{
 		"age": NewInt32Values2(1),
 	}))
-
 	fmt.Println(indexer.Retrieve(Assignments{
 		"age": NewInt32Values2(25),
 		"tag": NewInt32Values2(1),

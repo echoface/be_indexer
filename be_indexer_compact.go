@@ -136,7 +136,7 @@ RETRIEVE:
 			k = 1
 		}
 		// remove finished posting list
-		for plgs[len(plgs)-1].GetCurEntryID().IsNULLEntry() {
+		for len(plgs) > 0 && plgs[len(plgs)-1].GetCurEntryID().IsNULLEntry() {
 			plgs = plgs[:len(plgs)-1]
 		}
 		// mean any conjunction its size = k will not match, wil can fast skip to min entry that conjunction size > k

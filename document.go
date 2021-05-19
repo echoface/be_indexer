@@ -30,6 +30,11 @@ func (l DocIDList) Contain(id DocID) bool {
 	return false
 }
 
+//Entries sort API
+func (s DocIDList) Len() int           { return len(s) }
+func (s DocIDList) Swap(i, j int)      { s[i], s[j] = s[j], s[i] }
+func (s DocIDList) Less(i, j int) bool { return s[i] < s[j] }
+
 /*一组完整的expression， 必须是完整一个描述文档的DNF Bool表达的条件组合*/
 func (doc *Document) AddConjunction(cons ...*Conjunction) {
 	for _, conj := range cons {

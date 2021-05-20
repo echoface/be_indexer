@@ -67,6 +67,7 @@ FORCONJ:
 			for _, value := range expr.Value {
 				res, e := desc.Parser.ParseValue(value)
 				if e != nil {
+					panic(e)
 					Logger.Errorf("field %s parse failed\n", field)
 					Logger.Errorf("doc:%d, value %+v parse fail err detail:%+v\n", conj.id.DocID(), value, e)
 					continue FORCONJ //break FORCONJ, conjunction as logic unit, just skip this conj if any error occur

@@ -21,8 +21,8 @@ func NewDocument(id DocID) *Document {
 	}
 }
 
-func (l DocIDList) Contain(id DocID) bool {
-	for _, v := range l {
+func (s DocIDList) Contain(id DocID) bool {
+	for _, v := range s {
 		if v == id {
 			return true
 		}
@@ -30,7 +30,25 @@ func (l DocIDList) Contain(id DocID) bool {
 	return false
 }
 
-/*一组完整的expression， 必须是完整一个描述文档的DNF Bool表达的条件组合*/
+func (s DocIDList) Sub(other DocIDList) (r DocIDList) {
+BASE:
+	for _, v := range s {
+		for _, c := range other {
+			if v == c {
+				continue BASE
+			}
+		}
+		r = append(r, v)
+	}
+	return
+}
+
+//Len sort API
+func (s DocIDList) Len() int           { return len(s) }
+func (s DocIDList) Swap(i, j int)      { s[i], s[j] = s[j], s[i] }
+func (s DocIDList) Less(i, j int) bool { return s[i] < s[j] }
+
+/*AddConjunction 一组完整的expression， 必须是完整一个描述文档的DNF Bool表达的条件组合*/
 func (doc *Document) AddConjunction(cons ...*Conjunction) {
 	for _, conj := range cons {
 		if len(conj.Expressions) == 0 {
@@ -40,7 +58,7 @@ func (doc *Document) AddConjunction(cons ...*Conjunction) {
 	}
 }
 
-//计算生成doc内部的私有数据
+//Prepare 计算生成doc内部的私有数据
 func (doc *Document) Prepare() {
 	if len(doc.Cons) >= 0xFF {
 		panic(fmt.Errorf("max 256 conjuctions per document limitation"))

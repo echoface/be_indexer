@@ -31,11 +31,11 @@ type (
 		newPostingEntriesIfNeeded(k int) *PostingEntries
 		completeIndex()
 
-		//public Interface
+		//ConfigureIndexer public Interface
 		ConfigureIndexer(settings *IndexerSettings)
 		Retrieve(queries Assignments) (result DocIDList, err error)
 
-		//debug api
+		//DumpEntries debug api
 		DumpEntries() string
 		DumpEntriesSummary() string
 	}

@@ -75,13 +75,13 @@ func (bi *SizeGroupedBEIndex) getKSizeEntries(k int) *PostingEntries {
 	return bi.sizeEntries[k]
 }
 
-func (bi *SizeGroupedBEIndex) initPostingList(ctx *RetrieveContext, k int) FieldScannerGroups {
+func (bi *SizeGroupedBEIndex) initPlEntriesScanners(ctx *RetrieveContext, k int) FieldScanners {
 
-	plgs := make([]*FieldScannerGroup, 0, len(ctx.idAssigns))
+	fieldScanners := make(FieldScanners, 0, len(ctx.idAssigns))
 
 	if k == 0 && len(bi.wildcardEntries) > 0 {
-		pl := NewPostingList(bi.wildcardKey, bi.wildcardEntries)
-		plgs = append(plgs, NewFieldPostingListGroup(pl))
+		pl := NewEntriesCursor(bi.wildcardKey, bi.wildcardEntries)
+		fieldScanners = append(fieldScanners, NewFieldScanner(pl))
 	}
 
 	kSizeEntries := bi.getKSizeEntries(k)
@@ -89,55 +89,54 @@ func (bi *SizeGroupedBEIndex) initPostingList(ctx *RetrieveContext, k int) Field
 
 		desc := bi.fieldDesc[field]
 
-		pls := make(EntriesScanners, 0, len(ids))
+		pls := make(CursorGroup, 0, len(ids))
 		for _, id := range ids {
 			key := NewKey(desc.ID, id)
 			if entries := kSizeEntries.getEntries(key); len(entries) > 0 {
-				pls = append(pls, NewPostingList(key, entries))
+				pls = append(pls, NewEntriesCursor(key, entries))
 			}
 		}
 		if len(pls) > 0 {
-			plgs = append(plgs, NewFieldPostingListGroup(pls...))
+			fieldScanners = append(fieldScanners, NewFieldScanner(pls...))
 		}
 	}
-	return plgs
+	return fieldScanners
 }
 
-// retrieveK MOVE TO: FieldScannerGroups ?
-func (bi *SizeGroupedBEIndex) retrieveK(plgList FieldScannerGroups, k int) (result []DocID) {
+// retrieveK MOVE TO: FieldScanners ?
+func (bi *SizeGroupedBEIndex) retrieveK(fieldScanners FieldScanners, k int) (result []DocID) {
 	result = make([]DocID, 0, 256)
 
-	//sort.Sort(plgList)
-	SortPostingListGroups(plgList)
-	for !plgList[k-1].GetCurEntryID().IsNULLEntry() {
+	//sort.Sort(fieldScanners)
+	fieldScanners.Sort()
+	for !fieldScanners[k-1].GetCurEntryID().IsNULLEntry() {
 
-		eid := plgList[0].GetCurEntryID()
-		endEID := plgList[k-1].GetCurEntryID()
+		eid := fieldScanners[0].GetCurEntryID()
+		endEID := fieldScanners[k-1].GetCurEntryID()
 
-		nextID := endEID
-		if eid == endEID {
+		nextID := NewEntryID(endEID.GetConjID(), false)
 
+		if eid.GetConjID() == endEID.GetConjID() {
 			nextID = endEID + 1
-
 			if eid.IsInclude() {
 				result = append(result, eid.GetConjID().DocID())
-
 			} else { //exclude
 
-				for i := k; i < plgList.Len(); i++ {
-					if plgList[i].GetCurConjID() != eid.GetConjID() {
+				for i := k; i < fieldScanners.Len(); i++ {
+					if fieldScanners[i].GetCurConjID() != eid.GetConjID() {
 						break
 					}
-					plgList[i].Skip(nextID)
+					fieldScanners[i].Skip(nextID)
 				}
+
 			}
 		}
 		// 推进游标
 		for i := 0; i < k; i++ {
-			plgList[i].SkipTo(nextID)
+			fieldScanners[i].SkipTo(nextID)
 		}
-		//sort.Sort(plgList)
-		SortPostingListGroups(plgList)
+		//sort.Sort(fieldScanners)
+		fieldScanners.Sort()
 	}
 	return result
 }
@@ -156,16 +155,16 @@ func (bi *SizeGroupedBEIndex) Retrieve(queries Assignments) (result DocIDList, e
 
 	for k := util.MinInt(queries.Size(), bi.maxK()); k >= 0; k-- {
 
-		plgs := bi.initPostingList(ctx, k)
+		fieldScanners := bi.initPlEntriesScanners(ctx, k)
 
 		tempK := k
 		if tempK == 0 {
 			tempK = 1
 		}
-		if len(plgs) < tempK {
+		if len(fieldScanners) < tempK {
 			continue
 		}
-		res := bi.retrieveK(plgs, tempK)
+		res := bi.retrieveK(fieldScanners, tempK)
 		result = append(result, res...)
 	}
 	return result, nil

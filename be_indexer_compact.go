@@ -97,60 +97,59 @@ func (bi *CompactedBEIndex) Retrieve(queries Assignments) (result DocIDList, err
 		idAssigns: idAssigns,
 	}
 
-	plgs := make([]*FieldScannerGroup, 0, len(ctx.idAssigns))
+	fieldScanners := make(FieldScanners, 0, len(ctx.idAssigns))
 
 	if len(bi.wildcardEntries) > 0 {
-		pl := NewPostingList(bi.wildcardKey, bi.wildcardEntries)
-		plgs = append(plgs, NewFieldPostingListGroup(pl))
+		pl := NewEntriesCursor(bi.wildcardKey, bi.wildcardEntries)
+		fieldScanners = append(fieldScanners, NewFieldScanner(pl))
 	}
 
 	for field, ids := range ctx.idAssigns {
 		desc := bi.fieldDesc[field]
 
-		pls := make([]*EntriesScanner, 0, len(ids))
+		entriesScanners := make(CursorGroup, 0, len(ids))
 		for _, id := range ids {
 			key := NewKey(desc.ID, id)
 			if entries := bi.postingList.getEntries(key); len(entries) > 0 {
-				pls = append(pls, NewPostingList(key, entries))
+				entriesScanners = append(entriesScanners, NewEntriesCursor(key, entries))
 			}
 		}
-		if len(pls) > 0 {
-			plgs = append(plgs, NewFieldPostingListGroup(pls...))
+		if len(entriesScanners) > 0 {
+			fieldScanners = append(fieldScanners, NewFieldScanner(entriesScanners...))
 		}
 	}
 
-	if len(plgs) == 0 {
+	if len(fieldScanners) == 0 {
 		return result, nil
 	}
 
 	result = make([]DocID, 0, 128)
 
-	SortPostingListGroups(plgs)
+	fieldScanners.Sort()
 RETRIEVE:
 	for {
-		eid := plgs[0].GetCurEntryID()
+		eid := fieldScanners[0].GetCurEntryID()
 
-		// K mean for this plgs, a doc match need k number same eid in every plg
+		// K mean for this fieldScanners, a doc match need k number same eid in every plg
 		k := eid.GetConjID().Size()
 		if k == 0 {
 			k = 1
 		}
 		// remove finished posting list
-		for len(plgs) > 0 && plgs[len(plgs)-1].GetCurEntryID().IsNULLEntry() {
-			plgs = plgs[:len(plgs)-1]
+		for len(fieldScanners) > 0 && fieldScanners[len(fieldScanners)-1].GetCurEntryID().IsNULLEntry() {
+			fieldScanners = fieldScanners[:len(fieldScanners)-1]
 		}
 		// mean any conjunction its size = k will not match, wil can fast skip to min entry that conjunction size > k
-		if k > len(plgs) {
+		if k > len(fieldScanners) {
 			break RETRIEVE
 		}
 
 		// k <= plgsCount
-		// check whether eid  plgs[k-1].GetCurEntryID equal
-		endEID := plgs[k-1].GetCurEntryID()
+		// check whether eid  fieldScanners[k-1].GetCurEntryID equal
+		endEID := fieldScanners[k-1].GetCurEntryID()
 
-		nextID := endEID
-
-		if eid == endEID {
+		nextID := NewEntryID(endEID.GetConjID(), false)
+		if endEID.GetConjID() == eid.GetConjID() {
 
 			nextID = endEID + 1
 
@@ -160,20 +159,20 @@ RETRIEVE:
 
 			} else { //exclude
 
-				for i := k; i < len(plgs); i++ {
-					if plgs[i].GetCurConjID() != eid.GetConjID() {
+				for i := k; i < len(fieldScanners); i++ {
+					if fieldScanners[i].GetCurConjID() != eid.GetConjID() {
 						break
 					}
-					plgs[i].Skip(nextID)
+					fieldScanners[i].Skip(nextID)
 				}
 			}
 		}
 		// 推进游标
 		for i := 0; i < k; i++ {
-			plgs[i].SkipTo(nextID)
+			fieldScanners[i].SkipTo(nextID)
 		}
 
-		SortPostingListGroups(plgs)
+		fieldScanners.Sort()
 	}
 	return result, nil
 }

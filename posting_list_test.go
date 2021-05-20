@@ -10,7 +10,7 @@ import (
 
 func TestPostingList_Skip(t *testing.T) {
 	convey.Convey("skip test", t, func() {
-		sc := EntriesScanner{
+		sc := EntriesCursor{
 			key:     NewKey(1, 2),
 			cursor:  0,
 			entries: []EntryID{1, 2, 3, 10, 10, 10, 11, 12, 15, 15, 22, 111, 111},
@@ -30,7 +30,7 @@ func TestPostingList_Skip(t *testing.T) {
 	fmt.Println("skip test finish")
 
 	convey.Convey("skip to test", t, func() {
-		scanner := EntriesScanner{
+		scanner := EntriesCursor{
 			key:     NewKey(1, 2),
 			cursor:  0,
 			entries: []EntryID{1, 2, 3, 10, 10, 10, 11, 12, 15, 15, 22, 111, 111},
@@ -70,9 +70,9 @@ func TestEntries_Key(t *testing.T) {
 }
 
 func TestPostingList_SkipTo(t *testing.T) {
-	scg := FieldScannerGroup{
+	scg := FieldScanner{
 		current: nil,
-		plGroup: EntriesScanners{
+		cursorGroup: CursorGroup{
 			{
 				cursor:  0,
 				entries: []EntryID{17, 32, 37},
@@ -91,7 +91,7 @@ func TestPostingList_SkipTo(t *testing.T) {
 			},
 		},
 	}
-	scg.current = scg.plGroup[0]
+	scg.current = scg.cursorGroup[0]
 
 	convey.Convey("test SkipTo", t, func() {
 		scg.SkipTo(19)
@@ -102,9 +102,9 @@ func TestPostingList_SkipTo(t *testing.T) {
 }
 
 func TestPostingList_SkipTo2(t *testing.T) {
-	scg := FieldScannerGroup{
+	scg := FieldScanner{
 		current: nil,
-		plGroup: EntriesScanners{
+		cursorGroup: CursorGroup{
 			{
 				cursor:  0,
 				entries: []EntryID{28},
@@ -115,7 +115,7 @@ func TestPostingList_SkipTo2(t *testing.T) {
 			},
 		},
 	}
-	scg.current = scg.plGroup[0]
+	scg.current = scg.cursorGroup[0]
 
 	convey.Convey("test SkipTo with only one element", t, func() {
 		scg.SkipTo(29)

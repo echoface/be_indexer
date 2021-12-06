@@ -45,7 +45,7 @@ func NewBoolExpr(field BEField, inc bool, v Values) *BoolExprs {
 	return expr
 }
 
-//panic if invalid value
+// NewValues panic if invalid value
 func NewValues(o ...interface{}) (res []interface{}) {
 	for _, value := range o {
 		if parser.IsValidValueType(value) {

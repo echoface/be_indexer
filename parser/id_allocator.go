@@ -2,13 +2,12 @@ package parser
 
 type (
 	IDAllocator interface {
-		TotalIDCount() uint64
 		AllocNumID(v int64) uint64
 		AllocStringID(v string) uint64
 		FindNumID(v int64) (value uint64, found bool)
 		FindStringID(v *string) (value uint64, found bool)
 	}
-	/*用于将不同类型的值ID化，用于构造Index的PostingList，减少重复值*/
+	/*IDAllocatorImpl 用于将不同类型的值ID化，用于构造Index的PostingList，减少重复值*/
 	IDAllocatorImpl struct {
 		numBox map[int64]uint64  //用于将整形数字重新安排
 		strBox map[string]uint64 //将string转变成紧凑的ID

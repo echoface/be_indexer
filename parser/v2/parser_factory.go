@@ -1,4 +1,4 @@
-package parser
+package v2
 
 import "fmt"
 
@@ -6,8 +6,9 @@ import "fmt"
 
 const (
 	// inner register parser can't be override, customized parser can't use prefix "#"
-	CommonParser   = "#common"
-	NumRangeParser = "#num_range"
+	ParserNamerNumber  = "#number"
+	ParserNameNubRange = "#num_range"
+	ParserNameStrHash  = "#str_hash"
 )
 
 var (
@@ -15,13 +16,14 @@ var (
 )
 
 type (
-	Builder func(allocator IDAllocator) FieldValueParser
+	Builder func() FieldValueParser
 )
 
 func init() {
 	factory = make(map[string]Builder)
-	factory[CommonParser] = NewCommonStrParser
-	factory[NumRangeParser] = NewNumRangeParser
+	factory[ParserNamerNumber] = NewNumberParser
+	factory[ParserNameNubRange] = NewNumRangeParser
+	factory[ParserNameStrHash] = NewStrHashParser
 }
 
 // RegisterBuilder register override other will panic to avoid wrong value id be use in indexing
@@ -37,10 +39,11 @@ func HasParser(name string) (ok bool) {
 	return ok
 }
 
-func NewParser(name string, idGen IDAllocator) FieldValueParser {
-	builder, ok := factory[name]
-	if !ok {
+func NewParser(name string) FieldValueParser {
+	var ok bool
+	var builderFn Builder
+	if builderFn, ok = factory[name]; !ok {
 		return nil
 	}
-	return builder(idGen)
+	return builderFn()
 }

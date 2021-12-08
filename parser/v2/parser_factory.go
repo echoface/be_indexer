@@ -5,8 +5,8 @@ import "fmt"
 /*parser 解析指定特殊格式的Value,并通过IDAllocator将ValueID化*/
 
 const (
-	// inner register parser can't be override, customized parser can't use prefix "#"
-	ParserNamerNumber  = "#number"
+	// ParserNameNumber inner register parser can't override, customized parser can't use prefix "#"
+	ParserNameNumber   = "#number"
 	ParserNameNubRange = "#num_range"
 	ParserNameStrHash  = "#str_hash"
 )
@@ -21,7 +21,7 @@ type (
 
 func init() {
 	factory = make(map[string]Builder)
-	factory[ParserNamerNumber] = NewNumberParser
+	factory[ParserNameNumber] = NewNumberParser
 	factory[ParserNameNubRange] = NewNumRangeParser
 	factory[ParserNameStrHash] = NewStrHashParser
 }

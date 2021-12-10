@@ -7,12 +7,12 @@ import (
 )
 
 type (
-	// v type only string like and number like input
+	// FieldValueParser turn value into a unique id
 	FieldValueParser interface {
-		// parse query assign value into id-encoded ids
+		// ParseAssign parse query assign value into id-encoded ids
 		ParseAssign(v interface{}) ([]uint64, error)
 
-		// parse bool expression value into id-encoded ids
+		// ParseValue parse bool expression value into id-encoded ids
 		ParseValue(v interface{}) ([]uint64, error)
 	}
 )

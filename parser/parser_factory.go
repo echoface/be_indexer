@@ -24,7 +24,7 @@ func init() {
 	factory[NumRangeParser] = NewNumRangeParser
 }
 
-// register override other will panic to avoid wrong value id be use in indexing
+// RegisterBuilder register override other will panic to avoid wrong value id be use in indexing
 func RegisterBuilder(name string, builder Builder) {
 	if _, ok := factory[name]; ok {
 		panic(fmt.Errorf("name:%s has been register before", name))

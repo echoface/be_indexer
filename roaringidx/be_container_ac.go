@@ -10,7 +10,7 @@ import (
 
 type (
 	ACBEContainer struct {
-		wc  RoaringPl
+		wc  PostingList
 		inc *cedar.Matcher
 		exc *cedar.Matcher
 	}
@@ -43,12 +43,11 @@ func (c *ACBEContainer) AddWildcard(id ConjunctionID) {
 	c.wc.Add(uint64(id))
 }
 
-func (c *ACBEContainer) Retrieve(values be_indexer.Values) (RoaringPl, error) {
-	merger := NewPostingList()
-	merger.Or(c.wc.Bitmap)
+func (c *ACBEContainer) Retrieve(values be_indexer.Values, inout *PostingList) error {
+	inout.Or(c.wc.Bitmap)
 
 	if len(values) == 0 { // empty assign
-		return merger, nil
+		return nil
 	}
 
 	textData := bytes.NewBuffer(nil)
@@ -57,7 +56,7 @@ func (c *ACBEContainer) Retrieve(values be_indexer.Values) (RoaringPl, error) {
 			textData.WriteString(str)
 			continue
 		}
-		return RoaringPl{}, fmt.Errorf("query assign:%+v not string type", vi)
+		return fmt.Errorf("query assign:%+v not string type", vi)
 	}
 
 	rawContent := textData.Bytes()
@@ -68,7 +67,7 @@ func (c *ACBEContainer) Retrieve(values be_indexer.Values) (RoaringPl, error) {
 		items := resp.NextMatchItem(rawContent)
 		for _, itr := range items {
 			// key := c.inc.Key(rawContent, itr)
-			merger.Or(itr.Value.(RoaringPl).Bitmap)
+			inout.Or(itr.Value.(PostingList).Bitmap)
 		}
 	}
 
@@ -78,10 +77,10 @@ func (c *ACBEContainer) Retrieve(values be_indexer.Values) (RoaringPl, error) {
 		items := excResp.NextMatchItem(rawContent)
 		for _, itr := range items {
 			// key := c.inc.Key(rawContent, itr)
-			merger.AndNot(itr.Value.(RoaringPl).Bitmap)
+			inout.AndNot(itr.Value.(PostingList).Bitmap)
 		}
 	}
-	return merger, nil
+	return nil
 }
 
 // EncodeWildcard equal to: EncodeExpr(id ConjunctionID, nil)
@@ -124,6 +123,7 @@ func (builder *ACBEContainerBuilder) BuildBEContainer() (BEContainer, error) {
 		for _, id := range ids {
 			pl.Add(uint64(id))
 		}
+		// pl.RunOptimize() // NOTE: after testing, this make retrieve slower x4
 		incMatcher.Insert([]byte(kw), pl)
 	}
 	incMatcher.Compile()
@@ -137,10 +137,14 @@ func (builder *ACBEContainerBuilder) BuildBEContainer() (BEContainer, error) {
 		for _, id := range ids {
 			pl.Add(uint64(id))
 		}
+		// pl.RunOptimize() // NOTE: after testing, this make retrieve slower x4
 		excMatcher.Insert([]byte(kw), pl)
 	}
 	excMatcher.Compile()
+
 	builder.container.inc = incMatcher
 	builder.container.exc = excMatcher
+	// builder.container.wc.RunOptimize() // NOTE: this make retrieve slower
+
 	return builder.container, nil
 }

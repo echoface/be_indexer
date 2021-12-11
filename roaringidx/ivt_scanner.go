@@ -11,7 +11,7 @@ type (
 	IvtScanner struct {
 		inited  bool
 		ended   bool
-		results RoaringPl
+		results PostingList
 		indexer *IvtBEIndexer
 		debug   bool
 	}
@@ -44,7 +44,7 @@ func (scanner *IvtScanner) Reset() {
 	scanner.debug = false
 }
 
-func (scanner *IvtScanner) MergeFieldResult(field be_indexer.BEField, pl RoaringPl) {
+func (scanner *IvtScanner) MergeFieldResult(field be_indexer.BEField, pl PostingList) {
 	defer func() {
 		if scanner.debug {
 			be_indexer.Logger.Infof("merger result from field:%s pl:%s \n after:%s",
@@ -78,19 +78,22 @@ func (scanner *IvtScanner) RetrieveDocs(assignments be_indexer.Assignments) (doc
 
 func (scanner *IvtScanner) Retrieve(assignments be_indexer.Assignments) ([]uint64, error) {
 	var err error
-	var pl RoaringPl
-	{
-	}
+	pl := NewPostingList()
+
 	for field, fieldData := range scanner.indexer.data {
-		values := assignments[field]
-		pl, err = fieldData.container.Retrieve(values)
-		if err != nil {
-			return nil, err
-		}
-		scanner.MergeFieldResult(field, pl)
 		if scanner.ended {
 			break
 		}
+		values := assignments[field]
+
+		if err = fieldData.container.Retrieve(values, &pl); err != nil {
+			return nil, err
+		}
+		scanner.MergeFieldResult(field, pl)
+		pl.Clear()
 	}
+
+	ReleasePostingList(pl)
+
 	return scanner.results.ToArray(), nil
 }

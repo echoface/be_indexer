@@ -102,6 +102,11 @@ func NewConjunction() *Conjunction {
 	}
 }
 
+func (conj *Conjunction) AddExpression3(field string, include bool, values be_indexer.Values) *Conjunction {
+	expr := be_indexer.NewBoolExpr(be_indexer.BEField(field), include, values)
+	return conj.AddExpression(expr)
+}
+
 func (conj *Conjunction) AddExpression(expr *be_indexer.BoolExprs) *Conjunction {
 	if _, hit := conj.Expressions[expr.Field]; hit {
 		panic(fmt.Sprintf("field replicated in one conjunction, id:%d field:%s", conj.id, expr.Field))

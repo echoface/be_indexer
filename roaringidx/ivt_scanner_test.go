@@ -2,11 +2,10 @@ package roaringidx
 
 import (
 	"fmt"
-	"testing"
-
 	"github.com/echoface/be_indexer"
 	parser "github.com/echoface/be_indexer/parser/v2"
 	"github.com/smartystreets/goconvey/convey"
+	"testing"
 )
 
 func TestIvtScanner_Retrieve(t *testing.T) {

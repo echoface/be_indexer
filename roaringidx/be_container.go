@@ -10,7 +10,7 @@ import (
 type (
 	BEContainer interface {
 		AddWildcard(id ConjunctionID)
-		Retrieve(values be_indexer.Values) (RoaringPl, error)
+		Retrieve(values be_indexer.Values, inout *PostingList) error
 	}
 
 	BEContainerBuilder interface {
@@ -24,9 +24,9 @@ type (
 	// DefaultBEContainer a common value based inverted index bitmap container
 	DefaultBEContainer struct {
 		parser parser.FieldValueParser
-		wc     RoaringPl
-		inc    map[BEValue]RoaringPl
-		exc    map[BEValue]RoaringPl
+		wc     PostingList
+		inc    map[BEValue]PostingList
+		exc    map[BEValue]PostingList
 	}
 
 	DefaultBEContainerBuilder struct {
@@ -50,8 +50,8 @@ func NewDefaultBEContainer(parser parser.FieldValueParser) *DefaultBEContainer {
 	return &DefaultBEContainer{
 		parser: parser,
 		wc:     NewPostingList(),
-		inc:    map[BEValue]RoaringPl{},
-		exc:    map[BEValue]RoaringPl{},
+		inc:    map[BEValue]PostingList{},
+		exc:    map[BEValue]PostingList{},
 	}
 }
 
@@ -78,33 +78,32 @@ func (c *DefaultBEContainer) AddExclude(value BEValue, id ConjunctionID) {
 	c.AddWildcard(id)
 }
 
-func (c *DefaultBEContainer) Retrieve(values be_indexer.Values) (RoaringPl, error) {
-	merger := NewPostingList()
-	merger.Or(c.wc.Bitmap)
+func (c *DefaultBEContainer) Retrieve(values be_indexer.Values, inout *PostingList) error {
+	inout.Or(c.wc.Bitmap)
 
 	if len(values) == 0 {
-		return merger, nil
+		return nil
 	}
 
 	fieldIDs := make([]uint64, 0, len(values))
 	for _, vi := range values {
 		ids, err := c.parser.ParseAssign(vi)
 		if err != nil {
-			return RoaringPl{}, err
+			return err
 		}
 		fieldIDs = append(fieldIDs, ids...)
 	}
 	for _, id := range fieldIDs {
 		if incPl, ok := c.inc[BEValue(id)]; ok {
-			merger.Or(incPl.Bitmap)
+			inout.Or(incPl.Bitmap)
 		}
 	}
 	for _, id := range fieldIDs {
 		if excPl, ok := c.exc[BEValue(id)]; ok {
-			merger.AndNot(excPl.Bitmap)
+			inout.AndNot(excPl.Bitmap)
 		}
 	}
-	return merger, nil
+	return nil
 }
 
 func (builder *DefaultBEContainerBuilder) EncodeWildcard(id ConjunctionID) {
@@ -132,5 +131,12 @@ func (builder *DefaultBEContainerBuilder) EncodeExpr(id ConjunctionID, expr *be_
 }
 
 func (builder *DefaultBEContainerBuilder) BuildBEContainer() (BEContainer, error) {
+	//for _, v := range builder.container.inc {
+	//	v.RunOptimize()
+	//}
+	//for _, v := range builder.container.exc {
+	//	v.RunOptimize()
+	//}
+	//builder.container.wc.RunOptimize()
 	return builder.container, nil
 }

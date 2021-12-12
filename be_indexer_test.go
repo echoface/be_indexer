@@ -3,6 +3,7 @@ package be_indexer
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/echoface/be_indexer/parser"
 	"github.com/echoface/be_indexer/util"
 	"github.com/smartystreets/goconvey/convey"
 	"io/ioutil"
@@ -16,9 +17,8 @@ func buildTestDoc() []*Document {
 
 	docs := make([]*Document, 0)
 	content, e := ioutil.ReadFile("./test_data/test_docs.json")
-	if e != nil {
-		panic(e)
-	}
+	util.PanicIfErr(e, "load test docs fail")
+
 	if e = json.Unmarshal(content, &docs); e != nil {
 		panic(e)
 	}
@@ -444,7 +444,7 @@ func TestBEIndex_Retrieve2(t *testing.T) {
 }
 
 /*
-gonghuan, k: 2
+k: 2
 K:2, res:[32], plgList:total plgs:2
 0:
 idx:0#72057594037927940#cur:<nil,nil> entries:[<10,true> <19,true> <27,true> <32,true> <54,true> <81,true>]
@@ -525,7 +525,7 @@ func TestBEIndex_Retrieve4(t *testing.T) {
 }
 
 func TestBEIndex_Retrieve5(t *testing.T) {
-	LogLevel = ErrorLevel
+	LogLevel = DebugLevel
 	builder := NewIndexerBuilder()
 
 	// 12: (tag IN 1 && age In 27,50) or (tag IN 12)
@@ -592,6 +592,59 @@ func TestBEIndex_Retrieve5(t *testing.T) {
 		fmt.Println(ids)
 		sort.Sort(ids)
 		convey.So(ids, convey.ShouldResemble, DocIDList{12, 13})
+		convey.So(err, convey.ShouldBeNil)
+	})
+}
+
+func TestBEIndex_Retrieve6(t *testing.T) {
+	LogLevel = ErrorLevel
+	builder := NewIndexerBuilder()
+	builder.ConfigField("keyword", FieldOption{
+		Parser:    parser.ParserNameCommon,
+		Container: HolderNameACMatcher,
+	})
+
+	// 12: (tag IN 1 && age In 27,50) or (tag IN 12)
+	doc := NewDocument(12)
+	conj := NewConjunction().
+		In("tag", NewInt32Values2(1)).
+		In("keyword", NewStrValues("abc", "红包", "棋牌"))
+	doc.AddConjunction(conj)
+	builder.AddDocument(doc)
+
+	// 13: (tag IN 1 && age Not 27) or (tag Not 60)
+	doc = NewDocument(13)
+	conj = NewConjunction().
+		In("tag", NewInt32Values2(1)).NotIn("age", NewInt32Values2(27, 15, 18, 22, 28, 32))
+	doc.AddConjunction(conj)
+	builder.AddDocument(doc)
+
+	// 14: (tag in 1,2 && tag in 12) or ("age In 60") or (sex In man)
+	doc = NewDocument(14)
+	conj = NewConjunction().
+		In("tag", NewInt32Values2(1, 2)).
+		In("sex", NewStrValues("women"))
+	conj3 := NewConjunction().
+		NotIn("keyword", NewStrValues("红包", "拉拉", "解放")).
+		In("age", NewIntValues(12, 24, 28))
+	doc.AddConjunction(conj, conj3)
+	builder.AddDocument(doc)
+
+	convey.Convey("test ac matcher retrieve", t, func() {
+
+		indexer := builder.BuildIndex()
+
+		var err error
+		var ids DocIDList
+		ids, err = indexer.Retrieve(Assignments{
+			"sex":     []interface{}{"man"},
+			"keyword": []interface{}{"解放军发红包", "abc英文歌"},
+			"age":     []interface{}{28, 2, 27},
+			"tag":     []interface{}{1, 2, 27},
+		})
+		fmt.Println(ids)
+		sort.Sort(ids)
+		convey.So(ids, convey.ShouldResemble, DocIDList{12})
 		convey.So(err, convey.ShouldBeNil)
 	})
 }

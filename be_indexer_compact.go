@@ -10,112 +10,82 @@ import (
 type (
 	CompactedBEIndex struct {
 		indexBase
-		wildcardKey     Key
 		wildcardEntries Entries
-		postingList     *PostingEntries
+		fieldContainer  *fieldEntriesContainer
 	}
 )
 
-func NewCompactedBEIndex(idGen parser.IDAllocator) BEIndex {
+func NewCompactedBEIndex() BEIndex {
 	index := &CompactedBEIndex{
 		indexBase: indexBase{
-			idAllocator: idGen,
-			fieldDesc:   make(map[BEField]*FieldDesc),
-			idToField:   make(map[uint64]*FieldDesc),
+			fieldDesc: make(map[BEField]*FieldDesc),
+			idToField: make(map[uint64]*FieldDesc),
 		},
-		postingList: &PostingEntries{
-			plEntries: make(map[Key]Entries, 0),
-		},
+		fieldContainer: newFieldEntriesContainer(),
 	}
-	wildcardDesc := index.configureField("__wildcard__", FieldOption{
-		Parser: parser.CommonParser,
+	_ = index.configureField(WildcardFieldName, FieldOption{
+		Parser:    parser.ParserNameCommon,
+		Container: HolderNameDefault,
 	})
-	index.wildcardKey = NewKey(wildcardDesc.ID, 0)
 	return index
 }
 
 func (bi *CompactedBEIndex) ConfigureIndexer(settings *IndexerSettings) {
+	bi.settings = settings
+	bi.fieldContainer.debugMode = bi.settings.EnableDebugMode
+
 	for field, option := range settings.FieldConfig {
 		bi.configureField(field, option)
 	}
 }
 
-func (bi *CompactedBEIndex) appendWildcardEntryID(id EntryID) {
+func (bi *CompactedBEIndex) addWildcardEID(id EntryID) {
 	bi.wildcardEntries = append(bi.wildcardEntries, id)
 }
 
-//newPostingEntriesIfNeeded(k int) *PostingEntries
-func (bi *CompactedBEIndex) newPostingEntriesIfNeeded(k int) *PostingEntries {
-	_ = k
-	return bi.postingList
+// newPostingEntriesIfNeeded(k int)
+func (bi *CompactedBEIndex) newEntriesContainerIfNeeded(_ int) *fieldEntriesContainer {
+	return bi.fieldContainer
 }
 
-func (bi *CompactedBEIndex) completeIndex() {
+func (bi *CompactedBEIndex) compileIndexer() {
 	if bi.wildcardEntries.Len() > 0 {
 		sort.Sort(bi.wildcardEntries)
 	}
-	bi.postingList.makeEntriesSorted()
-}
-
-// parse queries value to value id list
-func (bi *CompactedBEIndex) parseQueries(queries Assignments) (map[BEField][]uint64, error) {
-	idAssigns := make(map[BEField][]uint64, len(queries))
-
-	for field, values := range queries {
-		if !bi.hasField(field) {
-			continue
-		}
-
-		desc, ok := bi.fieldDesc[field]
-		if !ok { //no such field, ignore it(ps: bz it will not match any doc)
-			continue
-		}
-
-		res := make([]uint64, 0, len(values))
-		for _, value := range values {
-			ids, err := desc.Parser.ParseAssign(value)
-			if err != nil {
-				Logger.Errorf("field:%s, value:%+v can't be parsed, err:%s\n", field, value, err.Error())
-				return nil, fmt.Errorf("query assign parse fail,field:%s e:%s\n", field, err.Error())
-			}
-			res = append(res, ids...)
-		}
-		idAssigns[field] = res
-	}
-	return idAssigns, nil
+	bi.fieldContainer.compileEntries()
 }
 
 func (bi *CompactedBEIndex) Retrieve(queries Assignments) (result DocIDList, err error) {
 
-	idAssigns, err := bi.parseQueries(queries)
-	if err != nil {
-		Logger.Errorf("invalid query assigns:%s", err.Error())
-		return nil, err
-	}
-
 	ctx := &RetrieveContext{
-		idAssigns: idAssigns,
+		assigns: queries,
+		option:  defaultQueryOption,
 	}
 
-	fieldScanners := make(FieldScanners, 0, len(ctx.idAssigns))
+	fieldScanners := make(FieldScanners, 0, len(ctx.assigns))
 
 	if len(bi.wildcardEntries) > 0 {
-		pl := NewEntriesCursor(bi.wildcardKey, bi.wildcardEntries)
+		pl := NewEntriesCursor(wildcardQKey, bi.wildcardEntries)
 		fieldScanners = append(fieldScanners, NewFieldScanner(pl))
 	}
 
-	for field, ids := range ctx.idAssigns {
-		desc := bi.fieldDesc[field]
+	var ok bool
+	var desc *FieldDesc
+	var holder EntriesHolder
+	var entriesList CursorGroup
 
-		entriesScanners := make(CursorGroup, 0, len(ids))
-		for _, id := range ids {
-			key := NewKey(desc.ID, id)
-			if entries := bi.postingList.getEntries(key); len(entries) > 0 {
-				entriesScanners = append(entriesScanners, NewEntriesCursor(key, entries))
-			}
+	for field, values := range ctx.assigns {
+		if desc, ok = bi.fieldDesc[field]; !ok {
+			continue
 		}
-		if len(entriesScanners) > 0 {
-			fieldScanners = append(fieldScanners, NewFieldScanner(entriesScanners...))
+		if holder = bi.fieldContainer.getFieldHolder(desc); holder == nil {
+			return nil, fmt.Errorf("field:%s no holder found, what happend", field)
+		}
+		if entriesList, err = holder.GetEntries(desc, values); err != nil {
+			return nil, err
+		}
+		if len(entriesList) > 0 {
+			fieldScanners = append(fieldScanners, NewFieldScanner(entriesList...))
 		}
 	}
 
@@ -180,8 +150,6 @@ RETRIEVE:
 func (bi *CompactedBEIndex) DumpEntriesSummary() string {
 	sb := strings.Builder{}
 	sb.WriteString(fmt.Sprintf("wildcard entries length:%d >>>>>>\n", len(bi.wildcardEntries)))
-	ues := bi.postingList
-	sb.WriteString(fmt.Sprintf("postingList avgLen:%d maxLen:%d >>>>>>\n", ues.avgLen, ues.maxLen))
 	return sb.String()
 }
 
@@ -189,17 +157,10 @@ func (bi *CompactedBEIndex) DumpEntries() string {
 	sb := strings.Builder{}
 
 	sb.WriteString(fmt.Sprintf("Z:>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>\n"))
-	sb.WriteString(bi.StringKey(bi.wildcardKey))
+	sb.WriteString(wildcardQKey.String())
 	sb.WriteString(":")
 	sb.WriteString(fmt.Sprintf("%v", bi.wildcardEntries.DocString()))
 	sb.WriteString("\n")
-	sb.WriteString(fmt.Sprintf("postingList avgLen:%d maxLen:%d >>>>>>\n",
-		bi.postingList.avgLen, bi.postingList.maxLen))
-	for k, entries := range bi.postingList.plEntries {
-		sb.WriteString(bi.StringKey(k))
-		sb.WriteString(":")
-		sb.WriteString(fmt.Sprintf("%v", entries.DocString()))
-		sb.WriteString("\n")
-	}
+	bi.fieldContainer.DumpString(&sb)
 	return sb.String()
 }

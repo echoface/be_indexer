@@ -2,13 +2,14 @@ package be_indexer
 
 import (
 	"fmt"
-	"github.com/echoface/be_indexer/parser"
+	"github.com/echoface/be_indexer/util"
 )
 
 type (
 	IndexerBuilder struct {
-		Documents map[DocID]*Document
-		settings  IndexerSettings
+		Documents  map[DocID]*Document
+		settings   IndexerSettings
+		skipBadDoc bool
 	}
 )
 
@@ -21,10 +22,22 @@ func NewIndexerBuilder() *IndexerBuilder {
 	}
 }
 
+func (b *IndexerBuilder) SetSkipBadDocument(skip bool) {
+	b.skipBadDoc = skip
+}
+
 func (b *IndexerBuilder) SetFieldParser(field BEField, parserName string) {
 	b.settings.FieldConfig[field] = FieldOption{
 		Parser: parserName,
 	}
+}
+
+func (b *IndexerBuilder) IndexSettings() *IndexerSettings {
+	return &b.settings
+}
+
+func (b *IndexerBuilder) ConfigField(field BEField, settings FieldOption) {
+	b.settings.FieldConfig[field] = settings
 }
 
 func (b *IndexerBuilder) AddDocument(doc *Document) {
@@ -46,74 +59,61 @@ func (b *IndexerBuilder) buildDocEntries(indexer BEIndex, doc *Document) {
 
 	doc.Prepare()
 
-FORCONJ:
-	for _, conj := range doc.Cons {
+CONJLoop:
+	for idx, conj := range doc.Cons {
+
+		conjID := NewConjID(doc.ID, idx, conj.size)
 
 		if conj.size == 0 {
-			indexer.appendWildcardEntryID(NewEntryID(conj.id, true))
+			indexer.addWildcardEID(NewEntryID(conjID, true))
 		}
 
-		kSizeEntries := indexer.newPostingEntriesIfNeeded(conj.size)
-		type pair struct {
-			key   Key
-			entry EntryID
-		}
-		var pairs []*pair
+		kSizeContainer := indexer.newEntriesContainerIfNeeded(conj.size)
 
 		for field, expr := range conj.Expressions {
-			desc := indexer.newFieldDescIfNeeded(field)
-			entryID := NewEntryID(conj.id, expr.Incl)
 
-			for _, value := range expr.Value {
-				res, e := desc.Parser.ParseValue(value)
-				if e != nil {
-					panic(e)
-					Logger.Errorf("field %s parse failed\n", field)
-					Logger.Errorf("doc:%d, value %+v parse fail err detail:%+v\n", conj.id.DocID(), value, e)
-					continue FORCONJ //break FORCONJ, conjunction as logic unit, just skip this conj if any error occur
-				}
-				for _, id := range res {
-					pairs = append(pairs, &pair{
-						key:   NewKey(desc.ID, id),
-						entry: entryID,
-					})
-				}
+			desc := indexer.newFieldDescIfNeeded(field)
+
+			entryID := NewEntryID(conjID, expr.Incl)
+
+			holder := kSizeContainer.newEntriesHolder(desc)
+
+			if err := holder.AddFieldEID(desc, expr.Value, entryID); err != nil {
+
+				Logger.Errorf("doc:%d field:%s AddFieldEID failed, values:%+v\n", doc.ID, field, expr.Value)
+
+				util.PanicIf(!b.skipBadDoc, "AddFieldEID fail, field:%s, err:%+v", field, err)
+
+				continue CONJLoop // break CONJLoop, conjunction as logic unit, just skip this conj if any error occur
 			}
-		}
-		for _, v := range pairs {
-			kSizeEntries.AppendEntryID(v.key, v.entry)
 		}
 	}
 }
 
 func (b *IndexerBuilder) BuildIndex() BEIndex {
 
-	idGen := parser.NewIDAllocatorImpl()
-
-	indexer := NewSizeGroupedBEIndex(idGen)
+	indexer := NewSizeGroupedBEIndex()
 
 	indexer.ConfigureIndexer(&b.settings)
 
 	for _, doc := range b.Documents {
 		b.buildDocEntries(indexer, doc)
 	}
-	indexer.completeIndex()
+	indexer.compileIndexer()
 
 	return indexer
 }
 
 func (b *IndexerBuilder) BuildCompactedIndex() BEIndex {
 
-	idGen := parser.NewIDAllocatorImpl()
-
-	indexer := NewCompactedBEIndex(idGen)
+	indexer := NewCompactedBEIndex()
 
 	indexer.ConfigureIndexer(&b.settings)
 
 	for _, doc := range b.Documents {
 		b.buildDocEntries(indexer, doc)
 	}
-	indexer.completeIndex()
+	indexer.compileIndexer()
 
 	return indexer
 }

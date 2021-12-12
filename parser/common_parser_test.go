@@ -6,8 +6,7 @@ import (
 )
 
 func TestCommonStrParser_ParseValue(t *testing.T) {
-	idGen := NewIDAllocatorImpl()
-	parser := NewCommonStrParser(idGen)
+	parser := NewCommonStrParser()
 
 	r, e := parser.ParseValue([]int{1, 2, 3})
 	fmt.Println(r, e)

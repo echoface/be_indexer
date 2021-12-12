@@ -1,10 +1,10 @@
 package roaringidx
 
 import (
+	"github.com/echoface/be_indexer/parser"
 	"testing"
 
 	"github.com/echoface/be_indexer"
-	parser "github.com/echoface/be_indexer/parser/v2"
 	"github.com/smartystreets/goconvey/convey"
 )
 

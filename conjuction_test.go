@@ -6,7 +6,7 @@ import (
 )
 
 func TestNewConjID(t *testing.T) {
-	convey.Convey("test conjuntion id", t, func() {
+	convey.Convey("test conjunction id", t, func() {
 		cases := [][3]int{
 			{0, 0, 0},
 			{1, 2, 3},

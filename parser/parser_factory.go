@@ -1,13 +1,17 @@
 package parser
 
-import "fmt"
+import (
+	"fmt"
+)
 
 /*parser 解析指定特殊格式的Value,并通过IDAllocator将ValueID化*/
 
 const (
-	// inner register parser can't be override, customized parser can't use prefix "#"
-	CommonParser   = "#common"
-	NumRangeParser = "#num_range"
+	// ParserNameNumber inner register parser can't override, customized parser can't use prefix "#"
+	ParserNameNumber   = "#number"
+	ParserNameCommon   = "#common"
+	ParserNameNumRange = "#num_range"
+	ParserNameStrHash  = "#str_hash"
 )
 
 var (
@@ -15,13 +19,16 @@ var (
 )
 
 type (
-	Builder func(allocator IDAllocator) FieldValueParser
+	Builder func() FieldValueParser
 )
 
 func init() {
 	factory = make(map[string]Builder)
-	factory[CommonParser] = NewCommonStrParser
-	factory[NumRangeParser] = NewNumRangeParser
+
+	RegisterBuilder(ParserNameCommon, NewCommonStrParser)
+	RegisterBuilder(ParserNameNumber, NewNumberParser)
+	RegisterBuilder(ParserNameNumRange, NewNumRangeParser)
+	RegisterBuilder(ParserNameStrHash, NewStrHashParser)
 }
 
 // RegisterBuilder register override other will panic to avoid wrong value id be use in indexing
@@ -37,10 +44,11 @@ func HasParser(name string) (ok bool) {
 	return ok
 }
 
-func NewParser(name string, idGen IDAllocator) FieldValueParser {
-	builder, ok := factory[name]
-	if !ok {
+func NewParser(name string) FieldValueParser {
+	var ok bool
+	var builderFn Builder
+	if builderFn, ok = factory[name]; !ok {
 		return nil
 	}
-	return builder(idGen)
+	return builderFn()
 }

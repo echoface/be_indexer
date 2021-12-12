@@ -18,7 +18,10 @@ type (
 	// <field-8bit> | <value-56bit>
 	Key uint64
 
+	// EntryID [-- ConjID(48bit) --|-- empty(15bit) -- | --incl/excl(1bit) --]
+	//               |--[(reserved(16)) | size(8bit) | index(8bit)  | docID(32bit)]
 	EntryID uint64
+
 	Entries []EntryID
 
 	// PostingEntries posting list entries(sorted); eg: <age, 15>: []EntryID{1, 2, 3}
@@ -29,7 +32,7 @@ type (
 	}
 )
 
-//NewKey API
+// NewKey API
 func NewKey(fieldID uint64, valueID uint64) Key {
 	if fieldID > MaxBEFieldID || valueID > MaxBEValueID {
 		panic(fmt.Errorf("out of value range, <%d, %d>", fieldID, valueID))
@@ -43,6 +46,10 @@ func (key Key) GetFieldID() uint64 {
 
 func (key Key) GetValueID() uint64 {
 	return uint64(key) & MaxBEValueID
+}
+
+func (key Key) String() string {
+	return fmt.Sprintf("<%d,%d>", key.GetFieldID(), key.GetValueID())
 }
 
 //Len Entries sort API

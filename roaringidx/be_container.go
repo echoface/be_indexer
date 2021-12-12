@@ -2,9 +2,8 @@ package roaringidx
 
 import (
 	"fmt"
-
 	"github.com/echoface/be_indexer"
-	parser "github.com/echoface/be_indexer/parser/v2"
+	"github.com/echoface/be_indexer/parser"
 )
 
 type (

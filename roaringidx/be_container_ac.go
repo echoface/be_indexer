@@ -23,7 +23,7 @@ type (
 	}
 )
 
-func NewACBEContainerBuilder(setting FieldSetting) BEContainerBuilder {
+func NewACBEContainerBuilder(_ FieldSetting) BEContainerBuilder {
 	return &ACBEContainerBuilder{
 		container: NewACBEContainer(),
 		incValues: map[string][]ConjunctionID{},

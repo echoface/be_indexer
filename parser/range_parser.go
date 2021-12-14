@@ -11,29 +11,23 @@ NumberRangeParser parse syntax like format: start:end:step
 step ist optional, it will generate start, start+step, start+2*stem ....
 */
 type (
-	// format: start:end:step step ist optional
+	// NumberRangeParser format: start:end:step; the `step` is optional
 	NumberRangeParser struct {
-		idAlloc IDAllocator
 	}
 
-	numRangeOption struct {
+	RangeDesc struct {
 		start int64
 		end   int64
 		step  int64
 	}
 )
 
-func NewNumRangeParser(allocator IDAllocator) FieldValueParser {
-	return &NumberRangeParser{
-		idAlloc: allocator,
-	}
+func NewNumRangeParser() FieldValueParser {
+	return &NumberRangeParser{}
 }
 
-// format: start:end:step
-func (p *NumberRangeParser) parseOption(v string) *numRangeOption {
-	opt := &numRangeOption{
-		step: 1,
-	}
+func NewRangeDesc(v string) *RangeDesc {
+	opt := RangeDesc{step: 1}
 	vs := strings.Split(v, ":")
 	if len(vs) < 2 { // min len is 4 bz fmt:"x:x"
 		return nil
@@ -45,38 +39,35 @@ func (p *NumberRangeParser) parseOption(v string) *numRangeOption {
 	if opt.start, err = strconv.ParseInt(vs[0], 10, 64); err != nil {
 		return nil
 	}
-	if len(vs) > 2 {
-		if opt.step, err = strconv.ParseInt(vs[2], 10, 64); err != nil {
-			return nil
-		}
+	if len(vs) <= 2 {
+		return &opt
 	}
-	return opt
+	if opt.step, err = strconv.ParseInt(vs[2], 10, 64); err != nil {
+		return nil
+	}
+	return &opt
 }
 
-// get api
+// ParseAssign only single number supported, float will round into integer
 func (p *NumberRangeParser) ParseAssign(v interface{}) (res []uint64, err error) {
-	num, err := parseNumber(v)
+	num, err := ParseIntegerNumber(v)
 	if err != nil {
 		return nil, err
 	}
-	if id, ok := p.idAlloc.FindNumID(num); ok {
-		return append(res, id), nil
-	}
-	return nil, nil
+	return []uint64{uint64(num)}, nil
 }
 
-// parse api
 func (p *NumberRangeParser) ParseValue(v interface{}) (res []uint64, err error) {
 	content, ok := v.(string)
 	if !ok {
-		return nil, fmt.Errorf("not a format string value")
+		return nil, fmt.Errorf("NumberRangeParser only support string format like 'start:end:step'")
 	}
-	opt := p.parseOption(content)
+	opt := NewRangeDesc(content)
 	if opt == nil {
 		return nil, fmt.Errorf("invalid format like start:end:step")
 	}
 	for s := opt.start; s <= opt.end; s += opt.step {
-		res = append(res, p.idAlloc.AllocNumID(s))
+		res = append(res, uint64(s))
 	}
 	return res, nil
 }

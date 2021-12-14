@@ -11,9 +11,17 @@ type (
 	}
 )
 
-func NewCommonStrParser(allocator IDAllocator) FieldValueParser {
+var DefaultIDAllocator = NewIDAllocatorImpl()
+
+func NewCommonStrParser() FieldValueParser {
 	return &CommonStrParser{
-		idAlloc: allocator,
+		idAlloc: DefaultIDAllocator,
+	}
+}
+
+func NewCommonParserWithAllocator(alloc IDAllocator) FieldValueParser {
+	return &CommonStrParser{
+		idAlloc: alloc,
 	}
 }
 

@@ -48,7 +48,7 @@ func (builder *IvtBEIndexerBuilder) AddDocument(doc *IndexDocument) {
 
 		// NOTE: check conjunction contains none-configured field expression
 		// this may case logic error if we omit those boolean-expression
-		for field, _ := range conj.Expressions {
+		for field := range conj.Expressions {
 			if _, ok := builder.containerBuilder[field]; !ok {
 				panic(fmt.Errorf("document contains none-configured field:%s", field))
 			}

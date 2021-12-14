@@ -17,7 +17,7 @@ type (
 	}
 )
 
-func parseNumber(v interface{}) (n int64, err error) {
+func ParseIntegerNumber(v interface{}) (n int64, err error) {
 	vf := reflect.ValueOf(v)
 	switch tv := v.(type) {
 	case int, int8, int16, int32, int64:

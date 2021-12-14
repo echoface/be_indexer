@@ -11,7 +11,7 @@ import (
 func TestPostingList_Skip(t *testing.T) {
 	convey.Convey("skip test", t, func() {
 		sc := EntriesCursor{
-			key:     NewKey(1, 2),
+			key:     newQKey("age", 2),
 			cursor:  0,
 			entries: []EntryID{1, 2, 3, 10, 10, 10, 11, 12, 15, 15, 22, 111, 111},
 		}
@@ -31,7 +31,7 @@ func TestPostingList_Skip(t *testing.T) {
 
 	convey.Convey("skip to test", t, func() {
 		scanner := EntriesCursor{
-			key:     NewKey(1, 2),
+			key:     newQKey("age", 2),
 			cursor:  0,
 			entries: []EntryID{1, 2, 3, 10, 10, 10, 11, 12, 15, 15, 22, 111, 111},
 		}
@@ -97,7 +97,7 @@ func TestPostingList_SkipTo(t *testing.T) {
 		scg.SkipTo(19)
 		fmt.Println("current:", scg.current)
 		fmt.Println("curEID:", scg.GetCurEntryID())
-		fmt.Println("curent cursor:", scg.current.cursor)
+		fmt.Println("current cursor:", scg.current.cursor)
 	})
 }
 
@@ -121,6 +121,6 @@ func TestPostingList_SkipTo2(t *testing.T) {
 		scg.SkipTo(29)
 		fmt.Println("current:", scg.current)
 		fmt.Println("curEID:", scg.GetCurEntryID())
-		fmt.Println("curent cursor:", scg.current.cursor)
+		fmt.Println("current cursor:", scg.current.cursor)
 	})
 }

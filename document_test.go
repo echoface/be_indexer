@@ -30,6 +30,6 @@ func TestDocument_Prepare(t *testing.T) {
 		convey.So(len(doc.Cons), convey.ShouldEqual, 1)
 
 		doc.Prepare()
-		convey.So(doc.Cons[0].id, convey.ShouldEqual, NewConjID(12, 0, 1))
+		convey.So(doc.Cons[0].size, convey.ShouldEqual, 1)
 	})
 }

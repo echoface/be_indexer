@@ -4,7 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"github.com/echoface/be_indexer"
-	parser "github.com/echoface/be_indexer/parser/v2"
+	"github.com/echoface/be_indexer/parser"
 	"github.com/echoface/be_indexer/roaringidx"
 	"io"
 	"log"

@@ -63,8 +63,7 @@ func (doc *Document) Prepare() {
 	if len(doc.Cons) >= 0xFF {
 		panic(fmt.Errorf("max 256 conjuctions per document limitation"))
 	}
-	for idx, conj := range doc.Cons {
-		size := conj.CalcConjSize()
-		conj.id = NewConjID(doc.ID, idx, size)
+	for _, conj := range doc.Cons {
+		_ = conj.CalcConjSize()
 	}
 }

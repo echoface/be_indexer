@@ -36,7 +36,7 @@ func main() {
 		fmt.Println("add document:", doc.ID)
 		builder.AddDocument(doc)
 	}
-	builder.SetFieldParser("age", parser.NumRangeParser)
+	builder.SetFieldParser("age", parser.ParserNameNumRange)
 
 	indexer := builder.BuildIndex()
 	fmt.Println(indexer.DumpEntries())

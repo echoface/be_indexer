@@ -7,8 +7,8 @@ import (
 
 /*
 IndexScanner
-a scanner for a index, it help retrieving result document id from posting entries
-currently, it be used by BEIndex, but as a part of design, it should top on BEIndex
+a scanner for indexer, it helps to retrieve result document id from posting entries
+currently, it is used by BEIndex, but as a part of design, it should top on BEIndex
 that seems more reasonable. so may be next version, should be refactored(fixed).
 */
 
@@ -17,11 +17,16 @@ const (
 )
 
 type (
+	QKey struct {
+		field BEField
+		value interface{}
+	}
+
 	/*EntriesCursor represent a posting list for one Assign */
 	// (age, 15): [1, 2, 5, 19, 22]
 	// cursor:           ^
 	EntriesCursor struct {
-		key     Key
+		key     QKey
 		cursor  int // current cur cursor
 		entries Entries
 	}
@@ -37,7 +42,15 @@ type (
 	FieldScanners []*FieldScanner
 )
 
-func NewEntriesCursor(key Key, entries Entries) *EntriesCursor {
+func newQKey(field BEField, v interface{}) QKey {
+	return QKey{field: field, value: v}
+}
+
+func (key *QKey) String() string {
+	return fmt.Sprintf("<%s,%+v>", key.field, key.value)
+}
+
+func NewEntriesCursor(key QKey, entries Entries) *EntriesCursor {
 	return &EntriesCursor{
 		key:     key,
 		cursor:  0,
@@ -139,8 +152,8 @@ func (s FieldScanners) Less(i, j int) bool {
 	return s[i].GetCurEntryID() < s[j].GetCurEntryID()
 }
 
-// Sort golang's internal sort.Sort method have a obvious overhead in performance.(runtime convTSlice)
-// so here use a simple insert sort replace it. bz not much Element, may a another quickSort here later
+// Sort golang's internal sort.Sort method have obvious overhead in performance.(runtime convTSlice)
+// so here use a simple insert sort replace it. bz not much Element, may another quickSort here later
 func (s FieldScanners) Sort() {
 	x := len(s)
 	if x <= 1 {
@@ -239,7 +252,7 @@ func (sg *FieldScanner) SkipTo(id EntryID) (newMin EntryID) {
 func (sg *FieldScanner) DumpEntries() string {
 	sb := &strings.Builder{}
 	for idx, cursor := range sg.cursorGroup {
-		sb.WriteString(fmt.Sprintf("\nidx:%d#%d#cur:%v", idx, cursor.key, cursor.GetCurEntryID().DocString()))
+		sb.WriteString(fmt.Sprintf("\nidx:%d#%s#cur:%v", idx, cursor.key.String(), cursor.GetCurEntryID().DocString()))
 		sb.WriteString(fmt.Sprintf(" entries:%v", cursor.entries.DocString()))
 	}
 	return sb.String()

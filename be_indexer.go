@@ -5,45 +5,76 @@ import (
 	"github.com/echoface/be_indexer/parser"
 )
 
+const (
+	WildcardFieldName = BEField("__wildcard__")
+)
+
+var (
+	wildcardQKey       = newQKey(WildcardFieldName, nil)
+	defaultQueryOption = &RetrieveOption{}
+)
+
 type (
 	FieldDesc struct {
 		ID     uint64
 		Field  BEField
 		Parser parser.FieldValueParser
+		option FieldOption
 	}
 
 	FieldOption struct {
-		Parser string
+		Parser    string
+		Container string // specific the holder|container all tokenized value and correspondent Entries
 	}
 
 	IndexerSettings struct {
-		FieldConfig map[BEField]FieldOption
+		EnableDebugMode bool
+		FieldConfig     map[BEField]FieldOption
 	}
 
 	RetrieveContext struct {
-		idAssigns map[BEField][]uint64
+		assigns Assignments
+		option  *RetrieveOption
+	}
+
+	RetrieveOption struct {
+		DumpStepInfo       bool
+		DumpEntriesDetail  bool
+		RemoveDuplicateDoc bool
 	}
 
 	BEIndex interface {
 		//interface used by builder
-		appendWildcardEntryID(id EntryID)
-		newFieldDescIfNeeded(field BEField) *FieldDesc
-		newPostingEntriesIfNeeded(k int) *PostingEntries
-		completeIndex()
+		addWildcardEID(id EntryID)
 
-		//ConfigureIndexer public Interface
+		newFieldDescIfNeeded(field BEField) *FieldDesc
+
+		newEntriesContainerIfNeeded(k int) *fieldEntriesContainer
+
+		compileIndexer()
+
+		// ConfigureIndexer public Interface
 		ConfigureIndexer(settings *IndexerSettings)
+
+		// Retrieve public Interface
 		Retrieve(queries Assignments) (result DocIDList, err error)
 
-		//DumpEntries debug api
+		// RetrieveV2
+		// Retrieve(queries Assignments, *RetrieveOption) (result DocIDList, err error)
+
+		// DumpEntries debug api
 		DumpEntries() string
+
 		DumpEntriesSummary() string
 	}
 
 	indexBase struct {
-		idAllocator parser.IDAllocator
-		fieldDesc   map[BEField]*FieldDesc
-		idToField   map[uint64]*FieldDesc
+		fieldDesc map[BEField]*FieldDesc
+
+		idToField map[uint64]*FieldDesc
+
+		// debug options
+		settings *IndexerSettings // keep information for debug, it will consume more memory
 	}
 )
 
@@ -52,14 +83,17 @@ func (bi *indexBase) configureField(field BEField, option FieldOption) *FieldDes
 		panic(fmt.Errorf("can't configure field twice, bz field id can only match one ID"))
 	}
 
-	valueParser := parser.NewParser(option.Parser, bi.idAllocator)
+	valueParser := parser.NewParser(option.Parser)
 	if valueParser == nil {
-		valueParser = parser.NewParser(parser.CommonParser, bi.idAllocator)
+		Logger.Infof("not configure Parser for field:%s, use default", field)
+		valueParser = parser.NewParser(parser.ParserNameCommon)
 	}
+
 	desc := &FieldDesc{
 		Field:  field,
 		Parser: valueParser,
 		ID:     uint64(len(bi.fieldDesc)),
+		option: option,
 	}
 
 	bi.fieldDesc[field] = desc
@@ -74,7 +108,8 @@ func (bi *indexBase) newFieldDescIfNeeded(field BEField) *FieldDesc {
 		return desc
 	}
 	return bi.configureField(field, FieldOption{
-		Parser: parser.CommonParser,
+		Parser:    parser.ParserNameCommon,
+		Container: HolderNameDefault,
 	})
 }
 
@@ -83,41 +118,9 @@ func (bi *indexBase) hasField(field BEField) bool {
 	return ok
 }
 
-func (bi *indexBase) StringKey(key Key) string {
-	return fmt.Sprintf("<%s,%d>", bi.getFieldFromID(key.GetFieldID()), key.GetValueID())
-}
-
 func (bi *indexBase) getFieldFromID(v uint64) BEField {
 	if field, ok := bi.idToField[v]; ok {
 		return field.Field
 	}
 	return ""
-}
-
-// parse queries value to value id list
-func (bi *indexBase) parseQueries(queries Assignments) (map[BEField][]uint64, error) {
-	idAssigns := make(map[BEField][]uint64, len(queries))
-
-	for field, values := range queries {
-		if !bi.hasField(field) {
-			continue
-		}
-
-		desc, ok := bi.fieldDesc[field]
-		if !ok { //no such field, ignore it(ps: bz it will not match any doc)
-			continue
-		}
-
-		res := make([]uint64, 0, len(values))
-		for _, value := range values {
-			ids, err := desc.Parser.ParseAssign(value)
-			if err != nil {
-				Logger.Errorf("field:%s, value:%+v can't be parsed, err:%s\n", field, value, err.Error())
-				return nil, fmt.Errorf("query assign parse fail,field:%s e:%s\n", field, err.Error())
-			}
-			res = append(res, ids...)
-		}
-		idAssigns[field] = res
-	}
-	return idAssigns, nil
 }

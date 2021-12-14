@@ -1,11 +1,11 @@
-package v2
+package parser
 
 import (
 	"fmt"
 	"testing"
 )
 
-func TestCommonStrParser_ParseValue(t *testing.T) {
+func TestCommonNumberParser_ParseValue(t *testing.T) {
 	parser := NewNumberParser()
 
 	r, e := parser.ParseValue([]int{1, 2, 3})

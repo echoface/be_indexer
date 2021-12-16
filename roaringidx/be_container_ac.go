@@ -88,7 +88,7 @@ func (builder *ACBEContainerBuilder) EncodeWildcard(id ConjunctionID) {
 	builder.container.AddWildcard(id)
 }
 
-func (builder *ACBEContainerBuilder) EncodeExpr(id ConjunctionID, expr *be_indexer.BoolExprs) error {
+func (builder *ACBEContainerBuilder) EncodeExpr(id ConjunctionID, expr *be_indexer.BooleanExpr) error {
 	if expr == nil {
 		builder.container.AddWildcard(id)
 		return nil

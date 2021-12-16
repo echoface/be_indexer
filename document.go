@@ -1,16 +1,20 @@
 package be_indexer
 
 import (
-	"fmt"
+	"errors"
 )
 
 type (
-	DocID     uint32
+	DocID     int64
 	DocIDList []DocID
 
+	Conjunction struct { // 每个conjunction 内的field 逻辑为且， 参考DNF定义
+		Expressions map[BEField]*BoolValues `json:"exprs"` // 同一个Conj内不允许重复的Field
+	}
+
 	Document struct {
-		ID   DocID          `json:"id"`   //只支持int32最大值个Doc
-		Cons []*Conjunction `json:"cons"` //conjunction之间的关系是或，具体描述可以看论文的表述
+		ID   DocID          `json:"id"`   // 只支持int32最大值个Doc
+		Cons []*Conjunction `json:"cons"` // conjunction之间的关系是或，具体描述可以看论文的表述
 	}
 )
 
@@ -51,19 +55,81 @@ func (s DocIDList) Less(i, j int) bool { return s[i] < s[j] }
 /*AddConjunction 一组完整的expression， 必须是完整一个描述文档的DNF Bool表达的条件组合*/
 func (doc *Document) AddConjunction(cons ...*Conjunction) {
 	for _, conj := range cons {
-		if len(conj.Expressions) == 0 {
-			panic(fmt.Errorf("invalid conjunction"))
-		}
 		doc.Cons = append(doc.Cons, conj)
 	}
 }
 
-//Prepare 计算生成doc内部的私有数据
-func (doc *Document) Prepare() {
-	if len(doc.Cons) >= 0xFF {
-		panic(fmt.Errorf("max 256 conjuctions per document limitation"))
+func (doc *Document) AddConjunctions(conj *Conjunction, others ...*Conjunction) {
+	doc.Cons = append(doc.Cons, conj)
+	for _, conj := range others {
+		doc.Cons = append(doc.Cons, conj)
 	}
-	for _, conj := range doc.Cons {
-		_ = conj.CalcConjSize()
+}
+
+func NewConjunction() *Conjunction {
+	return &Conjunction{
+		Expressions: make(map[BEField]*BoolValues),
 	}
+}
+
+// In any value in values is a **true** expression
+func (conj *Conjunction) In(field BEField, values Values) *Conjunction {
+	conj.addExpression(field, true, values)
+	return conj
+}
+
+// NotIn any value in values is a **false** expression
+func (conj *Conjunction) NotIn(field BEField, values Values) *Conjunction {
+	conj.addExpression(field, false, values)
+	return conj
+}
+
+func (conj *Conjunction) AddBoolExpr(expr *BooleanExpr) *Conjunction {
+	conj.addExpression(expr.Field, expr.Incl, expr.Value)
+	return conj
+}
+
+// AddBoolExprs append boolean expression,
+// don't allow same field added twice in one conjunction
+func (conj *Conjunction) AddBoolExprs(exprs ...*BooleanExpr) {
+	for _, expr := range exprs {
+		conj.AddBoolExpr(expr)
+	}
+}
+
+func (conj *Conjunction) addExpression(field BEField, inc bool, values Values) {
+	if _, ok := conj.Expressions[field]; ok {
+		panic(errors.New("conj don't allow one field show up twice"))
+	}
+	conj.Expressions[field] = &BoolValues{
+		Incl:  inc,
+		Value: values,
+	}
+}
+
+func (conj *Conjunction) CalcConjSize() (size int) {
+	for _, bv := range conj.Expressions {
+		if bv.Incl {
+			size++
+		}
+	}
+	return
+}
+
+func (conj *Conjunction) AddExpression(expr *BooleanExpr) *Conjunction {
+	conj.addExpression(expr.Field, expr.Incl, expr.Value)
+	return conj
+}
+
+func (conj *Conjunction) Include(field BEField, values Values) *Conjunction {
+	return conj.AddExpression(NewBoolExpr(field, true, values))
+}
+
+func (conj *Conjunction) Exclude(field BEField, values Values) *Conjunction {
+	return conj.AddExpression(NewBoolExpr(field, false, values))
+}
+
+func (conj *Conjunction) AddExpression3(field string, include bool, values Values) *Conjunction {
+	expr := NewBoolExpr(BEField(field), include, values)
+	return conj.AddExpression(expr)
 }

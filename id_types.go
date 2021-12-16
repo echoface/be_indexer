@@ -2,7 +2,6 @@ package be_indexer
 
 import (
 	"fmt"
-	"sort"
 )
 
 const (
@@ -14,7 +13,11 @@ const (
 )
 
 type (
-	//Key Field-Value eg: age-15 all field mapping to int32
+	// ConjID max support 56bit len
+	// |--[(reserved(16)) | size(8bit) | index(8bit)  | docID(32bit)]
+	ConjID uint64
+
+	// Key is the term represent field and its value, eg: <age,15>
 	// <field-8bit> | <value-56bit>
 	Key uint64
 
@@ -22,15 +25,27 @@ type (
 	//               |--[(reserved(16)) | size(8bit) | index(8bit)  | docID(32bit)]
 	EntryID uint64
 
+	// Entries a type define for sort option
 	Entries []EntryID
-
-	// PostingEntries posting list entries(sorted); eg: <age, 15>: []EntryID{1, 2, 3}
-	PostingEntries struct {
-		maxLen    int64 // max length of Entries
-		avgLen    int64 // avg length of Entries
-		plEntries map[Key]Entries
-	}
 )
+
+// NewConjID (reserved(16))| size(8bit) | index(8bit)  | docID(32bit)
+func NewConjID(docID DocID, index, size int) ConjID {
+	u := (uint64(size) << 40) | (uint64(index) << 32) | (uint64(docID))
+	return ConjID(u)
+}
+
+func (id ConjID) Index() int {
+	return int((id >> 32) & 0xFF)
+}
+
+func (id ConjID) Size() int {
+	return int((id >> 40) & 0xFF)
+}
+
+func (id ConjID) DocID() DocID {
+	return DocID(id & 0xFFFFFFFF)
+}
 
 // NewKey API
 func NewKey(fieldID uint64, valueID uint64) Key {
@@ -94,34 +109,4 @@ func (entry EntryID) DocString() string {
 		return "<nil,nil>"
 	}
 	return fmt.Sprintf("<%d,%t>", entry.GetConjID().DocID(), entry.IsInclude())
-}
-
-func (kse *PostingEntries) AppendEntryID(key Key, id EntryID) {
-	entries, hit := kse.plEntries[key]
-	if !hit {
-		kse.plEntries[key] = Entries{id}
-	}
-	entries = append(entries, id)
-	kse.plEntries[key] = entries
-}
-
-func (kse *PostingEntries) getEntries(key Key) Entries {
-	if entries, hit := kse.plEntries[key]; hit {
-		return entries
-	}
-	return nil
-}
-
-func (kse *PostingEntries) makeEntriesSorted() {
-	var total int64
-	for _, entries := range kse.plEntries {
-		sort.Sort(entries)
-		if kse.maxLen < int64(len(entries)) {
-			kse.maxLen = int64(len(entries))
-		}
-		total += int64(len(entries))
-	}
-	if len(kse.plEntries) > 0 {
-		kse.avgLen = total / int64(len(kse.plEntries))
-	}
 }

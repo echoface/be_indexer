@@ -69,58 +69,19 @@ func TestEntries_Key(t *testing.T) {
 	fmt.Printf("%x\n", f.GetValueID())
 }
 
-func TestPostingList_SkipTo(t *testing.T) {
-	scg := FieldScanner{
-		current: nil,
-		cursorGroup: CursorGroup{
-			{
-				cursor:  0,
-				entries: []EntryID{17, 32, 37},
-			},
-			{
-				cursor:  0,
-				entries: []EntryID{17, 33},
-			},
-			{
-				cursor:  0,
-				entries: []EntryID{19, 60},
-			},
-			{
-				cursor:  0,
-				entries: []EntryID{53, 54},
-			},
-		},
-	}
-	scg.current = scg.cursorGroup[0]
-
-	convey.Convey("test SkipTo", t, func() {
-		scg.SkipTo(19)
-		fmt.Println("current:", scg.current)
-		fmt.Println("curEID:", scg.GetCurEntryID())
-		fmt.Println("current cursor:", scg.current.cursor)
-	})
-}
-
-func TestPostingList_SkipTo2(t *testing.T) {
-	scg := FieldScanner{
-		current: nil,
-		cursorGroup: CursorGroup{
-			{
-				cursor:  0,
-				entries: []EntryID{28},
-			},
-			{
-				cursor:  0,
-				entries: []EntryID{28},
-			},
-		},
-	}
-	scg.current = scg.cursorGroup[0]
-
-	convey.Convey("test SkipTo with only one element", t, func() {
-		scg.SkipTo(29)
-		fmt.Println("current:", scg.current)
-		fmt.Println("curEID:", scg.GetCurEntryID())
-		fmt.Println("current cursor:", scg.current.cursor)
+func TestNewConjID(t *testing.T) {
+	convey.Convey("test conjunction id", t, func() {
+		cases := [][3]int{
+			{0, 0, 0},
+			{1, 2, 3},
+			{2, 0, 1},
+			{12, 1, 20},
+		}
+		for _, cs := range cases {
+			id := NewConjID(DocID(cs[0]), cs[1], cs[2])
+			convey.So(id.DocID(), convey.ShouldEqual, cs[0])
+			convey.So(id.Index(), convey.ShouldEqual, cs[1])
+			convey.So(id.Size(), convey.ShouldEqual, cs[2])
+		}
 	})
 }

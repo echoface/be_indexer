@@ -62,7 +62,7 @@ func createTestIndexer(numberFieldCnt, acMatchFieldCnt, docCount int) (*benchDat
 
 	fmt.Println("start create test document .........")
 	for i := 1; i <= docCount; i++ {
-		doc := roaringidx.NewDocument(int64(i))
+		doc := be_indexer.NewDocument(be_indexer.DocID(i))
 		rn := rand.Intn(100)
 
 		if rn < 50 { // keywords
@@ -71,14 +71,14 @@ func createTestIndexer(numberFieldCnt, acMatchFieldCnt, docCount int) (*benchDat
 
 			field := fmt.Sprintf("ac_%d", rand.Intn(acMatchFieldCnt))
 			values := be_indexer.NewStrValues(data.keywords[start : wordsCnt+start]...)
-			doc.AddConjunction(roaringidx.NewConjunction().AddExpression3(field, rn < 25, values))
+			doc.AddConjunction(be_indexer.NewConjunction().AddExpression3(field, rn < 25, values))
 		} else { // number
 			wordsCnt := rand.Intn(99) + 1
 			start := rand.Intn(numCnt - wordsCnt)
 
 			field := fmt.Sprintf("number_%d", rand.Intn(numberFieldCnt))
 			values := be_indexer.NewIntValues(data.numbers[start : wordsCnt+start]...)
-			doc.AddConjunction(roaringidx.NewConjunction().AddExpression3(field, rn > 75, values))
+			doc.AddConjunction(be_indexer.NewConjunction().AddExpression3(field, rn > 75, values))
 		}
 
 		builder.AddDocument(doc)

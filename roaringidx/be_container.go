@@ -15,7 +15,7 @@ type (
 	BEContainerBuilder interface {
 		EncodeWildcard(id ConjunctionID) // equal to: EncodeExpr(id ConjunctionID, nil)
 
-		EncodeExpr(id ConjunctionID, expr *be_indexer.BoolExprs) error
+		EncodeExpr(id ConjunctionID, expr *be_indexer.BooleanExpr) error
 
 		BuildBEContainer() (BEContainer, error)
 	}
@@ -109,7 +109,7 @@ func (builder *DefaultBEContainerBuilder) EncodeWildcard(id ConjunctionID) {
 	builder.container.AddWildcard(id)
 }
 
-func (builder *DefaultBEContainerBuilder) EncodeExpr(id ConjunctionID, expr *be_indexer.BoolExprs) error {
+func (builder *DefaultBEContainerBuilder) EncodeExpr(id ConjunctionID, expr *be_indexer.BooleanExpr) error {
 	if expr == nil {
 		builder.EncodeWildcard(id)
 	}

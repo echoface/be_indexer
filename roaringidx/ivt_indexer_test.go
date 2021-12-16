@@ -49,25 +49,25 @@ func TestIvtBEIndexer_AddDocument(t *testing.T) {
 			Parser:    parser.ParserNameStrHash,
 		})
 
-		doc1 := NewDocument(1)
-		doc1.AddConjunction(NewConjunction().
+		doc1 := be_indexer.NewDocument(1)
+		doc1.AddConjunction(be_indexer.NewConjunction().
 			Include("ad_id", be_indexer.NewIntValues(100, 101, 108)).
 			Include("package", be_indexer.NewStrValues("com.echoface.be")))
-		doc1.AddConjunction(NewConjunction().
+		doc1.AddConjunction(be_indexer.NewConjunction().
 			Include("package", be_indexer.NewStrValues("com.echoface.x")))
 
-		doc2 := NewDocument(5)
-		doc2.AddConjunction(NewConjunction().
+		doc2 := be_indexer.NewDocument(5)
+		doc2.AddConjunction(be_indexer.NewConjunction().
 			Include("ad_id", be_indexer.NewIntValues(100, 101, 108)).
 			Include("package", be_indexer.NewStrValues("com.echoface.be")))
-		doc2.AddConjunction(NewConjunction().
+		doc2.AddConjunction(be_indexer.NewConjunction().
 			Exclude("package", be_indexer.NewStrValues("com.echoface.not")))
 
-		doc3 := NewDocument(20)
-		doc3.AddConjunctions(NewConjunction())
+		doc3 := be_indexer.NewDocument(20)
+		doc3.AddConjunctions(be_indexer.NewConjunction())
 
-		doc4 := NewDocument(50)
-		doc4.AddConjunction(NewConjunction().
+		doc4 := be_indexer.NewDocument(50)
+		doc4.AddConjunction(be_indexer.NewConjunction().
 			Exclude("ad_id", be_indexer.NewIntValues(100, 108)).
 			Include("package", be_indexer.NewStrValues("com.echoface.be")))
 

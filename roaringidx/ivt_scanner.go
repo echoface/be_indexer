@@ -2,6 +2,7 @@ package roaringidx
 
 import (
 	"fmt"
+	"github.com/echoface/be_indexer/util"
 	"strings"
 
 	"github.com/echoface/be_indexer"
@@ -31,6 +32,12 @@ func FormatBitMapResult(ids []uint64) string {
 		vs = append(vs, fmt.Sprintf("[%d,%d]", conjID.DocID(), conjID.Idx()))
 	}
 	return strings.Join(vs, ",")
+}
+
+func (scanner *IvtScanner) WithHint(hint ...uint64) {
+	util.PanicIf(scanner.inited, "can't atatch hint result in progress")
+	scanner.results.AddMany(hint)
+	scanner.inited = true
 }
 
 func (scanner *IvtScanner) SetDebug(debugOn bool) {

@@ -2,6 +2,7 @@ package be_indexer
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -25,16 +26,16 @@ type (
 
 	// DefaultEntriesHolder EntriesHolder implement base on hash map holder map<key, Entries>
 	DefaultEntriesHolder struct {
-		PostingEntries
-		debug bool
+		debug     bool
+		maxLen    int64 // max length of Entries
+		avgLen    int64 // avg length of Entries
+		plEntries map[Key]Entries
 	}
 )
 
 func NewDefaultEntriesHolder() EntriesHolder {
 	return &DefaultEntriesHolder{
-		PostingEntries: PostingEntries{
-			plEntries: map[Key]Entries{},
-		},
+		plEntries: map[Key]Entries{},
 	}
 }
 
@@ -88,4 +89,34 @@ func (h *DefaultEntriesHolder) AddFieldEID(field *FieldDesc, values Values, eid 
 		}
 	}
 	return nil
+}
+
+func (kse *DefaultEntriesHolder) AppendEntryID(key Key, id EntryID) {
+	entries, hit := kse.plEntries[key]
+	if !hit {
+		kse.plEntries[key] = Entries{id}
+	}
+	entries = append(entries, id)
+	kse.plEntries[key] = entries
+}
+
+func (kse *DefaultEntriesHolder) getEntries(key Key) Entries {
+	if entries, hit := kse.plEntries[key]; hit {
+		return entries
+	}
+	return nil
+}
+
+func (kse *DefaultEntriesHolder) makeEntriesSorted() {
+	var total int64
+	for _, entries := range kse.plEntries {
+		sort.Sort(entries)
+		if kse.maxLen < int64(len(entries)) {
+			kse.maxLen = int64(len(entries))
+		}
+		total += int64(len(entries))
+	}
+	if len(kse.plEntries) > 0 {
+		kse.avgLen = total / int64(len(kse.plEntries))
+	}
 }

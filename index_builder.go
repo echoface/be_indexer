@@ -56,19 +56,19 @@ func (b *IndexerBuilder) RemoveDocument(doc DocID) bool {
 }
 
 func (b *IndexerBuilder) buildDocEntries(indexer BEIndex, doc *Document) {
-
-	doc.Prepare()
-
+	util.PanicIf(len(doc.Cons) == 0, "no conjunctions in this document")
+	util.PanicIf(len(doc.Cons) > 0xFF, "number of conjunction need less than 256")
 CONJLoop:
 	for idx, conj := range doc.Cons {
 
-		conjID := NewConjID(doc.ID, idx, conj.size)
+		incSize := conj.CalcConjSize()
+		conjID := NewConjID(doc.ID, idx, incSize)
 
-		if conj.size == 0 {
+		if incSize == 0 {
 			indexer.addWildcardEID(NewEntryID(conjID, true))
 		}
 
-		kSizeContainer := indexer.newEntriesContainerIfNeeded(conj.size)
+		kSizeContainer := indexer.newEntriesContainerIfNeeded(incSize)
 
 		for field, expr := range conj.Expressions {
 

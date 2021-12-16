@@ -2,6 +2,7 @@ package roaringidx
 
 import (
 	"fmt"
+	"github.com/echoface/be_indexer/util"
 
 	"github.com/echoface/be_indexer"
 )
@@ -27,25 +28,18 @@ func (builder *IvtBEIndexerBuilder) ConfigureField(field string, option FieldSet
 	builder.containerBuilder[be_indexer.BEField(field)] = fieldContainerBuilder
 }
 
-func (builder *IvtBEIndexerBuilder) AddDocuments(docs ...*IndexDocument) {
+func (builder *IvtBEIndexerBuilder) AddDocuments(docs ...*be_indexer.Document) {
 	for _, doc := range docs {
 		builder.AddDocument(doc)
 	}
 }
 
-func (builder *IvtBEIndexerBuilder) AddDocument(doc *IndexDocument) {
-	if !doc.Valid() {
-		panic(fmt.Sprintf("invalid document: %s", doc.String()))
-	}
-	doc.ReIndexConjunction()
+func (builder *IvtBEIndexerBuilder) AddDocument(doc *be_indexer.Document) {
+	util.PanicIf(len(doc.Cons) == 0, "zero conjunction in this document")
 
-	if len(doc.Conjunctions) == 0 {
-		// TODO: add to top-level wildcard document list ?
-		return
-	}
+	for idx, conj := range doc.Cons {
 
-	for _, conj := range doc.Conjunctions {
-
+		conjID := NewConjunctionID(idx, int64(doc.ID))
 		// NOTE: check conjunction contains none-configured field expression
 		// this may case logic error if we omit those boolean-expression
 		for field := range conj.Expressions {
@@ -57,10 +51,10 @@ func (builder *IvtBEIndexerBuilder) AddDocument(doc *IndexDocument) {
 		for field, containerBuilder := range builder.containerBuilder {
 			expr, ok := conj.Expressions[field]
 			if !ok {
-				containerBuilder.EncodeWildcard(conj.id)
+				containerBuilder.EncodeWildcard(conjID)
 				continue
 			}
-			if err := containerBuilder.EncodeExpr(conj.id, expr); err != nil {
+			if err := containerBuilder.EncodeExpr(conjID, be_indexer.NewBoolExpr2(field, *expr)); err != nil {
 				panic(fmt.Errorf("faild evaluate boolean expression:%+v", expr))
 			}
 		}

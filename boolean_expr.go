@@ -16,8 +16,8 @@ type (
 		Value Values `json:"value"` // values can be parser parse to id
 	}
 
-	// BoolExprs expression a bool logic like: age (in) [15,16,17], city (not in) [shanghai,yz]
-	BoolExprs struct {
+	// BooleanExpr expression a bool logic like: age (in) [15,16,17], city (not in) [shanghai,yz]
+	BooleanExpr struct {
 		BoolValues
 		Field BEField `json:"field"`
 	}
@@ -34,8 +34,12 @@ func (ass Assignments) Size() (size int) {
 	return size
 }
 
-func NewBoolExpr(field BEField, inc bool, v Values) *BoolExprs {
-	expr := &BoolExprs{
+func NewBoolExpr2(field BEField, expr BoolValues) *BooleanExpr {
+	return &BooleanExpr{expr, field}
+}
+
+func NewBoolExpr(field BEField, inc bool, v Values) *BooleanExpr {
+	expr := &BooleanExpr{
 		Field: field,
 		BoolValues: BoolValues{
 			Value: v,

@@ -15,13 +15,33 @@ var (
 
 type (
 	BEIndexLogger interface {
-		Debugf(fmt string, v ...interface{})
-		Infof(fmt string, v ...interface{})
-		Errorf(fmt string, v ...interface{})
+		Debugf(format string, v ...interface{})
+		Infof(format string, v ...interface{})
+		Errorf(format string, v ...interface{})
 	}
+
+	// DefaultLogger a console logger use fmt lib
 	DefaultLogger struct {
 	}
 )
+
+func LogDebugIf(condition bool, format string, v ...interface{}) {
+	if condition {
+		Logger.Debugf(format, v...)
+	}
+}
+
+func LogInfoIf(condition bool, format string, v ...interface{}) {
+	if condition {
+		Logger.Infof(format, v...)
+	}
+}
+
+func LogErrIf(condition bool, format string, v ...interface{}) {
+	if condition {
+		Logger.Errorf(format, v...)
+	}
+}
 
 func (l *DefaultLogger) Debugf(format string, v ...interface{}) {
 	if LogLevel > DebugLevel {

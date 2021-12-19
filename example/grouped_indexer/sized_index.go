@@ -155,7 +155,7 @@ func QueryTest(index be_indexer.BEIndex) {
 		ids, _ := index.Retrieve(ass)
 		cnt += len(ids)
 	}
-	fmt.Println("avg result len:", float64(cnt) / float64(len(assigns)))
+	fmt.Println("avg result len:", float64(cnt)/float64(len(assigns)))
 	fmt.Printf("SizeGroupedIndexQuery Take %d(ms)\n", time.Now().UnixNano()/1000000-start)
 
 }
@@ -188,5 +188,7 @@ func main() {
 
 	runtime.GC()
 
-	time.Sleep(time.Minute * 10)
+	if enableProfiling {
+		time.Sleep(time.Minute * 10)
+	}
 }

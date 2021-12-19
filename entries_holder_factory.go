@@ -14,7 +14,9 @@ const (
 var holderFactory = make(map[string]HolderBuilder)
 
 func init() {
-	_ = RegisterEntriesHolder(HolderNameACMatcher, NewACEntriesHolder)
+	_ = RegisterEntriesHolder(HolderNameACMatcher, func() EntriesHolder {
+		return NewACEntriesHolder()
+	})
 	_ = RegisterEntriesHolder(HolderNameDefault, NewDefaultEntriesHolder)
 }
 
@@ -23,6 +25,11 @@ func NewEntriesHolder(name string) EntriesHolder {
 		return fn()
 	}
 	return nil
+}
+
+func HasHolderBuilder(name string) bool {
+	_, ok := holderFactory[name]
+	return ok
 }
 
 func RegisterEntriesHolder(name string, builder HolderBuilder) error {

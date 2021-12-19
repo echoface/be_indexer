@@ -2,7 +2,6 @@ package be_indexer
 
 import (
 	"fmt"
-	"github.com/echoface/be_indexer/parser"
 	"github.com/echoface/be_indexer/util"
 	"sort"
 	"strings"
@@ -15,13 +14,10 @@ type (
 		defaultHolder EntriesHolder // shared entries holder
 
 		fieldHolder map[BEField]EntriesHolder // special field holder
-
-		debugMode bool
 	}
 
 	SizeGroupedBEIndex struct {
 		indexBase
-		wildcardEntries Entries
 		kSizeContainers []*fieldEntriesContainer
 	}
 )
@@ -34,13 +30,9 @@ func newFieldEntriesContainer() *fieldEntriesContainer {
 }
 
 func (c *fieldEntriesContainer) compileEntries() {
-	c.defaultHolder.EnableDebug(c.debugMode)
-
 	c.defaultHolder.CompileEntries()
 
 	for _, holder := range c.fieldHolder {
-
-		holder.EnableDebug(c.debugMode)
 
 		holder.CompileEntries()
 	}
@@ -67,8 +59,6 @@ func (c *fieldEntriesContainer) newEntriesHolder(desc *FieldDesc) EntriesHolder 
 	holder := NewEntriesHolder(desc.option.Container)
 	util.PanicIf(holder == nil, "field:%s, container:%s not found, register before using", desc.Field, desc.option.Container)
 
-	holder.EnableDebug(c.debugMode)
-
 	c.fieldHolder[desc.Field] = holder
 
 	return holder
@@ -77,7 +67,7 @@ func (c *fieldEntriesContainer) newEntriesHolder(desc *FieldDesc) EntriesHolder 
 func (c *fieldEntriesContainer) DumpString(buf *strings.Builder) {
 	c.defaultHolder.DumpEntries(buf)
 	for field, holder := range c.fieldHolder {
-		buf.WriteString(fmt.Sprintf("\nfield:%s entries:", field))
+		buf.WriteString(fmt.Sprintf("field:%s entries:", field))
 		holder.DumpEntries(buf)
 	}
 }
@@ -85,40 +75,21 @@ func (c *fieldEntriesContainer) DumpString(buf *strings.Builder) {
 func NewSizeGroupedBEIndex() BEIndex {
 	index := &SizeGroupedBEIndex{
 		indexBase: indexBase{
-			fieldDesc: make(map[BEField]*FieldDesc),
-			idToField: make(map[uint64]*FieldDesc),
+			fieldsData: make(map[BEField]*FieldDesc),
 		},
 		kSizeContainers: make([]*fieldEntriesContainer, 0),
 	}
-	_ = index.configureField(WildcardFieldName, FieldOption{
-		Parser:    parser.ParserNameCommon,
-		Container: HolderNameDefault,
-	})
 	return index
-}
-
-func (bi *SizeGroupedBEIndex) ConfigureIndexer(settings *IndexerSettings) {
-	bi.settings = settings
-	for field, option := range settings.FieldConfig {
-		_ = bi.configureField(field, option)
-	}
 }
 
 func (bi *SizeGroupedBEIndex) maxK() int {
 	return len(bi.kSizeContainers) - 1
 }
 
-// addWildcardEID append wildcard entry id to Z set
-func (bi *SizeGroupedBEIndex) addWildcardEID(id EntryID) {
-	bi.wildcardEntries = append(bi.wildcardEntries, id)
-}
-
 // newEntriesContainerIfNeeded(k int) *fieldEntriesContainer get a container if created, otherwise create one
-func (bi *SizeGroupedBEIndex) newEntriesContainerIfNeeded(k int) *fieldEntriesContainer {
+func (bi *SizeGroupedBEIndex) newContainer(k int) *fieldEntriesContainer {
 	for k >= len(bi.kSizeContainers) {
 		container := newFieldEntriesContainer()
-		container.debugMode = bi.settings.EnableDebugMode
-
 		bi.kSizeContainers = append(bi.kSizeContainers, container)
 	}
 	return bi.kSizeContainers[k]
@@ -140,12 +111,12 @@ func (bi *SizeGroupedBEIndex) getKSizeEntries(k int) *fieldEntriesContainer {
 	return bi.kSizeContainers[k]
 }
 
-func (bi *SizeGroupedBEIndex) initPlEntriesScanners(ctx *RetrieveContext, k int) (fieldScanners FieldScanners, err error) {
+func (bi *SizeGroupedBEIndex) initFieldScanners(ctx *RetrieveContext, k int) (fieldScanners FieldScanners, err error) {
 
-	fieldScanners = make(FieldScanners, 0, len(bi.fieldDesc))
+	fieldScanners = make(FieldScanners, 0, len(bi.fieldsData))
 
 	if k == 0 && len(bi.wildcardEntries) > 0 {
-		pl := NewEntriesCursor(newQKey("__wildcard__", 0), bi.wildcardEntries)
+		pl := NewEntriesCursor(wildcardQKey, bi.wildcardEntries)
 		fieldScanners = append(fieldScanners, NewFieldScanner(pl))
 	}
 
@@ -159,7 +130,7 @@ func (bi *SizeGroupedBEIndex) initPlEntriesScanners(ctx *RetrieveContext, k int)
 
 	for field, values := range ctx.assigns {
 
-		if desc, ok = bi.fieldDesc[field]; !ok {
+		if desc, ok = bi.fieldsData[field]; !ok {
 			// not recognized field, no document care about this field, ignore
 			continue
 		}
@@ -171,7 +142,7 @@ func (bi *SizeGroupedBEIndex) initPlEntriesScanners(ctx *RetrieveContext, k int)
 		}
 
 		if entriesList, err = holder.GetEntries(desc, values); err != nil {
-			Logger.Errorf("fetch entries from holder fail:%s, field:%s", err.Error(), desc.Field)
+			Logger.Errorf("fetch entries from holder fail:%s, field:%s\n", err.Error(), desc.Field)
 			return nil, err
 		}
 
@@ -179,20 +150,26 @@ func (bi *SizeGroupedBEIndex) initPlEntriesScanners(ctx *RetrieveContext, k int)
 			scanner := NewFieldScanner(entriesList...)
 			fieldScanners = append(fieldScanners, scanner)
 
-			Logger.Debugf("<%s,%+v> fetch %d posting list:", desc.Field, values, len(entriesList))
+			Logger.Debugf("<%s,%v> fetch %d posting list\n", desc.Field, values, len(entriesList))
 		} else {
-			Logger.Debugf("<%s,%+v> nothing matched from entries holder", desc.Field, values)
+			Logger.Debugf("<%s,%v> nothing matched from entries holder\n", desc.Field, values)
 		}
 	}
+
+	if ctx.option.DumpEntriesDetail {
+		Logger.Infof("matched entries\n%s", fieldScanners.Dump())
+	}
+
 	return fieldScanners, nil
 }
 
 // retrieveK MOVE TO: FieldScanners ?
-func (bi *SizeGroupedBEIndex) retrieveK(fieldScanners FieldScanners, k int) (result []DocID) {
+func (bi *SizeGroupedBEIndex) retrieveK(ctx *RetrieveContext, fieldScanners FieldScanners, k int) (result []DocID) {
 	result = make([]DocID, 0, 256)
 
 	//sort.Sort(fieldScanners)
 	fieldScanners.Sort()
+
 	for !fieldScanners[k-1].GetCurEntryID().IsNULLEntry() {
 
 		eid := fieldScanners[0].GetCurEntryID()
@@ -219,23 +196,32 @@ func (bi *SizeGroupedBEIndex) retrieveK(fieldScanners FieldScanners, k int) (res
 		for i := 0; i < k; i++ {
 			fieldScanners[i].SkipTo(nextID)
 		}
-		//sort.Sort(fieldScanners)
+
+		// sort.Sort(fieldScanners)
 		fieldScanners.Sort()
+
+		if ctx.option.DumpStepInfo {
+			Logger.Infof("step k:%d result\n%+v", k, result)
+			Logger.Infof("sorted entries\n%s", fieldScanners.Dump())
+		}
 	}
 	return result
 }
 
-func (bi *SizeGroupedBEIndex) Retrieve(queries Assignments) (result DocIDList, err error) {
+func (bi *SizeGroupedBEIndex) Retrieve(queries Assignments, opts ...IndexOpt) (result DocIDList, err error) {
 
 	ctx := &RetrieveContext{
 		assigns: queries,
 		option:  defaultQueryOption,
 	}
+	for _, fn := range opts {
+		fn(ctx)
+	}
 
+	var fieldScanners FieldScanners
 	for k := util.MinInt(queries.Size(), bi.maxK()); k >= 0; k-- {
 
-		fieldScanners, err := bi.initPlEntriesScanners(ctx, k)
-		if err != nil {
+		if fieldScanners, err = bi.initFieldScanners(ctx, k); err != nil {
 			return nil, err
 		}
 
@@ -246,7 +232,7 @@ func (bi *SizeGroupedBEIndex) Retrieve(queries Assignments) (result DocIDList, e
 		if len(fieldScanners) < tempK {
 			continue
 		}
-		res := bi.retrieveK(fieldScanners, tempK)
+		res := bi.retrieveK(ctx, fieldScanners, tempK)
 		result = append(result, res...)
 	}
 	return result, nil
@@ -261,7 +247,7 @@ func (bi *SizeGroupedBEIndex) DumpEntries() string {
 	sb.WriteString("\n")
 
 	for size, container := range bi.kSizeContainers {
-		sb.WriteString(fmt.Sprintf("K:%d >>>>>>\n", size))
+		sb.WriteString(fmt.Sprintf("\nK:%d >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>\n", size))
 		container.DumpString(&sb)
 	}
 	return sb.String()

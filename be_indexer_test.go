@@ -29,12 +29,12 @@ func buildTestDoc() []*Document {
 func TestBEIndex_Retrieve(t *testing.T) {
 	LogLevel = InfoLevel
 
-	builder := IndexerBuilder{
-		Documents: make(map[DocID]*Document),
-	}
+	var err error
+	builder := NewIndexerBuilder()
 
 	for _, doc := range buildTestDoc() {
-		builder.AddDocument(doc)
+		err = builder.AddDocument(doc)
+		util.PanicIfErr(err, "add document fail")
 	}
 
 	indexer := builder.BuildIndex()
@@ -331,7 +331,7 @@ func TestCompactedBEIndex_Retrieve(t *testing.T) {
 		for _, doc := range docs {
 			b.AddDocument(doc.ToDocument())
 		}
-		compactedIndex := b.BuildCompactedIndex()
+		compactedIndex := b.BuildIndex()
 		fmt.Println("compactedIndex summary", compactedIndex.DumpEntriesSummary())
 
 		idxUnionRes := make(map[int]DocIDList)
@@ -378,11 +378,14 @@ func TestBEIndex_Retrieve2(t *testing.T) {
 	convey.Convey("test index logic", t, func() {
 		docs, queries := BuildTestDocumentAndQueries(10000, 10000, false)
 		b := NewIndexerBuilder()
+		cb := NewCompactIndexerBuilder()
 		for _, doc := range docs {
 			b.AddDocument(doc.ToDocument())
+			cb.AddDocument(doc.ToDocument())
 		}
 		index := b.BuildIndex()
-		compactedIndex := b.BuildCompactedIndex()
+		compactedIndex := cb.BuildIndex()
+
 		fmt.Println("summary", index.DumpEntriesSummary())
 		fmt.Println("compactedIndex summary", compactedIndex.DumpEntriesSummary())
 
@@ -491,8 +494,16 @@ func TestBEIndex_Retrieve3(t *testing.T) {
 		plg.current = plg.cursorGroup[0]
 	}
 
+	ctx := &RetrieveContext{
+		assigns: nil,
+		option:  RetrieveOption{},
+	}
+
 	index := &SizeGroupedBEIndex{}
-	fmt.Println(index.retrieveK(plgs, 2))
+	convey.Convey("test retrieve k:2", t, func() {
+		result := index.retrieveK(ctx, plgs, 2)
+		convey.So(result, convey.ShouldResemble, []DocID{19, 32, 54})
+	})
 }
 
 func TestBEIndex_Retrieve4(t *testing.T) {
@@ -500,28 +511,54 @@ func TestBEIndex_Retrieve4(t *testing.T) {
 	builder := NewIndexerBuilder()
 
 	doc := NewDocument(12)
-	conj := NewConjunction()
-	conj.In("tag", NewInt32Values2(1))
-	conj.NotIn("age", NewInt32Values2(40, 50, 60, 70))
+	doc.AddConjunction(NewConjunction().
+		In("tag", NewInt32Values2(1)).
+		NotIn("age", NewInt32Values2(40, 50, 60, 70)))
 
-	doc.AddConjunction(conj)
+	convey.Convey("test doc add retrieve basic", t, func() {
+		err := builder.AddDocument(doc)
+		convey.So(err, convey.ShouldBeNil)
 
-	builder.AddDocument(doc)
+		indexer := builder.BuildIndex()
 
-	indexer := builder.BuildIndex()
+		for _, x := range []int32{40, 50, 60, 70} {
+			result, e := indexer.Retrieve(Assignments{
+				"age": NewInt32Values2(x),
+			})
+			convey.So(e, convey.ShouldBeNil)
+			convey.So(len(result), convey.ShouldEqual, 0)
+		}
+		result, e := indexer.Retrieve(Assignments{
+			"age": NewInt32Values2(40, 50, 60, 70),
+		})
+		convey.So(e, convey.ShouldBeNil)
+		convey.So(len(result), convey.ShouldEqual, 0)
 
-	fmt.Println(indexer.Retrieve(Assignments{
-		"age": NewInt32Values2(1),
-	}))
-	fmt.Println(indexer.Retrieve(Assignments{
-		"age": NewInt32Values2(25),
-		"tag": NewInt32Values2(1),
-	}))
+		result, e = indexer.Retrieve(Assignments{
+			"age": NewInt32Values2(25),
+			"tag": NewInt32Values2(1),
+		})
+		convey.So(e, convey.ShouldBeNil)
+		convey.So(result, convey.ShouldResemble, DocIDList{12})
 
-	fmt.Println(indexer.Retrieve(Assignments{
-		"age": NewIntValues2(40),
-		"tag": NewInt32Values2(1),
-	}))
+		result, e = indexer.Retrieve(Assignments{
+			"age": NewIntValues2(40),
+			"tag": NewInt32Values2(1),
+		})
+		convey.So(e, convey.ShouldBeNil)
+		convey.So(len(result), convey.ShouldEqual, 0)
+
+		convey.So(func() {
+			result, e = indexer.Retrieve(Assignments{})
+
+			result, e = indexer.Retrieve(Assignments{
+				"age":             NewIntValues2(40),
+				"tag":             NewInt32Values2(1),
+				"not-found-field": NewInt32Values2(1, 2, 3),
+			})
+
+		}, convey.ShouldNotPanic)
+	})
 }
 
 func TestBEIndex_Retrieve5(t *testing.T) {
@@ -563,6 +600,7 @@ func TestBEIndex_Retrieve5(t *testing.T) {
 	convey.Convey("test SizeGroupedIndex Multi Conjunction retrieve", t, func() {
 
 		indexer := builder.BuildIndex()
+		fmt.Println(indexer.DumpEntries())
 
 		var err error
 		var ids DocIDList
@@ -573,7 +611,6 @@ func TestBEIndex_Retrieve5(t *testing.T) {
 		sort.Sort(ids)
 		convey.So(ids, convey.ShouldResemble, DocIDList{13, 14})
 		convey.So(err, convey.ShouldBeNil)
-
 		ids, err = indexer.Retrieve(Assignments{
 			"sex": []interface{}{"female"},
 			"age": []interface{}{60},
@@ -638,7 +675,7 @@ func TestBEIndex_Retrieve6(t *testing.T) {
 		var ids DocIDList
 		ids, err = indexer.Retrieve(Assignments{
 			"sex":     []interface{}{"man"},
-			"keyword": []interface{}{"解放军发红包", "abc英文歌"},
+			"keyword": NewStrValues(string("解放军发红包"), "abc英文歌"),
 			"age":     []interface{}{28, 2, 27},
 			"tag":     []interface{}{1, 2, 27},
 		})

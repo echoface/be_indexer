@@ -1,6 +1,7 @@
 package be_indexer
 
 import (
+	"encoding/json"
 	"fmt"
 	"github.com/echoface/be_indexer/parser"
 )
@@ -143,4 +144,20 @@ func NewStrValues2(v string, ss ...string) (res []interface{}) {
 		res[idx+1] = optV
 	}
 	return
+}
+
+func (v *BoolValues) booleanToken() string {
+	if v.Incl {
+		return "inc"
+	}
+	return "exc"
+}
+
+func (v *BoolValues) String() string {
+	return fmt.Sprintf("%s %v", v.booleanToken(), v.Value)
+}
+
+func (v *BoolValues) JSONString() string {
+	data, _ := json.Marshal(v)
+	return string(data)
 }

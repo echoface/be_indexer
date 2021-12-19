@@ -2,7 +2,10 @@ package main
 
 import (
 	"fmt"
+
 	"github.com/echoface/be_indexer"
+	"github.com/echoface/be_indexer/parser"
+	"github.com/echoface/be_indexer/util"
 )
 
 func buildTestDoc() []*be_indexer.Document {
@@ -10,10 +13,19 @@ func buildTestDoc() []*be_indexer.Document {
 }
 
 func main() {
-	builder := be_indexer.IndexerBuilder{}
+	builder := be_indexer.NewIndexerBuilder()
+	// or use a compacted version, it faster about 12% than default
+	// builder := be_indexer.NewCompactIndexerBuilder()
+
+	// optional special a holder/container for field
+	builder.ConfigField("keyword", be_indexer.FieldOption{
+		Parser:    parser.ParserNameCommon,
+		Container: be_indexer.HolderNameACMatcher,
+	})
 
 	for _, doc := range buildTestDoc() {
-		builder.AddDocument(doc)
+		err := builder.AddDocument(doc)
+		util.PanicIfErr(err, "document can't be resolved")
 	}
 
 	indexer := builder.BuildIndex()
@@ -32,6 +44,6 @@ func main() {
 		"age":  be_indexer.NewIntValues2(1),
 		"city": be_indexer.NewStrValues2("sh"),
 		"tag":  be_indexer.NewValues2("tag1"),
-	})
+	}, be_indexer.WithStepDetail(), be_indexer.WithDumpEntries())
 	fmt.Println(e, result)
 }

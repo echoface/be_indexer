@@ -15,9 +15,13 @@ type (
 	}
 
 	ACEntriesHolder struct {
-		builder *acMatcherBuilder
-		matcher *cedar.Matcher
-		debug   bool
+		builder     *acMatcherBuilder
+		matcher     *cedar.Matcher
+		debug       bool
+		KeepBuilder bool
+		totalTokens int
+		maxLen      int64 // max length of Entries
+		avgLen      int64 // avg length of Entries
 	}
 )
 
@@ -27,7 +31,15 @@ func newAcHolderBuilder() *acMatcherBuilder {
 	}
 }
 
-func NewACEntriesHolder() EntriesHolder {
+// NewACEntriesHolder it will default drop the builder after compile ac-machine,
+// you can register a customized ACEntriesHolder(with builder detail), and the register it
+// RegisterEntriesHolder(HolderNameACMatcher, func() EntriesHolder {
+//     holder := NewACEntriesHolder()
+//     holder.KeepBuilder = true
+//     return holder
+// })
+// NOTE: this just for debugging usage, it will consume memory much more
+func NewACEntriesHolder() *ACEntriesHolder {
 	return &ACEntriesHolder{
 		builder: newAcHolderBuilder(),
 		matcher: cedar.NewMatcher(),
@@ -39,11 +51,11 @@ func (h *ACEntriesHolder) EnableDebug(debug bool) {
 }
 
 func (h *ACEntriesHolder) DumpEntries(buffer *strings.Builder) {
-	buffer.WriteString("\n>>>>full entries >>>>>>>>>>>>>>>>>>>>>\n")
 	if h.builder != nil {
 		buffer.WriteString("ACMatchHolder drop detail for memory reason\n")
 		return
 	}
+	buffer.WriteString("ACMatchHolder origin keywords dict:\n")
 	for key, entries := range h.builder.values {
 		buffer.WriteString(key)
 		buffer.WriteString(":")
@@ -75,7 +87,7 @@ func (h *ACEntriesHolder) GetEntries(field *FieldDesc, assigns Values) (CursorGr
 		case string:
 			buf.WriteString(v)
 		default:
-			// return nil, fmt.Errorf("field:%s need string value, but query value is:%+v", field.Field, value)
+			Logger.Errorf("field:%s query assign need string type, but:%+v", field.Field, assign)
 		}
 	}
 	if buf.Len() == 0 {
@@ -89,26 +101,33 @@ func (h *ACEntriesHolder) GetEntries(field *FieldDesc, assigns Values) (CursorGr
 		items := resp.NextMatchItem(buf.Bytes())
 		for _, itr := range items {
 			key := h.matcher.Key(buf.Bytes(), itr)
-			Logger.Debugf("field:%s get entries by key:%s", field.Field, key)
-			cursors = append(cursors, NewEntriesCursor(newQKey(field.Field, key), itr.Value.(Entries)))
+			cursors = append(cursors, NewEntriesCursor(newQKey(field.Field, string(key)), itr.Value.(Entries)))
 		}
 	}
 	return cursors, nil
 }
 
 func (h *ACEntriesHolder) CompileEntries() {
+
+	var total int64
 	for term, entries := range h.builder.values {
-		//var total int64
 		sort.Sort(entries)
-		//if kse.maxLen < int64(len(entries)) {
-		//	kse.maxLen = int64(len(entries))
-		//}
-		//total += int64(len(entries))
-		//if len(kse.plEntries) > 0 {
-		//	kse.avgLen = total / int64(len(kse.plEntries))
-		//}
+
+		if h.maxLen < int64(len(entries)) {
+			h.maxLen = int64(len(entries))
+		}
+		total += int64(len(entries))
+
 		h.matcher.Insert([]byte(term), entries)
 	}
+	if len(h.builder.values) > 0 {
+		h.totalTokens = len(h.builder.values)
+		h.avgLen = total / int64(h.totalTokens)
+	}
+
 	h.matcher.Compile()
-	h.builder = nil
+
+	if !h.KeepBuilder {
+		h.builder = nil
+	}
 }

@@ -2,118 +2,151 @@ package be_indexer
 
 import (
 	"fmt"
+	"github.com/echoface/be_indexer/parser"
 	"github.com/echoface/be_indexer/util"
 )
 
 type (
 	IndexerBuilder struct {
-		Documents  map[DocID]*Document
-		settings   IndexerSettings
-		skipBadDoc bool
+		indexer    BEIndex
+		fieldsData map[BEField]*FieldDesc
+		debugOn    bool
 	}
 )
 
 func NewIndexerBuilder() *IndexerBuilder {
-	return &IndexerBuilder{
-		Documents: make(map[DocID]*Document),
-		settings: IndexerSettings{
-			FieldConfig: make(map[BEField]FieldOption),
-		},
+	builder := &IndexerBuilder{
+		indexer:    NewSizeGroupedBEIndex(),
+		fieldsData: map[BEField]*FieldDesc{},
 	}
+	_, _ = builder.configureField(WildcardFieldName, FieldOption{
+		Parser:    parser.ParserNameCommon,
+		Container: HolderNameDefault,
+	})
+	return builder
 }
 
-func (b *IndexerBuilder) SetSkipBadDocument(skip bool) {
-	b.skipBadDoc = skip
-}
-
-func (b *IndexerBuilder) SetFieldParser(field BEField, parserName string) {
-	b.settings.FieldConfig[field] = FieldOption{
-		Parser: parserName,
+func NewCompactIndexerBuilder() *IndexerBuilder {
+	builder := &IndexerBuilder{
+		indexer:    NewCompactedBEIndex(),
+		fieldsData: map[BEField]*FieldDesc{},
 	}
+	_, _ = builder.configureField(WildcardFieldName, FieldOption{
+		Parser:    parser.ParserNameCommon,
+		Container: HolderNameDefault,
+	})
+	return builder
 }
 
-func (b *IndexerBuilder) IndexSettings() *IndexerSettings {
-	return &b.settings
+func (b *IndexerBuilder) SetDebugMode(debug bool) {
+	b.debugOn = debug
 }
 
 func (b *IndexerBuilder) ConfigField(field BEField, settings FieldOption) {
-	b.settings.FieldConfig[field] = settings
+	_, err := b.configureField(field, settings)
+	util.PanicIfErr(err, "config field:%s with option fail:%+v", field, settings)
 }
 
-func (b *IndexerBuilder) AddDocument(doc *Document) {
-	if doc == nil {
-		panic(fmt.Errorf("nil doc not allow"))
+func (b *IndexerBuilder) AddDocument(doc *Document) error {
+	util.PanicIf(doc == nil, "nil document not be allowed")
+	if err := b.validDocument(doc); err != nil {
+		return err
 	}
-	b.Documents[doc.ID] = doc
+	return b.buildDocEntries(doc)
 }
 
-func (b *IndexerBuilder) RemoveDocument(doc DocID) bool {
-	_, hit := b.Documents[doc]
-	if hit {
-		delete(b.Documents, doc)
+func (b *IndexerBuilder) BuildIndex() BEIndex {
+
+	b.indexer.setFieldDesc(b.fieldsData)
+
+	b.indexer.compileIndexer()
+
+	return b.indexer
+}
+
+func (b *IndexerBuilder) configureField(field BEField, option FieldOption) (*FieldDesc, error) {
+	if _, ok := b.fieldsData[field]; ok {
+		return nil, fmt.Errorf("can't configure field:%s twice", field)
 	}
-	return hit
+	if len(option.Parser) == 0 {
+		option.Parser = parser.ParserNameCommon
+		Logger.Infof("not configure Parser for field:%s, use default", field)
+	}
+	if len(option.Container) == 0 {
+		option.Container = HolderNameDefault
+		Logger.Infof("not configure container for field:%s, use default", field)
+	}
+
+	valueParser := parser.NewParser(option.Parser)
+	if valueParser == nil {
+		return nil, fmt.Errorf("parser:%s not found, forget register it", option.Parser)
+	}
+
+	fieldID := uint64(len(b.fieldsData))
+	desc := &FieldDesc{
+		Field:  field,
+		Parser: valueParser,
+		ID:     fieldID,
+		option: option,
+	}
+	b.fieldsData[field] = desc
+	Logger.Infof("configure field:%s, fieldID:%d\n", field, desc.ID)
+	return desc, nil
 }
 
-func (b *IndexerBuilder) buildDocEntries(indexer BEIndex, doc *Document) {
+func (b *IndexerBuilder) validDocument(doc *Document) error {
+	// util.PanicIf(len(doc.Cons) == 0, "no conjunctions in this document")
+	// util.PanicIf(len(doc.Cons) > 0xFF, "number of conjunction need less than 256")
+	if len(doc.Cons) == 0 {
+		return fmt.Errorf("no conjunctions in this document")
+	}
+	if len(doc.Cons) > 0xFF {
+		return fmt.Errorf("number of conjunction need less than 256")
+	}
+	return nil
+}
+
+func (b *IndexerBuilder) createFieldData(field BEField) *FieldDesc {
+	if desc, hit := b.fieldsData[field]; hit {
+		return desc
+	}
+	desc, err := b.configureField(field, FieldOption{
+		Parser:    parser.ParserNameCommon,
+		Container: HolderNameDefault,
+	})
+	util.PanicIfErr(err, "this should not happened for default settings")
+	return desc
+}
+
+func (b *IndexerBuilder) buildDocEntries(doc *Document) error {
 	util.PanicIf(len(doc.Cons) == 0, "no conjunctions in this document")
 	util.PanicIf(len(doc.Cons) > 0xFF, "number of conjunction need less than 256")
-CONJLoop:
+
 	for idx, conj := range doc.Cons {
 
 		incSize := conj.CalcConjSize()
 		conjID := NewConjID(doc.ID, idx, incSize)
 
 		if incSize == 0 {
-			indexer.addWildcardEID(NewEntryID(conjID, true))
+			b.indexer.addWildcardEID(NewEntryID(conjID, true))
 		}
 
-		kSizeContainer := indexer.newEntriesContainerIfNeeded(incSize)
+		container := b.indexer.newContainer(incSize)
 
 		for field, expr := range conj.Expressions {
 
-			desc := indexer.newFieldDescIfNeeded(field)
+			desc := b.createFieldData(field)
 
 			entryID := NewEntryID(conjID, expr.Incl)
 
-			holder := kSizeContainer.newEntriesHolder(desc)
+			holder := container.newEntriesHolder(desc)
 
 			if err := holder.AddFieldEID(desc, expr.Value, entryID); err != nil {
-
 				Logger.Errorf("doc:%d field:%s AddFieldEID failed, values:%+v\n", doc.ID, field, expr.Value)
-
-				util.PanicIf(!b.skipBadDoc, "AddFieldEID fail, field:%s, err:%+v", field, err)
-
-				continue CONJLoop // break CONJLoop, conjunction as logic unit, just skip this conj if any error occur
+				return err
+				// continue CONJLoop // break CONJLoop, conjunction as logic unit, just skip this conj if any error occur
 			}
 		}
 	}
-}
-
-func (b *IndexerBuilder) BuildIndex() BEIndex {
-
-	indexer := NewSizeGroupedBEIndex()
-
-	indexer.ConfigureIndexer(&b.settings)
-
-	for _, doc := range b.Documents {
-		b.buildDocEntries(indexer, doc)
-	}
-	indexer.compileIndexer()
-
-	return indexer
-}
-
-func (b *IndexerBuilder) BuildCompactedIndex() BEIndex {
-
-	indexer := NewCompactedBEIndex()
-
-	indexer.ConfigureIndexer(&b.settings)
-
-	for _, doc := range b.Documents {
-		b.buildDocEntries(indexer, doc)
-	}
-	indexer.compileIndexer()
-
-	return indexer
+	return nil
 }

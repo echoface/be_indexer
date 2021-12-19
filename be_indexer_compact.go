@@ -2,7 +2,6 @@ package be_indexer
 
 import (
 	"fmt"
-	"github.com/echoface/be_indexer/parser"
 	"sort"
 	"strings"
 )
@@ -10,41 +9,22 @@ import (
 type (
 	CompactedBEIndex struct {
 		indexBase
-		wildcardEntries Entries
-		fieldContainer  *fieldEntriesContainer
+		fieldContainer *fieldEntriesContainer
 	}
 )
 
-func NewCompactedBEIndex() BEIndex {
+func NewCompactedBEIndex() *CompactedBEIndex {
 	index := &CompactedBEIndex{
 		indexBase: indexBase{
-			fieldDesc: make(map[BEField]*FieldDesc),
-			idToField: make(map[uint64]*FieldDesc),
+			fieldsData: make(map[BEField]*FieldDesc),
 		},
 		fieldContainer: newFieldEntriesContainer(),
 	}
-	_ = index.configureField(WildcardFieldName, FieldOption{
-		Parser:    parser.ParserNameCommon,
-		Container: HolderNameDefault,
-	})
 	return index
 }
 
-func (bi *CompactedBEIndex) ConfigureIndexer(settings *IndexerSettings) {
-	bi.settings = settings
-	bi.fieldContainer.debugMode = bi.settings.EnableDebugMode
-
-	for field, option := range settings.FieldConfig {
-		bi.configureField(field, option)
-	}
-}
-
-func (bi *CompactedBEIndex) addWildcardEID(id EntryID) {
-	bi.wildcardEntries = append(bi.wildcardEntries, id)
-}
-
 // newPostingEntriesIfNeeded(k int)
-func (bi *CompactedBEIndex) newEntriesContainerIfNeeded(_ int) *fieldEntriesContainer {
+func (bi *CompactedBEIndex) newContainer(_ int) *fieldEntriesContainer {
 	return bi.fieldContainer
 }
 
@@ -55,18 +35,13 @@ func (bi *CompactedBEIndex) compileIndexer() {
 	bi.fieldContainer.compileEntries()
 }
 
-func (bi *CompactedBEIndex) Retrieve(queries Assignments) (result DocIDList, err error) {
+func (bi *CompactedBEIndex) initFieldScanner(ctx *RetrieveContext) (fScanners FieldScanners, err error) {
 
-	ctx := &RetrieveContext{
-		assigns: queries,
-		option:  defaultQueryOption,
-	}
-
-	fieldScanners := make(FieldScanners, 0, len(ctx.assigns))
+	fScanners = make(FieldScanners, 0, len(ctx.assigns))
 
 	if len(bi.wildcardEntries) > 0 {
 		pl := NewEntriesCursor(wildcardQKey, bi.wildcardEntries)
-		fieldScanners = append(fieldScanners, NewFieldScanner(pl))
+		fScanners = append(fScanners, NewFieldScanner(pl))
 	}
 
 	var ok bool
@@ -75,42 +50,80 @@ func (bi *CompactedBEIndex) Retrieve(queries Assignments) (result DocIDList, err
 	var entriesList CursorGroup
 
 	for field, values := range ctx.assigns {
-		if desc, ok = bi.fieldDesc[field]; !ok {
+		if desc, ok = bi.fieldsData[field]; !ok {
 			continue
 		}
 		if holder = bi.fieldContainer.getFieldHolder(desc); holder == nil {
-			return nil, fmt.Errorf("field:%s no holder found, what happend", field)
+			// return nil, fmt.Errorf("field:%s no holder found, what happened", field)
+			// no document has condition on this field, so just skip here
+			continue
 		}
 		if entriesList, err = holder.GetEntries(desc, values); err != nil {
 			return nil, err
 		}
 		if len(entriesList) > 0 {
-			fieldScanners = append(fieldScanners, NewFieldScanner(entriesList...))
+			fScanners = append(fScanners, NewFieldScanner(entriesList...))
 		}
 	}
 
-	if len(fieldScanners) == 0 {
-		return result, nil
+	if len(fScanners) == 0 {
+		return fScanners, nil
+	}
+
+	if ctx.option.DumpEntriesDetail {
+		Logger.Infof("matched entries\n%s", fScanners.Dump())
+	}
+	return fScanners, nil
+}
+
+func (bi *CompactedBEIndex) Retrieve(queries Assignments, opts ...IndexOpt) (result DocIDList, err error) {
+
+	ctx := &RetrieveContext{
+		assigns: queries,
+		option:  defaultQueryOption,
+	}
+	for _, fn := range opts {
+		fn(ctx)
+	}
+
+	var fieldScanners FieldScanners
+	fieldScanners, err = bi.initFieldScanner(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	result = make([]DocID, 0, 128)
 
 	fieldScanners.Sort()
+
 RETRIEVE:
 	for {
+		if len(fieldScanners) == 0 {
+			break RETRIEVE
+		}
+
 		eid := fieldScanners[0].GetCurEntryID()
 
-		// K mean for this fieldScanners, a doc match need k number same eid in every plg
+		// k means: need k numbers of eid has same values when document satisfied,
+		// but for Z entries, it's a special case that need logic k=1 to exclude docs
+		// that boolean expression has `exclude` logic
 		k := eid.GetConjID().Size()
 		if k == 0 {
 			k = 1
 		}
-		// remove finished posting list
+
+		// remove those entries that have already reached end;
+		// the end-up cursor will in the end of slice after sorting
 		for len(fieldScanners) > 0 && fieldScanners[len(fieldScanners)-1].GetCurEntryID().IsNULLEntry() {
 			fieldScanners = fieldScanners[:len(fieldScanners)-1]
 		}
-		// mean any conjunction its size = k will not match, wil can fast skip to min entry that conjunction size > k
+
+		// k means: need k numbers of eid has same values when document satisfied,
+		// so we can end up loop safely when k > sizeof(fieldCursors). this will boost up retrieve speed
 		if k > len(fieldScanners) {
+			if ctx.option.DumpStepInfo {
+				Logger.Infof("end, step result\n%+v @k:%d", result, k)
+			}
 			break RETRIEVE
 		}
 
@@ -143,6 +156,10 @@ RETRIEVE:
 		}
 
 		fieldScanners.Sort()
+		if ctx.option.DumpStepInfo {
+			Logger.Infof("step result\n%+v", result)
+			Logger.Infof("sorted entries\n%s", fieldScanners.Dump())
+		}
 	}
 	return result, nil
 }

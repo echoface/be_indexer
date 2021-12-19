@@ -1,7 +1,10 @@
 package be_indexer
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
+	"strings"
 )
 
 type (
@@ -52,7 +55,7 @@ func (s DocIDList) Len() int           { return len(s) }
 func (s DocIDList) Swap(i, j int)      { s[i], s[j] = s[j], s[i] }
 func (s DocIDList) Less(i, j int) bool { return s[i] < s[j] }
 
-/*AddConjunction 一组完整的expression， 必须是完整一个描述文档的DNF Bool表达的条件组合*/
+// AddConjunction 一组完整的expression， 必须是完整一个描述文档的DNF Bool表达的条件组合*/
 func (doc *Document) AddConjunction(cons ...*Conjunction) {
 	for _, conj := range cons {
 		doc.Cons = append(doc.Cons, conj)
@@ -64,6 +67,27 @@ func (doc *Document) AddConjunctions(conj *Conjunction, others ...*Conjunction) 
 	for _, conj := range others {
 		doc.Cons = append(doc.Cons, conj)
 	}
+}
+
+func (doc *Document) JSONString() string {
+	data, _ := json.Marshal(doc)
+	return string(data)
+}
+
+// String a more compacted string
+func (doc *Document) String() string {
+	strBuilder := strings.Builder{}
+	strBuilder.WriteString(fmt.Sprintf("{doc:%d, cons:[", doc.ID))
+	cnt := len(doc.Cons)
+	for _, conj := range doc.Cons {
+		cnt--
+		strBuilder.WriteString(fmt.Sprintf("{%s}", conj.String()))
+		if cnt > 0 {
+			strBuilder.WriteString(",")
+		}
+	}
+	strBuilder.WriteString("]}")
+	return strBuilder.String()
 }
 
 func NewConjunction() *Conjunction {
@@ -107,13 +131,33 @@ func (conj *Conjunction) addExpression(field BEField, inc bool, values Values) {
 	}
 }
 
+func (conj *Conjunction) JSONString() string {
+	data, _ := json.Marshal(conj)
+	return string(data)
+}
+
+func (conj *Conjunction) String() string {
+	strBuilder := strings.Builder{}
+	strBuilder.WriteString("(")
+	cnt := len(conj.Expressions)
+	for field, expr := range conj.Expressions {
+		strBuilder.WriteString(fmt.Sprintf("%s %s", field, expr.String()))
+		cnt--
+		if cnt > 0 {
+			strBuilder.WriteString(",")
+		}
+	}
+	strBuilder.WriteString(")")
+	return strBuilder.String()
+}
+
 func (conj *Conjunction) CalcConjSize() (size int) {
 	for _, bv := range conj.Expressions {
 		if bv.Incl {
 			size++
 		}
 	}
-	return
+	return size
 }
 
 func (conj *Conjunction) AddExpression(expr *BooleanExpr) *Conjunction {

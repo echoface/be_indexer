@@ -91,7 +91,7 @@ func init() {
 }
 
 func BuildIndex() be_indexer.BEIndex {
-	b := be_indexer.NewIndexerBuilder()
+	b := be_indexer.NewCompactIndexerBuilder()
 	targets := map[be_indexer.DocID]*MockTargeting{}
 	for i := 1; i < docCount; i++ {
 		target := &MockTargeting{
@@ -106,12 +106,11 @@ func BuildIndex() be_indexer.BEIndex {
 		if len(conj.Expressions) > 0 {
 			doc := be_indexer.NewDocument(target.ID)
 			doc.AddConjunction(conj)
-			b.AddDocument(doc)
-
+			_ = b.AddDocument(doc)
 			targets[be_indexer.DocID(i)] = target
 		}
 	}
-	return b.BuildCompactedIndex()
+	return b.BuildIndex()
 }
 
 func QueryTest(index be_indexer.BEIndex) {
@@ -155,7 +154,7 @@ func QueryTest(index be_indexer.BEIndex) {
 		ids, _ := index.Retrieve(ass)
 		cnt += len(ids)
 	}
-	fmt.Println("avg result len:", float64(cnt) / float64(len(assigns)))
+	fmt.Println("avg result len:", float64(cnt)/float64(len(assigns)))
 	fmt.Printf("compacted index Take %d(ms)\n", time.Now().UnixNano()/1000000-start)
 
 }
@@ -187,5 +186,7 @@ func main() {
 	QueryTest(index)
 	runtime.GC()
 
-	time.Sleep(time.Minute * 10)
+	if enableProfiling {
+		time.Sleep(time.Minute * 10)
+	}
 }

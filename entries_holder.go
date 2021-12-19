@@ -9,6 +9,7 @@ import (
 type (
 	EntriesHolder interface {
 		EnableDebug(debug bool)
+
 		DumpEntries(buffer *strings.Builder)
 
 		// CompileEntries finalize entries status for query, build or make sorted
@@ -44,7 +45,6 @@ func (h *DefaultEntriesHolder) EnableDebug(debug bool) {
 }
 
 func (h *DefaultEntriesHolder) DumpEntries(buffer *strings.Builder) {
-	buffer.WriteString("\n>>>>full entries >>>>>>>>>>>>>>>>>>>>>\n")
 	for key, entries := range h.plEntries {
 		buffer.WriteString(key.String())
 		buffer.WriteString(":")
@@ -58,8 +58,8 @@ func (h *DefaultEntriesHolder) CompileEntries() {
 }
 
 func (h *DefaultEntriesHolder) GetEntries(field *FieldDesc, assigns Values) (r CursorGroup, e error) {
-
 	var ids []uint64
+
 	for _, vi := range assigns {
 		if ids, e = field.Parser.ParseAssign(vi); e != nil {
 			return nil, e

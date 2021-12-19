@@ -58,3 +58,14 @@ func TestConjunction_AddBoolExpr(t *testing.T) {
 
 	})
 }
+
+func TestDocument_String(t *testing.T) {
+	convey.Convey("test string", t, func() {
+		doc := NewDocument(100)
+		doc.AddConjunction(
+			NewConjunction().In("age", NewValues(1, 2, 3)),
+			NewConjunction().NotIn("tag", NewValues("a", "b")).Include("age", NewValues(18)),
+		)
+		t.Log(doc.String())
+	})
+}

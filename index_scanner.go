@@ -2,6 +2,7 @@ package be_indexer
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 )
 
@@ -22,7 +23,7 @@ type (
 		value interface{}
 	}
 
-	/*EntriesCursor represent a posting list for one Assign */
+	// EntriesCursor represent a posting list for one Assign
 	// (age, 15): [1, 2, 5, 19, 22]
 	// cursor:           ^
 	EntriesCursor struct {
@@ -43,11 +44,20 @@ type (
 )
 
 func newQKey(field BEField, v interface{}) QKey {
-	return QKey{field: field, value: v}
+	key := QKey{field: field, value: v}
+	return key
 }
 
 func (key *QKey) String() string {
-	return fmt.Sprintf("<%s,%+v>", key.field, key.value)
+	switch v := key.value.(type) {
+	case string:
+		return fmt.Sprintf("[%s,%s]", key.field, v)
+	case int8, int16, int, int32, int64, uint8, uint16, uint, uint32, uint64:
+		return fmt.Sprintf("[%s,%d]", key.field, v)
+	default:
+		fmt.Println("unknown type", reflect.TypeOf(key.value).String())
+	}
+	return fmt.Sprintf("[%s,%+v]", key.field, key.value)
 }
 
 func NewEntriesCursor(key QKey, entries Entries) *EntriesCursor {
@@ -177,9 +187,9 @@ func (s FieldScanners) Sort() {
 
 func (s FieldScanners) Dump() string {
 	sb := &strings.Builder{}
-	sb.WriteString("\n")
-	for idx, scanner := range s {
-		sb.WriteString(fmt.Sprintf("\n%d,cur:%s:%s", idx, scanner.GetCurEntryID().DocString(), scanner.DumpEntries()))
+	for _, scanner := range s {
+		sb.WriteString("\n")
+		sb.WriteString(scanner.DumpEntries())
 	}
 	sb.WriteString("\n")
 	return sb.String()
@@ -251,9 +261,24 @@ func (sg *FieldScanner) SkipTo(id EntryID) (newMin EntryID) {
 
 func (sg *FieldScanner) DumpEntries() string {
 	sb := &strings.Builder{}
-	for idx, cursor := range sg.cursorGroup {
-		sb.WriteString(fmt.Sprintf("\nidx:%d#%s#cur:%v", idx, cursor.key.String(), cursor.GetCurEntryID().DocString()))
-		sb.WriteString(fmt.Sprintf(" entries:%v", cursor.entries.DocString()))
-	}
+	sg.cursorGroup.DumpEntries(sb)
 	return sb.String()
+}
+
+func (cur *EntriesCursor) DumpEntries(sb *strings.Builder) {
+	// [xx,x]^<2,false>:<1,true>,<2,false><nil,nil>
+	sb.WriteString(cur.key.String())
+	sb.WriteString("^")
+	sb.WriteString(cur.GetCurEntryID().DocString())
+	sb.WriteString(":")
+	sb.WriteString(strings.Join(cur.entries.DocString(), ","))
+}
+
+func (cg CursorGroup) DumpEntries(sb *strings.Builder) {
+	sb.Grow(1024)
+	for _, it := range cg {
+		sb.WriteString("\t->")
+		it.DumpEntries(sb)
+		sb.WriteString("\n")
+	}
 }

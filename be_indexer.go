@@ -1,17 +1,16 @@
 package be_indexer
 
 import (
-	"fmt"
 	"github.com/echoface/be_indexer/parser"
 )
 
 const (
-	WildcardFieldName = BEField("__wildcard__")
+	WildcardFieldName = BEField("_Z_")
 )
 
 var (
-	wildcardQKey       = newQKey(WildcardFieldName, nil)
-	defaultQueryOption = &RetrieveOption{}
+	wildcardQKey       = newQKey(WildcardFieldName, 0)
+	defaultQueryOption = RetrieveOption{}
 )
 
 type (
@@ -34,7 +33,7 @@ type (
 
 	RetrieveContext struct {
 		assigns Assignments
-		option  *RetrieveOption
+		option  RetrieveOption
 	}
 
 	RetrieveOption struct {
@@ -43,24 +42,22 @@ type (
 		RemoveDuplicateDoc bool
 	}
 
+	IndexOpt func(ctx *RetrieveContext)
+
 	BEIndex interface {
-		//interface used by builder
+		// addWildcardEID interface used by builder
 		addWildcardEID(id EntryID)
 
-		newFieldDescIfNeeded(field BEField) *FieldDesc
+		setFieldDesc(fieldsData map[BEField]*FieldDesc)
 
-		newEntriesContainerIfNeeded(k int) *fieldEntriesContainer
+		// newContainer indexer need return a valid Container for k size
+		newContainer(k int) *fieldEntriesContainer
 
+		// compileIndexer prepare indexer and optimize index data
 		compileIndexer()
 
-		// ConfigureIndexer public Interface
-		ConfigureIndexer(settings *IndexerSettings)
-
 		// Retrieve public Interface
-		Retrieve(queries Assignments) (result DocIDList, err error)
-
-		// RetrieveV2
-		// Retrieve(queries Assignments, *RetrieveOption) (result DocIDList, err error)
+		Retrieve(queries Assignments, opt ...IndexOpt) (result DocIDList, err error)
 
 		// DumpEntries debug api
 		DumpEntries() string
@@ -69,58 +66,32 @@ type (
 	}
 
 	indexBase struct {
-		fieldDesc map[BEField]*FieldDesc
+		// fieldsData a field settings and resource, if not configured, it will use default parser and container
+		// for expression values;
+		fieldsData map[BEField]*FieldDesc
 
-		idToField map[uint64]*FieldDesc
-
-		// debug options
-		settings *IndexerSettings // keep information for debug, it will consume more memory
+		// wildcardEntries hold all entry id that conjunction size is zero;
+		wildcardEntries Entries
 	}
 )
 
-func (bi *indexBase) configureField(field BEField, option FieldOption) *FieldDesc {
-	if _, ok := bi.fieldDesc[field]; ok {
-		panic(fmt.Errorf("can't configure field twice, bz field id can only match one ID"))
+func WithStepDetail() IndexOpt {
+	return func(ctx *RetrieveContext) {
+		ctx.option.DumpStepInfo = true
 	}
-
-	valueParser := parser.NewParser(option.Parser)
-	if valueParser == nil {
-		Logger.Infof("not configure Parser for field:%s, use default", field)
-		valueParser = parser.NewParser(parser.ParserNameCommon)
-	}
-
-	desc := &FieldDesc{
-		Field:  field,
-		Parser: valueParser,
-		ID:     uint64(len(bi.fieldDesc)),
-		option: option,
-	}
-
-	bi.fieldDesc[field] = desc
-	bi.idToField[desc.ID] = desc
-	Logger.Infof("configure field:%s, fieldID:%d\n", field, desc.ID)
-
-	return desc
 }
 
-func (bi *indexBase) newFieldDescIfNeeded(field BEField) *FieldDesc {
-	if desc, ok := bi.fieldDesc[field]; ok {
-		return desc
+func WithDumpEntries() IndexOpt {
+	return func(ctx *RetrieveContext) {
+		ctx.option.DumpEntriesDetail = true
 	}
-	return bi.configureField(field, FieldOption{
-		Parser:    parser.ParserNameCommon,
-		Container: HolderNameDefault,
-	})
 }
 
-func (bi *indexBase) hasField(field BEField) bool {
-	_, ok := bi.fieldDesc[field]
-	return ok
+func (bi *indexBase) setFieldDesc(fieldsData map[BEField]*FieldDesc) {
+	bi.fieldsData = fieldsData
 }
 
-func (bi *indexBase) getFieldFromID(v uint64) BEField {
-	if field, ok := bi.idToField[v]; ok {
-		return field.Field
-	}
-	return ""
+// addWildcardEID append wildcard entry id to Z set
+func (bi *indexBase) addWildcardEID(id EntryID) {
+	bi.wildcardEntries = append(bi.wildcardEntries, id)
 }

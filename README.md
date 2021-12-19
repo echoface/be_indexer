@@ -24,6 +24,11 @@ package main
 
 import (
 	"fmt"
+
+	"github.com/echoface/be_indexer/parser"
+
+	"github.com/echoface/be_indexer/util"
+
 	"github.com/echoface/be_indexer"
 )
 
@@ -32,12 +37,19 @@ func buildTestDoc() []*be_indexer.Document {
 }
 
 func main() {
-	builder := be_indexer.IndexerBuilder{
-		Documents: make(map[be_indexer.DocID]*be_indexer.Document),
-	}
+	builder := be_indexer.NewIndexerBuilder()
+	// or use a compacted version, it faster about 12% than default
+	// builder := be_indexer.NewCompactIndexerBuilder()
+
+	// optional special a holder/container for field
+	builder.ConfigField("keyword", be_indexer.FieldOption{
+		Parser:    parser.ParserNameCommon,
+		Container: be_indexer.HolderNameACMatcher,
+	})
 
 	for _, doc := range buildTestDoc() {
-		builder.AddDocument(doc)
+		err := builder.AddDocument(doc)
+		util.PanicIfErr(err, "document can't be resolved")
 	}
 
 	indexer := builder.BuildIndex()
@@ -56,7 +68,7 @@ func main() {
 		"age":  be_indexer.NewIntValues2(1),
 		"city": be_indexer.NewStrValues2("sh"),
 		"tag":  be_indexer.NewValues2("tag1"),
-	})
+	}, be_indexer.WithStepDetail(), be_indexer.WithDumpEntries())
 	fmt.Println(e, result)
 }
 ```
@@ -74,8 +86,9 @@ package main
 
 import (
 	"fmt"
+
 	"github.com/echoface/be_indexer"
-	parser "github.com/echoface/be_indexer/parser/v2"
+	"github.com/echoface/be_indexer/parser"
 	"github.com/echoface/be_indexer/roaringidx"
 	"github.com/echoface/be_indexer/util"
 )
@@ -85,26 +98,30 @@ func main() {
 	builder := roaringidx.NewIndexerBuilder()
 
 	builder.ConfigureField("ad_id", roaringidx.FieldSetting{
-		Container: "default",
+		Container: roaringidx.ContainerNameDefault,
 		Parser:    parser.ParserNameNumber,
 	})
 	builder.ConfigureField("package", roaringidx.FieldSetting{
-		Container: "default",
+		Container: roaringidx.ContainerNameDefault,
 		Parser:    parser.ParserNameStrHash,
 	})
+	builder.ConfigureField("keywords", roaringidx.FieldSetting{
+		Container: roaringidx.ContainerNameAcMatch,
+		Parser:    parser.ParserNameCommon,
+	})
 
-	doc1 := roaringidx.NewDocument(1)
-	doc1.AddConjunction(roaringidx.NewConjunction().
+	doc1 := be_indexer.NewDocument(1)
+	doc1.AddConjunction(be_indexer.NewConjunction().
 		Include("ad_id", be_indexer.NewIntValues(100, 101, 108)).
 		Exclude("package", be_indexer.NewStrValues("com.echoface.not")))
-	doc1.AddConjunction(roaringidx.NewConjunction().
+	doc1.AddConjunction(be_indexer.NewConjunction().
 		Include("package", be_indexer.NewStrValues("com.echoface.in")))
 
-	doc3 := roaringidx.NewDocument(20)
-	doc3.AddConjunctions(roaringidx.NewConjunction())
+	doc3 := be_indexer.NewDocument(20)
+	doc3.AddConjunctions(be_indexer.NewConjunction())
 
-	doc4 := roaringidx.NewDocument(50)
-	doc4.AddConjunction(roaringidx.NewConjunction().
+	doc4 := be_indexer.NewDocument(50)
+	doc4.AddConjunction(be_indexer.NewConjunction().
 		Exclude("ad_id", be_indexer.NewIntValues(100, 108)).
 		Include("package", be_indexer.NewStrValues("com.echoface.be")))
 

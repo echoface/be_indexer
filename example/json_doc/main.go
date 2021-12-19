@@ -13,6 +13,9 @@ import (
 
 func main() {
 	builder := be_indexer.NewIndexerBuilder()
+	builder.ConfigField("age", be_indexer.FieldOption{
+		Parser: parser.ParserNameNumRange,
+	})
 
 	var docs []*be_indexer.Document
 	_ = filepath.Walk("./docs", func(path string, info os.FileInfo, err error) error {
@@ -36,7 +39,6 @@ func main() {
 		fmt.Println("add document:", doc.ID)
 		builder.AddDocument(doc)
 	}
-	builder.SetFieldParser("age", parser.ParserNameNumRange)
 
 	indexer := builder.BuildIndex()
 	fmt.Println(indexer.DumpEntries())

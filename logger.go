@@ -48,6 +48,7 @@ func (l *DefaultLogger) Debugf(format string, v ...interface{}) {
 		return
 	}
 	fmt.Printf(format, v...)
+	fmt.Println()
 }
 
 func (l *DefaultLogger) Infof(format string, v ...interface{}) {
@@ -55,6 +56,7 @@ func (l *DefaultLogger) Infof(format string, v ...interface{}) {
 		return
 	}
 	fmt.Printf(format, v...)
+	fmt.Println()
 }
 
 func (l *DefaultLogger) Errorf(format string, v ...interface{}) {
@@ -62,4 +64,5 @@ func (l *DefaultLogger) Errorf(format string, v ...interface{}) {
 		return
 	}
 	fmt.Printf(format, v...)
+	fmt.Println()
 }

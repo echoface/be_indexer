@@ -6,13 +6,18 @@ type (
 	ContainerBuilderFunc func(setting FieldSetting) BEContainerBuilder
 )
 
+const (
+	ContainerNameDefault = "default"
+	ContainerNameAcMatch = "ac_matcher"
+)
+
 func init() {
 	containerFactory = make(map[string]ContainerBuilderFunc)
 
-	containerFactory["default"] = func(setting FieldSetting) BEContainerBuilder {
+	containerFactory[ContainerNameDefault] = func(setting FieldSetting) BEContainerBuilder {
 		return NewDefaultBEContainerBuilder(setting)
 	}
-	containerFactory["ac_matcher"] = func(setting FieldSetting) BEContainerBuilder {
+	containerFactory[ContainerNameAcMatch] = func(setting FieldSetting) BEContainerBuilder {
 		return NewACBEContainerBuilder(setting)
 	}
 	//containerFactory["bsi"] = func(setting FieldSetting) BEContainerBuilder {

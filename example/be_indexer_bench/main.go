@@ -89,6 +89,8 @@ func main() {
 	flag.Parse()
 
 	b := be_indexer.NewIndexerBuilder()
+	cb := be_indexer.NewCompactIndexerBuilder()
+
 	targets := map[be_indexer.DocID]*MockTargeting{}
 
 	be_indexer.LogLevel = be_indexer.ErrorLevel
@@ -106,7 +108,9 @@ func main() {
 		if len(conj.Expressions) > 0 {
 			doc := be_indexer.NewDocument(target.ID)
 			doc.AddConjunction(conj)
-			b.AddDocument(doc)
+
+			util.PanicIfErr(b.AddDocument(doc), "build doc fail, doc:%s", doc.String())
+			util.PanicIfErr(cb.AddDocument(doc), "build doc fail, doc:%s", doc.String())
 
 			targets[be_indexer.DocID(i)] = target
 		}
@@ -115,7 +119,7 @@ func main() {
 	index := b.BuildIndex()
 	fmt.Println("index summary:", index.DumpEntriesSummary())
 
-	compactedIndex := b.BuildCompactedIndex()
+	compactedIndex := cb.BuildIndex()
 	fmt.Println("compactedIndex summary:", compactedIndex.DumpEntriesSummary())
 
 	type Q struct {

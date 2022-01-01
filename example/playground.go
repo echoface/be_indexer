@@ -2,36 +2,72 @@ package main
 
 import (
 	"fmt"
-	"github.com/echoface/be_indexer"
+	"runtime"
+	"sync"
+	"time"
 )
 
-func buildTestDoc() []*be_indexer.Document {
-	return []*be_indexer.Document{}
+type X struct {
+	data []int64
+}
+
+var p = sync.Pool{
+	New: func() interface{} {
+		return &X{
+			data: make([]int64, 0, 1024),
+		}
+	},
+}
+
+func New() *X {
+	return p.Get().(*X)
+}
+
+func Release(x *X) {
+	x.data = x.data[:0]
+	fmt.Println("reset x, cap:", cap(x.data))
+	p.Put(x)
 }
 
 func main() {
-	builder := be_indexer.IndexerBuilder{}
 
-	for _, doc := range buildTestDoc() {
-		builder.AddDocument(doc)
+	runtime.GC()
+	st := runtime.MemStats{}
+	runtime.ReadMemStats(&st)
+	fmt.Println("1 alloc:", st.Alloc, " heapAlloc:", st.HeapAlloc)
+
+	var result []int64
+	var result2 []int64
+
+	x := New()
+	for i := 0; i < 100; i++ {
+		x.data = append(x.data, int64(i*2))
 	}
+	result = x.data
 
-	indexer := builder.BuildIndex()
+	runtime.GC()
+	runtime.ReadMemStats(&st)
+	fmt.Println("2 alloc:", st.Alloc, " heapAlloc:", st.HeapAlloc)
 
-	result, e := indexer.Retrieve(map[be_indexer.BEField]be_indexer.Values{
-		"age": be_indexer.NewValues2(5),
-	})
-	fmt.Println(e, result)
+	Release(x)
 
-	result, e = indexer.Retrieve(map[be_indexer.BEField]be_indexer.Values{
-		"ip": be_indexer.NewStrValues2("localhost"),
-	})
-	fmt.Println(e, result)
+	runtime.GC()
+	runtime.ReadMemStats(&st)
+	fmt.Println("3 alloc:", st.Alloc, " heapAlloc:", st.HeapAlloc)
 
-	result, e = indexer.Retrieve(map[be_indexer.BEField]be_indexer.Values{
-		"age":  be_indexer.NewIntValues2(1),
-		"city": be_indexer.NewStrValues2("sh"),
-		"tag":  be_indexer.NewValues2("tag1"),
-	})
-	fmt.Println(e, result)
+	time.Sleep(time.Second)
+
+	x = New()
+	for i := 0; i < 100; i++ {
+		x.data = append(x.data, -1)
+	}
+	result2 = x.data
+
+	runtime.GC()
+	runtime.ReadMemStats(&st)
+	fmt.Println("3 alloc:", st.Alloc, " heapAlloc:", st.HeapAlloc)
+
+	time.Sleep(time.Second)
+	fmt.Println("result:", result)
+	fmt.Println("result2:", result2)
 }

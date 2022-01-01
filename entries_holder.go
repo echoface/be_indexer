@@ -79,7 +79,7 @@ func (h *DefaultEntriesHolder) GetEntries(field *FieldDesc, assigns Values) (r C
 
 func (h *DefaultEntriesHolder) AddFieldEID(field *FieldDesc, values Values, eid EntryID) (err error) {
 	var ids []uint64
-	// NOTE: ids may replicate if expression contain cross condition
+	// NOTE: ids can be replicated if expression contain cross condition
 	for _, value := range values {
 		if ids, err = field.Parser.ParseValue(value); err != nil {
 			return fmt.Errorf("field:%s parser value:%+v fail, err:%s", field.Field, value, err.Error())

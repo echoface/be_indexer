@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"github.com/echoface/be_indexer/util"
 )
 
 type (
@@ -70,7 +72,7 @@ func (bi *CompactedBEIndex) initFieldScanner(ctx *RetrieveContext) (fScanners Fi
 		return fScanners, nil
 	}
 
-	if ctx.option.DumpEntriesDetail {
+	if ctx.DumpEntriesDetail {
 		Logger.Infof("matched entries\n%s", fScanners.Dump())
 	}
 	return fScanners, nil
@@ -80,10 +82,12 @@ func (bi *CompactedBEIndex) Retrieve(queries Assignments, opts ...IndexOpt) (res
 
 	ctx := &RetrieveContext{
 		assigns: queries,
-		option:  defaultQueryOption,
 	}
 	for _, fn := range opts {
 		fn(ctx)
+	}
+	if !ctx.userCollector {
+		ctx.collector = collectorPool.Get().(*DocIDCollector)
 	}
 
 	var fieldScanners FieldScanners
@@ -121,7 +125,7 @@ RETRIEVE:
 		// k means: need k numbers of eid has same values when document satisfied,
 		// so we can end up loop safely when k > sizeof(fieldCursors). this will boost up retrieve speed
 		if k > len(fieldScanners) {
-			if ctx.option.DumpStepInfo {
+			if ctx.DumpStepInfo {
 				Logger.Infof("end, step result\n%+v @k:%d", result, k)
 			}
 			break RETRIEVE
@@ -156,11 +160,25 @@ RETRIEVE:
 		}
 
 		fieldScanners.Sort()
-		if ctx.option.DumpStepInfo {
+		if ctx.DumpStepInfo {
 			Logger.Infof("step result\n%+v", result)
 			Logger.Infof("sorted entries\n%s", fieldScanners.Dump())
 		}
 	}
+
+	if ctx.userCollector {
+		return nil, nil
+	}
+	// default collector
+	collector, ok := ctx.collector.(*DocIDCollector)
+	util.PanicIf(!ok, "should not reach")
+
+	result = make(DocIDList, 0, collector.DocCount())
+	iter := collector.docBits.Iterator()
+	if iter.HasNext() {
+		result = append(result, DocID(iter.Next()))
+	}
+	collectorPool.Put(collector)
 	return result, nil
 }
 

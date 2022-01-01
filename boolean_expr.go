@@ -51,29 +51,17 @@ func NewBoolExpr(field BEField, inc bool, v Values) *BooleanExpr {
 }
 
 // NewValues panic if invalid value
-func NewValues(o ...interface{}) (res []interface{}) {
+func NewValues(o ...interface{}) (res Values) {
 	for _, value := range o {
-		if parser.IsValidValueType(value) {
-			res = append(res, value)
-		} else {
-			panic(fmt.Errorf("not supported value types"))
-		}
+		res = append(res, value)
 	}
-	return
+	return res
 }
 
-func NewValues2(v interface{}, o ...interface{}) (res []interface{}) {
-	if !parser.IsValidValueType(v) {
-		panic(fmt.Errorf("not supported value types"))
-	}
-
+func NewValues2(v interface{}, o ...interface{}) (res Values) {
 	res = append(res, v)
 	for _, value := range o {
-		if parser.IsValidValueType(value) {
-			res = append(res, value)
-		} else {
-			panic(fmt.Errorf("not supported value types"))
-		}
+		res = append(res, value)
 	}
 	return
 }

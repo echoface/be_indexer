@@ -2,9 +2,10 @@ package be_indexer
 
 import (
 	"fmt"
-	"github.com/echoface/be_indexer/util"
 	"sort"
 	"strings"
+
+	"github.com/echoface/be_indexer/util"
 )
 
 type (
@@ -136,8 +137,9 @@ func (bi *SizeGroupedBEIndex) initFieldScanners(ctx *RetrieveContext, k int) (fi
 		}
 
 		if holder = kSizeContainer.getFieldHolder(desc); holder == nil {
-			// Logger.Errorf("entries holder not found, field:%s", desc.Field)
-			// return nil, fmt.Errorf("entries holder not found, field:%s, what happened", field)
+			// Logger.Debugf("entries holder not found, field:%s", desc.Field)
+			// case 1: user/client can  pass non-exist assign, so just skip this field
+			// case 2: no any document has condition on this field
 			continue
 		}
 
@@ -156,7 +158,7 @@ func (bi *SizeGroupedBEIndex) initFieldScanners(ctx *RetrieveContext, k int) (fi
 		}
 	}
 
-	if ctx.option.DumpEntriesDetail {
+	if ctx.DumpEntriesDetail {
 		Logger.Infof("matched entries\n%s", fieldScanners.Dump())
 	}
 
@@ -164,8 +166,7 @@ func (bi *SizeGroupedBEIndex) initFieldScanners(ctx *RetrieveContext, k int) (fi
 }
 
 // retrieveK MOVE TO: FieldScanners ?
-func (bi *SizeGroupedBEIndex) retrieveK(ctx *RetrieveContext, fieldScanners FieldScanners, k int) (result []DocID) {
-	result = make([]DocID, 0, 256)
+func (bi *SizeGroupedBEIndex) retrieveK(ctx *RetrieveContext, fieldScanners FieldScanners, k int) {
 
 	//sort.Sort(fieldScanners)
 	fieldScanners.Sort()
@@ -175,12 +176,21 @@ func (bi *SizeGroupedBEIndex) retrieveK(ctx *RetrieveContext, fieldScanners Fiel
 		eid := fieldScanners[0].GetCurEntryID()
 		endEID := fieldScanners[k-1].GetCurEntryID()
 
-		nextID := NewEntryID(endEID.GetConjID(), false)
+		conjID := eid.GetConjID()
+		endConjID := endEID.GetConjID()
 
-		if eid.GetConjID() == endEID.GetConjID() {
+		nextID := NewEntryID(endConjID, false)
+
+		if conjID == endConjID {
+
 			nextID = endEID + 1
+
 			if eid.IsInclude() {
-				result = append(result, eid.GetConjID().DocID())
+
+				ctx.collector.Add(conjID.DocID(), conjID)
+				if ctx.DumpStepInfo {
+					Logger.Infof("step k:%d add doc:%s conj:%d\n", k, conjID.DocID(), conjID)
+				}
 			} else { //exclude
 
 				for i := k; i < fieldScanners.Len(); i++ {
@@ -189,7 +199,6 @@ func (bi *SizeGroupedBEIndex) retrieveK(ctx *RetrieveContext, fieldScanners Fiel
 					}
 					fieldScanners[i].Skip(nextID)
 				}
-
 			}
 		}
 		// 推进游标
@@ -200,20 +209,16 @@ func (bi *SizeGroupedBEIndex) retrieveK(ctx *RetrieveContext, fieldScanners Fiel
 		// sort.Sort(fieldScanners)
 		fieldScanners.Sort()
 
-		if ctx.option.DumpStepInfo {
-			Logger.Infof("step k:%d result\n%+v", k, result)
+		if ctx.DumpStepInfo {
 			Logger.Infof("sorted entries\n%s", fieldScanners.Dump())
 		}
 	}
-	return result
 }
 
 func (bi *SizeGroupedBEIndex) Retrieve(queries Assignments, opts ...IndexOpt) (result DocIDList, err error) {
 
-	ctx := &RetrieveContext{
-		assigns: queries,
-		option:  defaultQueryOption,
-	}
+	ctx := NewRetrieveCtx()
+	ctx.assigns = queries
 	for _, fn := range opts {
 		fn(ctx)
 	}
@@ -229,11 +234,24 @@ func (bi *SizeGroupedBEIndex) Retrieve(queries Assignments, opts ...IndexOpt) (r
 		if tempK == 0 {
 			tempK = 1
 		}
+
 		if len(fieldScanners) < tempK {
 			continue
 		}
-		res := bi.retrieveK(ctx, fieldScanners, tempK)
-		result = append(result, res...)
+
+		bi.retrieveK(ctx, fieldScanners, tempK)
+	}
+	if ctx.userCollector {
+		return nil, nil
+	}
+	// default collector
+	collector, ok := ctx.collector.(*DocIDCollector)
+	util.PanicIf(!ok, "should not reach")
+
+	result = make(DocIDList, 0, collector.DocCount())
+	iter := collector.docBits.Iterator()
+	if iter.HasNext() {
+		result = append(result, DocID(iter.Next()))
 	}
 	return result, nil
 }

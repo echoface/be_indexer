@@ -1,0 +1,38 @@
+package be_indexer
+
+import "github.com/RoaringBitmap/roaring/roaring64"
+
+type (
+	ResultCollector interface {
+		Add(id DocID, conj ConjID)
+	}
+
+	// DocIDCollector Default Collector with removing duplicated doc
+	DocIDCollector struct {
+		docCnt int
+
+		// docBits bitmap hold results docs
+		docBits *roaring64.Bitmap
+	}
+)
+
+func NewDocIDCollector() *DocIDCollector {
+	return &DocIDCollector{
+		docBits: roaring64.New(),
+	}
+}
+
+func (c *DocIDCollector) DocCount() int {
+	return c.docCnt
+}
+
+func (c *DocIDCollector) Reset() {
+	c.docCnt = 0
+	c.docBits.Clear()
+}
+
+func (c *DocIDCollector) Add(docID DocID, _ ConjID) {
+	if c.docBits.CheckedAdd(uint64(docID)) {
+		c.docCnt++
+	}
+}

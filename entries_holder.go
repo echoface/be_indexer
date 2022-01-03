@@ -17,7 +17,7 @@ type (
 		CompileEntries()
 
 		GetEntries(field *FieldDesc, assigns Values) (CursorGroup, error)
-		//GetEntries(field *FieldDesc, assigns Values) (FieldScanner, error)
+		//GetEntries(field *FieldDesc, assigns Values) (FieldCursor, error)
 
 		// AddFieldEID(field *FieldDesc, value interface{}, collector Collector) (error)
 

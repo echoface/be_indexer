@@ -11,17 +11,17 @@ type (
 		Container string `json:"container" yaml:"container"`
 	}
 
-	fieldData struct {
+	fieldMeta struct {
 		container BEContainer
 	}
 
 	IvtBEIndexer struct {
-		data map[be_indexer.BEField]*fieldData
+		data map[be_indexer.BEField]*fieldMeta
 	}
 )
 
 func NewIvtBEIndexer() *IvtBEIndexer {
 	return &IvtBEIndexer{
-		data: make(map[be_indexer.BEField]*fieldData),
+		data: make(map[be_indexer.BEField]*fieldMeta),
 	}
 }

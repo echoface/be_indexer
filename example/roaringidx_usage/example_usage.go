@@ -47,10 +47,11 @@ func main() {
 	util.PanicIfErr(err, "should not err here")
 
 	scanner := roaringidx.NewScanner(indexer)
-	conjIDs, err := scanner.Retrieve(map[be_indexer.BEField]be_indexer.Values{
+	docs, err := scanner.Retrieve(map[be_indexer.BEField]be_indexer.Values{
 		"ad_id":   []interface{}{100, 102},
 		"package": []interface{}{"com.echoface.be", "com.echoface.not"},
 	})
-	fmt.Println(roaringidx.FormatBitMapResult(conjIDs))
+	fmt.Println("docs:", docs)
+	fmt.Println("raw result:", roaringidx.FormatBitMapResult(scanner.GetRawResult().ToArray()))
 	scanner.Reset()
 }

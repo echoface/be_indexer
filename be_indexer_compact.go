@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"github.com/echoface/be_indexer/util"
 )
 
 type (
@@ -35,13 +37,13 @@ func (bi *CompactedBEIndex) compileIndexer() {
 	bi.fieldContainer.compileEntries()
 }
 
-func (bi *CompactedBEIndex) initFieldScanner(ctx *RetrieveContext) (fScanners FieldScanners, err error) {
+func (bi *CompactedBEIndex) initFieldCursors(ctx *retrieveContext) (fCursors FieldCursors, err error) {
 
-	fScanners = make(FieldScanners, 0, len(ctx.assigns))
+	fCursors = make(FieldCursors, 0, len(ctx.assigns))
 
 	if len(bi.wildcardEntries) > 0 {
 		pl := NewEntriesCursor(wildcardQKey, bi.wildcardEntries)
-		fScanners = append(fScanners, NewFieldScanner(pl))
+		fCursors = append(fCursors, NewFieldCursor(pl))
 	}
 
 	var ok bool
@@ -62,105 +64,110 @@ func (bi *CompactedBEIndex) initFieldScanner(ctx *RetrieveContext) (fScanners Fi
 			return nil, err
 		}
 		if len(entriesList) > 0 {
-			fScanners = append(fScanners, NewFieldScanner(entriesList...))
+			fCursors = append(fCursors, NewFieldCursor(entriesList...))
 		}
 	}
 
-	if len(fScanners) == 0 {
-		return fScanners, nil
+	if len(fCursors) == 0 {
+		return fCursors, nil
 	}
 
-	if ctx.option.DumpEntriesDetail {
-		Logger.Infof("matched entries\n%s", fScanners.Dump())
+	if ctx.dumpEntriesDetail {
+		Logger.Infof("matched entries:\n%s", fCursors.Dump())
 	}
-	return fScanners, nil
+	return fCursors, nil
 }
 
 func (bi *CompactedBEIndex) Retrieve(queries Assignments, opts ...IndexOpt) (result DocIDList, err error) {
 
-	ctx := &RetrieveContext{
-		assigns: queries,
-		option:  defaultQueryOption,
-	}
-	for _, fn := range opts {
-		fn(ctx)
-	}
+	ctx := newRetrieveCtx(queries, opts...)
 
-	var fieldScanners FieldScanners
-	fieldScanners, err = bi.initFieldScanner(ctx)
+	var fieldCursors FieldCursors
+	fieldCursors, err = bi.initFieldCursors(&ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	result = make([]DocID, 0, 128)
-
-	fieldScanners.Sort()
+	fieldCursors.Sort()
 
 RETRIEVE:
 	for {
-		if len(fieldScanners) == 0 {
+		if len(fieldCursors) == 0 {
 			break RETRIEVE
 		}
 
-		eid := fieldScanners[0].GetCurEntryID()
+		eid := fieldCursors[0].GetCurEntryID()
+		conjID := eid.GetConjID()
 
 		// k means: need k numbers of eid has same values when document satisfied,
 		// but for Z entries, it's a special case that need logic k=1 to exclude docs
 		// that boolean expression has `exclude` logic
-		k := eid.GetConjID().Size()
+		k := conjID.Size()
 		if k == 0 {
 			k = 1
 		}
 
 		// remove those entries that have already reached end;
 		// the end-up cursor will in the end of slice after sorting
-		for len(fieldScanners) > 0 && fieldScanners[len(fieldScanners)-1].GetCurEntryID().IsNULLEntry() {
-			fieldScanners = fieldScanners[:len(fieldScanners)-1]
+		for len(fieldCursors) > 0 && fieldCursors[len(fieldCursors)-1].GetCurEntryID().IsNULLEntry() {
+			fieldCursors = fieldCursors[:len(fieldCursors)-1]
 		}
 
 		// k means: need k numbers of eid has same values when document satisfied,
 		// so we can end up loop safely when k > sizeof(fieldCursors). this will boost up retrieve speed
-		if k > len(fieldScanners) {
-			if ctx.option.DumpStepInfo {
-				Logger.Infof("end, step result\n%+v @k:%d", result, k)
+		if k > len(fieldCursors) {
+			if ctx.dumpStepInfo {
+				Logger.Infof("end, step k:%d, k > fieldCursors.len", k)
 			}
 			break RETRIEVE
 		}
 
 		// k <= plgsCount
-		// check whether eid  fieldScanners[k-1].GetCurEntryID equal
-		endEID := fieldScanners[k-1].GetCurEntryID()
+		// check whether eid  fieldCursors[k-1].GetCurEntryID equal
+		endEID := fieldCursors[k-1].GetCurEntryID()
 
 		nextID := NewEntryID(endEID.GetConjID(), false)
-		if endEID.GetConjID() == eid.GetConjID() {
+		if endEID.GetConjID() == conjID {
 
 			nextID = endEID + 1
 
 			if eid.IsInclude() {
 
-				result = append(result, eid.GetConjID().DocID())
-
+				ctx.collector.Add(conjID.DocID(), conjID)
+				if ctx.dumpStepInfo {
+					Logger.Infof("step k:%d add doc:%d conj:%d\n", k, conjID.DocID(), conjID)
+				}
 			} else { //exclude
 
-				for i := k; i < len(fieldScanners); i++ {
-					if fieldScanners[i].GetCurConjID() != eid.GetConjID() {
+				for i := k; i < len(fieldCursors); i++ {
+					if fieldCursors[i].GetCurConjID() != eid.GetConjID() {
 						break
 					}
-					fieldScanners[i].Skip(nextID)
+					fieldCursors[i].Skip(nextID)
 				}
 			}
 		}
 		// 推进游标
 		for i := 0; i < k; i++ {
-			fieldScanners[i].SkipTo(nextID)
+			fieldCursors[i].SkipTo(nextID)
 		}
 
-		fieldScanners.Sort()
-		if ctx.option.DumpStepInfo {
+		fieldCursors.Sort()
+		if ctx.dumpStepInfo {
 			Logger.Infof("step result\n%+v", result)
-			Logger.Infof("sorted entries\n%s", fieldScanners.Dump())
+			Logger.Infof("sorted entries\n%s", fieldCursors.Dump())
 		}
 	}
+
+	if ctx.userCollector {
+		return nil, nil
+	}
+	// default collector
+	collector, ok := ctx.collector.(*DocIDCollector)
+	util.PanicIf(!ok, "should not reach, default collector changed?")
+
+	result = collector.DocIDs()
+	reuseCollector(collector)
 	return result, nil
 }
 

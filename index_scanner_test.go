@@ -2,12 +2,13 @@ package be_indexer
 
 import (
 	"fmt"
-	"github.com/smartystreets/goconvey/convey"
 	"testing"
+
+	"github.com/smartystreets/goconvey/convey"
 )
 
 func TestEntriesCursor_SkipTo(t *testing.T) {
-	scg := FieldScanner{
+	scg := FieldCursor{
 		current: nil,
 		cursorGroup: CursorGroup{
 			{
@@ -40,7 +41,7 @@ func TestEntriesCursor_SkipTo(t *testing.T) {
 }
 
 func TestEntriesCursor_SkipTo2(t *testing.T) {
-	scg := FieldScanner{
+	scg := FieldCursor{
 		current: nil,
 		cursorGroup: CursorGroup{
 			{

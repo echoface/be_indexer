@@ -2,6 +2,7 @@ package roaringidx
 
 import (
 	"fmt"
+
 	"github.com/echoface/be_indexer/util"
 
 	"github.com/echoface/be_indexer"
@@ -68,7 +69,7 @@ func (builder *IvtBEIndexerBuilder) BuildIndexer() (*IvtBEIndexer, error) {
 		if err != nil {
 			return nil, err
 		}
-		indexer.data[field] = &fieldData{
+		indexer.data[field] = &fieldMeta{
 			container: container,
 		}
 	}

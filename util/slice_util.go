@@ -45,7 +45,7 @@ func ContainInt64(vs []int64, t int64) bool {
 	return false
 }
 
-func ContainUint66(vs []uint64, t uint64) bool {
+func ContainUint64(vs []uint64, t uint64) bool {
 	for _, v := range vs {
 		if v == t {
 			return true

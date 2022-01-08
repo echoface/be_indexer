@@ -1,46 +1,66 @@
 package roaringidx
 
 import (
-	"bytes"
 	"fmt"
 
+	aho "github.com/anknown/ahocorasick"
 	"github.com/echoface/be_indexer"
-	cedar "github.com/iohub/ahocorasick"
 )
 
 type (
 	ACBEContainer struct {
-		wc  PostingList
-		inc *cedar.Matcher
-		exc *cedar.Matcher
+		wc PostingList
+
+		inc *aho.Machine
+
+		exc *aho.Machine
+
+		incValues map[string]PostingList
+		excValues map[string]PostingList
 	}
 
 	// ACBEContainerBuilder implement BEContainerBuilder interface
 	ACBEContainerBuilder struct {
 		container *ACBEContainer
-		incValues map[string][]ConjunctionID
-		excValues map[string][]ConjunctionID
 	}
 )
 
 func NewACBEContainerBuilder(_ FieldSetting) BEContainerBuilder {
 	return &ACBEContainerBuilder{
 		container: NewACBEContainer(),
-		incValues: map[string][]ConjunctionID{},
-		excValues: map[string][]ConjunctionID{},
 	}
 }
 
 func NewACBEContainer() *ACBEContainer {
 	return &ACBEContainer{
-		wc:  NewPostingList(),
-		inc: nil,
-		exc: nil,
+		wc:        NewPostingList(),
+		inc:       nil,
+		exc:       nil,
+		incValues: map[string]PostingList{},
+		excValues: map[string]PostingList{},
 	}
 }
 
 func (c *ACBEContainer) AddWildcard(id ConjunctionID) {
 	c.wc.Add(uint64(id))
+}
+
+func (c *ACBEContainer) AddIncludeID(key string, id ConjunctionID) {
+	pl, ok := c.incValues[key]
+	if !ok {
+		pl = NewPostingList()
+		c.incValues[key] = pl
+	}
+	pl.Add(uint64(id))
+}
+
+func (c *ACBEContainer) AddExcludeID(key string, id ConjunctionID) {
+	pl, ok := c.excValues[key]
+	if !ok {
+		pl = NewPostingList()
+		c.excValues[key] = pl
+	}
+	pl.Add(uint64(id))
 }
 
 func (c *ACBEContainer) Retrieve(values be_indexer.Values, inout *PostingList) error {
@@ -50,34 +70,28 @@ func (c *ACBEContainer) Retrieve(values be_indexer.Values, inout *PostingList) e
 		return nil
 	}
 
-	textData := bytes.NewBuffer(nil)
+	data := make([]rune, 0, len(values)*4)
 	for _, vi := range values {
 		if str, ok := vi.(string); ok {
-			textData.WriteString(str)
+			data = append(data, []rune(str)...)
 			continue
 		}
 		return fmt.Errorf("query assign:%+v not string type", vi)
 	}
 
-	rawContent := textData.Bytes()
-	resp := c.inc.Match(rawContent)
-	defer resp.Release()
-
-	for resp.HasNext() {
-		items := resp.NextMatchItem(rawContent)
-		for _, itr := range items {
+	if c.inc != nil {
+		terms := c.inc.MultiPatternSearch(data, false)
+		for _, term := range terms {
 			// key := c.inc.Key(rawContent, itr)
-			inout.Or(itr.Value.(PostingList).Bitmap)
+			inout.Or(c.incValues[string(term.Word)].Bitmap)
 		}
 	}
 
-	excResp := c.exc.Match(rawContent)
-	defer excResp.Release()
-	for excResp.HasNext() {
-		items := excResp.NextMatchItem(rawContent)
-		for _, itr := range items {
+	if c.exc != nil {
+		terms := c.exc.MultiPatternSearch(data, false)
+		for _, term := range terms {
 			// key := c.inc.Key(rawContent, itr)
-			inout.AndNot(itr.Value.(PostingList).Bitmap)
+			inout.AndNot(c.excValues[string(term.Word)].Bitmap)
 		}
 	}
 	return nil
@@ -101,12 +115,11 @@ func (builder *ACBEContainerBuilder) EncodeExpr(id ConjunctionID, expr *be_index
 			return fmt.Errorf("not supported none string value")
 		}
 		if expr.Incl {
-			builder.incValues[kw] = append(builder.incValues[kw], id)
+			builder.container.AddIncludeID(kw, id)
 		} else {
-			builder.excValues[kw] = append(builder.excValues[kw], id)
+			builder.container.AddExcludeID(kw, id)
 		}
 	}
-
 	if !expr.Incl {
 		builder.container.AddWildcard(id)
 	}
@@ -114,37 +127,27 @@ func (builder *ACBEContainerBuilder) EncodeExpr(id ConjunctionID, expr *be_index
 }
 
 func (builder *ACBEContainerBuilder) BuildBEContainer() (BEContainer, error) {
-	incMatcher := cedar.NewMatcher()
-	for kw, ids := range builder.incValues {
-		pl := NewPostingList()
-		if len(ids) == 0 {
-			panic(fmt.Errorf("empty posting list not allowed"))
+	var err error
+	keys := make([][]rune, 0, len(builder.container.incValues))
+	if len(builder.container.incValues) > 0 {
+		for kw, _ := range builder.container.incValues {
+			keys = append(keys, []rune(kw))
 		}
-		for _, id := range ids {
-			pl.Add(uint64(id))
+		builder.container.inc = &aho.Machine{}
+		if err = builder.container.inc.Build(keys); err != nil {
+			return nil, err
 		}
-		// pl.RunOptimize() // NOTE: after testing, this make retrieve slower x4
-		incMatcher.Insert([]byte(kw), pl)
 	}
-	incMatcher.Compile()
 
-	excMatcher := cedar.NewMatcher()
-	for kw, ids := range builder.excValues {
-		pl := NewPostingList()
-		if len(ids) == 0 {
-			panic(fmt.Errorf("empty posting list not allowed"))
+	if len(builder.container.excValues) > 0 {
+		keys = keys[:0]
+		for kw, _ := range builder.container.excValues {
+			keys = append(keys, []rune(kw))
 		}
-		for _, id := range ids {
-			pl.Add(uint64(id))
+		builder.container.exc = &aho.Machine{}
+		if err = builder.container.exc.Build(keys); err != nil {
+			return nil, err
 		}
-		// pl.RunOptimize() // NOTE: after testing, this make retrieve slower x4
-		excMatcher.Insert([]byte(kw), pl)
 	}
-	excMatcher.Compile()
-
-	builder.container.inc = incMatcher
-	builder.container.exc = excMatcher
-	// builder.container.wc.RunOptimize() // NOTE: this make retrieve slower
-
 	return builder.container, nil
 }

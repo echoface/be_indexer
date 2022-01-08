@@ -1,5 +1,7 @@
 package util
 
+import "unicode/utf8"
+
 func ContainInt(vs []int, t int) bool {
 	for _, v := range vs {
 		if v == t {
@@ -63,4 +65,19 @@ func DistinctInt(vs []int) (res []int) {
 		res = append(res, v)
 	}
 	return res
+}
+
+func RunesToBytes(rs []rune) []byte {
+	size := 0
+	for _, r := range rs {
+		size += utf8.RuneLen(r)
+	}
+
+	bs := make([]byte, size)
+
+	count := 0
+	for _, r := range rs {
+		count += utf8.EncodeRune(bs[count:], r)
+	}
+	return bs
 }

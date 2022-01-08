@@ -1,12 +1,13 @@
 package be_indexer
 
 import (
-	"bytes"
 	"fmt"
 	"sort"
 	"strings"
 
-	cedar "github.com/iohub/ahocorasick"
+	"github.com/echoface/be_indexer/util"
+
+	aho "github.com/anknown/ahocorasick"
 )
 
 type (
@@ -15,8 +16,9 @@ type (
 	}
 
 	ACEntriesHolder struct {
-		builder     *acMatcherBuilder
-		matcher     *cedar.Matcher
+		builder *acMatcherBuilder
+		// matcher     *cedar.Matcher
+		machine     *aho.Machine
 		debug       bool
 		KeepBuilder bool
 		totalTokens int
@@ -42,7 +44,8 @@ func newAcHolderBuilder() *acMatcherBuilder {
 func NewACEntriesHolder() *ACEntriesHolder {
 	return &ACEntriesHolder{
 		builder: newAcHolderBuilder(),
-		matcher: cedar.NewMatcher(),
+		// matcher: cedar.NewMatcher(),
+		machine: new(aho.Machine),
 	}
 }
 
@@ -79,55 +82,63 @@ func (h *ACEntriesHolder) AddFieldEID(field *FieldDesc, values Values, eid Entry
 }
 
 func (h *ACEntriesHolder) GetEntries(field *FieldDesc, assigns Values) (CursorGroup, error) {
-	buf := bytes.NewBuffer(nil)
+	buf := make([]rune, 0, 256)
 	for _, assign := range assigns {
 		switch v := assign.(type) {
-		case []byte:
-			buf.Write(v)
 		case string:
-			buf.WriteString(v)
+			buf = append(buf, []rune(v)...)
 		default:
 			Logger.Errorf("field:%s query assign need string type, but:%+v", field.Field, assign)
 		}
 	}
-	if buf.Len() == 0 {
+	if len(buf) == 0 {
 		return nil, nil
 	}
 
 	var cursors CursorGroup
 
-	resp := h.matcher.Match(buf.Bytes())
-	for resp.HasNext() {
-		items := resp.NextMatchItem(buf.Bytes())
-		for _, itr := range items {
-			key := h.matcher.Key(buf.Bytes(), itr)
-			cursors = append(cursors, NewEntriesCursor(newQKey(field.Field, string(key)), itr.Value.(Entries)))
+	terms := h.machine.MultiPatternSearch(buf, false)
+	for _, term := range terms {
+		key := string(term.Word)
+		if pl, ok := h.builder.values[key]; ok && len(pl) > 0 {
+			cursors = append(cursors, NewEntriesCursor(newQKey(field.Field, key), pl))
 		}
 	}
+	/*
+		resp := h.matcher.Match(buf.Bytes())
+		defer resp.Release()
+		for resp.HasNext() {
+			items := resp.NextMatchItem(buf.Bytes())
+			for _, itr := range items {
+				key := h.matcher.Key(buf.Bytes(), itr)
+				cursors = append(cursors, NewEntriesCursor(newQKey(field.Field, string(key)), itr.Value.(Entries)))
+			}
+		}
+	*/
 	return cursors, nil
 }
 
 func (h *ACEntriesHolder) CompileEntries() {
 
 	var total int64
+	keys := make([][]rune, 0, len(h.builder.values))
 	for term, entries := range h.builder.values {
+
+		keys = append(keys, []rune(term))
+
 		sort.Sort(entries)
 
 		if h.maxLen < int64(len(entries)) {
 			h.maxLen = int64(len(entries))
 		}
 		total += int64(len(entries))
-
-		h.matcher.Insert([]byte(term), entries)
 	}
+
 	if len(h.builder.values) > 0 {
 		h.totalTokens = len(h.builder.values)
 		h.avgLen = total / int64(h.totalTokens)
-	}
 
-	h.matcher.Compile()
-
-	if !h.KeepBuilder {
-		h.builder = nil
+		err := h.machine.Build(keys)
+		util.PanicIfErr(err, "build ac machine fail")
 	}
 }

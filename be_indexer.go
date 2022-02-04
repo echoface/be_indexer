@@ -40,7 +40,7 @@ type (
 		setFieldDesc(fieldsData map[BEField]*FieldDesc)
 
 		// newContainer indexer need return a valid Container for k size
-		newContainer(k int) *fieldEntriesContainer
+		newContainer(k int) *EntriesContainer
 
 		// compileIndexer prepare indexer and optimize index data
 		compileIndexer()
@@ -48,7 +48,7 @@ type (
 		// Retrieve scan index data and retrieve satisfied document
 		Retrieve(queries Assignments, opt ...IndexOpt) (DocIDList, error)
 
-		// Retrieve scan index data and retrieve satisfied document
+		// RetrieveWithCollector scan index data and retrieve satisfied document
 		RetrieveWithCollector(Assignments, ResultCollector, ...IndexOpt) error
 
 		// DumpEntries debug api

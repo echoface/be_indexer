@@ -11,7 +11,7 @@ import (
 type (
 	CompactedBEIndex struct {
 		indexBase
-		fieldContainer *fieldEntriesContainer
+		fieldContainer *EntriesContainer
 	}
 )
 
@@ -26,7 +26,7 @@ func NewCompactedBEIndex() *CompactedBEIndex {
 }
 
 // newPostingEntriesIfNeeded(k int)
-func (bi *CompactedBEIndex) newContainer(_ int) *fieldEntriesContainer {
+func (bi *CompactedBEIndex) newContainer(_ int) *EntriesContainer {
 	return bi.fieldContainer
 }
 

@@ -19,8 +19,6 @@ type (
 		GetEntries(field *FieldDesc, assigns Values) (CursorGroup, error)
 		//GetEntries(field *FieldDesc, assigns Values) (FieldCursor, error)
 
-		// AddFieldEID(field *FieldDesc, value interface{}, collector Collector) (error)
-
 		// AddFieldEID tokenize values and add it to holder container
 		AddFieldEID(field *FieldDesc, values Values, eid EntryID) error
 	}

@@ -1,6 +1,8 @@
 package roaringidx
 
-import "github.com/echoface/be_indexer/util"
+import (
+	"fmt"
+)
 
 const (
 	MaxConjunctions = 0xFF
@@ -14,9 +16,11 @@ type (
 	ConjunctionID uint64
 )
 
-func NewConjunctionID(idx int, doc int64) ConjunctionID {
-	util.PanicIf(idx > MaxConjunctions, "conjunction idx overflow, max:0xFF")
-	return ConjunctionID(uint64(idx)<<MaxDocumentBits | uint64(doc&MaxDocumentID))
+func NewConjunctionID(idx int, doc int64) (ConjunctionID, error) {
+	if idx > MaxConjunctions {
+		return 0, fmt.Errorf("conjunction idx overflow, max:%d", MaxConjunctions)
+	}
+	return ConjunctionID(uint64(idx)<<MaxDocumentBits | uint64(doc&MaxDocumentID)), nil
 }
 
 // DocID [8bit idx + 56bit document]

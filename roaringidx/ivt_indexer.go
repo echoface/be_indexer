@@ -13,6 +13,8 @@ type (
 
 	fieldMeta struct {
 		container BEContainer
+
+		field be_indexer.BEField
 	}
 
 	IvtBEIndexer struct {

@@ -72,22 +72,21 @@ func (scanner *IvtScanner) mergeFieldResult(field be_indexer.BEField, pl Posting
 			be_indexer.Logger.Infof("merger result from field:%s pl:%s \n after:%s",
 				field, FormatBitMapResult(pl.ToArray()), FormatBitMapResult(scanner.conjIDResults.ToArray()))
 		}
+		scanner.ended = scanner.conjIDResults.IsEmpty()
 	}()
+	if scanner.Ended() {
+		return
+	}
 	if !scanner.inited {
 		scanner.inited = true
 		scanner.conjIDResults.Or(pl.Bitmap)
 		return
 	}
-
-	if scanner.ended {
-		return
-	}
 	scanner.conjIDResults.And(pl.Bitmap)
-	scanner.ended = scanner.conjIDResults.IsEmpty()
 }
 
 func (scanner *IvtScanner) retrieve(assigns be_indexer.Assignments) (err error) {
-	pl := NewPostingList()
+	tmpPl := NewPostingList()
 
 	for field, meta := range scanner.indexer.data {
 		if scanner.ended {
@@ -95,15 +94,20 @@ func (scanner *IvtScanner) retrieve(assigns be_indexer.Assignments) (err error) 
 		}
 		values := assigns[field]
 
-		if err = meta.container.Retrieve(values, &pl); err != nil {
+		if err = meta.container.Retrieve(values, &tmpPl); err != nil {
 			return err
 		}
-		scanner.mergeFieldResult(field, pl)
-		pl.Clear()
+
+		scanner.mergeFieldResult(field, tmpPl)
+		tmpPl.Clear()
 	}
 
-	ReleasePostingList(pl)
+	ReleasePostingList(tmpPl)
 	return nil
+}
+
+func (scanner *IvtScanner) Ended() bool {
+	return scanner.inited && scanner.conjIDResults.IsEmpty()
 }
 
 // RetrieveDocs return document id as map

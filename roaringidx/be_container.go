@@ -2,6 +2,7 @@ package roaringidx
 
 import (
 	"fmt"
+
 	"github.com/echoface/be_indexer"
 	"github.com/echoface/be_indexer/parser"
 )
@@ -9,6 +10,7 @@ import (
 type (
 	BEContainer interface {
 		AddWildcard(id ConjunctionID)
+
 		Retrieve(values be_indexer.Values, inout *PostingList) error
 	}
 
@@ -23,13 +25,17 @@ type (
 	// DefaultBEContainer a common value based inverted index bitmap container
 	DefaultBEContainer struct {
 		parser parser.FieldValueParser
-		wc     PostingList
-		inc    map[BEValue]PostingList
-		exc    map[BEValue]PostingList
+
+		wc PostingList
+
+		inc map[BEValue]PostingList
+
+		exc map[BEValue]PostingList
 	}
 
 	DefaultBEContainerBuilder struct {
-		parser    parser.FieldValueParser
+		parser parser.FieldValueParser
+
 		container *DefaultBEContainer
 	}
 )

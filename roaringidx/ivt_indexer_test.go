@@ -1,8 +1,9 @@
 package roaringidx
 
 import (
-	"github.com/echoface/be_indexer/parser"
 	"testing"
+
+	"github.com/echoface/be_indexer/parser"
 
 	"github.com/echoface/be_indexer"
 	"github.com/smartystreets/goconvey/convey"
@@ -40,11 +41,11 @@ func TestIvtBEIndexer_AddDocument(t *testing.T) {
 		builder := NewIndexerBuilder()
 		convey.So(builder, convey.ShouldNotBeNil)
 
-		builder.ConfigureField("ad_id", FieldSetting{
+		_ = builder.ConfigureField("ad_id", FieldSetting{
 			Container: "default",
 			Parser:    parser.ParserNameNumber,
 		})
-		builder.ConfigureField("package", FieldSetting{
+		_ = builder.ConfigureField("package", FieldSetting{
 			Container: "default",
 			Parser:    parser.ParserNameStrHash,
 		})
@@ -71,7 +72,8 @@ func TestIvtBEIndexer_AddDocument(t *testing.T) {
 			Exclude("ad_id", be_indexer.NewIntValues(100, 108)).
 			Include("package", be_indexer.NewStrValues("com.echoface.be")))
 
-		builder.AddDocuments(doc1, doc2, doc3, doc4)
+		err := builder.AddDocuments(doc1, doc2, doc3, doc4)
+		convey.So(err, convey.ShouldBeNil)
 
 		indexer, err := builder.BuildIndexer()
 		convey.So(err, convey.ShouldBeNil)

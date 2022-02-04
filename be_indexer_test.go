@@ -504,12 +504,13 @@ func TestBEIndex_Retrieve3(t *testing.T) {
 	}
 
 	ctx := newRetrieveCtx(nil)
+	ctx.collector = PickCollector()
 
 	index := &SizeGroupedBEIndex{}
 	convey.Convey("test retrieve k:2", t, func() {
 		index.retrieveK(&ctx, plgs, 2)
 		collector := ctx.collector.(*DocIDCollector)
-		convey.So(collector.DocIDs(), convey.ShouldResemble, DocIDList{19, 32, 54})
+		convey.So(collector.GetDocIDs(), convey.ShouldResemble, DocIDList{19, 32, 54})
 	})
 }
 
@@ -566,14 +567,13 @@ func TestBEIndex_Retrieve4(t *testing.T) {
 
 		}, convey.ShouldNotPanic)
 
-		customizedCollector := newCollector()
-		result, e = indexer.Retrieve(Assignments{
+		customizedCollector := PickCollector()
+		e = indexer.RetrieveWithCollector(Assignments{
 			"age": NewInt32Values2(25),
 			"tag": NewInt32Values2(1),
-		}, WithCollector(customizedCollector))
+		}, customizedCollector)
 		convey.So(e, convey.ShouldBeNil)
-		convey.So(result, convey.ShouldBeNil)
-		convey.So(customizedCollector.DocIDs(), convey.ShouldResemble, DocIDList{12})
+		convey.So(customizedCollector.GetDocIDs(), convey.ShouldResemble, DocIDList{12})
 	})
 }
 

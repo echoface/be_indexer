@@ -32,13 +32,3 @@ func ParseIntegerNumber(v interface{}) (n int64, err error) {
 		return 0, fmt.Errorf("not supprted number type:%+v", v)
 	}
 }
-
-func IsValidValueType(v interface{}) bool {
-	switch v.(type) {
-	case int, int8, int16, int32, int64,
-		uint, uint8, uint16, uint32, uint64, float32, float64, string:
-		return true
-	default:
-		return false
-	}
-}

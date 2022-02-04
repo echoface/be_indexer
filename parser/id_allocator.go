@@ -5,11 +5,14 @@ type (
 		AllocStringID(v string) uint64
 		FindStringID(v *string) (value uint64, found bool)
 	}
+
 	// IDAllocatorImpl 用于将不同类型的值ID化，用于构造Index的PostingList，减少重复值
 	IDAllocatorImpl struct {
 		strBox map[string]uint64 //将string转变成紧凑的ID
 	}
 )
+
+var DefaultIDAllocator = NewIDAllocatorImpl()
 
 func NewIDAllocatorImpl() IDAllocator {
 	return &IDAllocatorImpl{

@@ -232,6 +232,10 @@ func (sg *FieldCursor) GetCurConjID() ConjID {
 	return sg.GetCurEntryID().GetConjID()
 }
 
+func (sg *FieldCursor) ReachEnd() bool {
+	return sg.current.GetCurEntryID().IsNULLEntry()
+}
+
 func (sg *FieldCursor) GetCurEntryID() EntryID {
 	return sg.current.GetCurEntryID()
 }

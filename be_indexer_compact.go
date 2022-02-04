@@ -11,7 +11,7 @@ import (
 type (
 	CompactedBEIndex struct {
 		indexBase
-		fieldContainer *fieldEntriesContainer
+		fieldContainer *EntriesContainer
 	}
 )
 
@@ -26,7 +26,7 @@ func NewCompactedBEIndex() *CompactedBEIndex {
 }
 
 // newPostingEntriesIfNeeded(k int)
-func (bi *CompactedBEIndex) newContainer(_ int) *fieldEntriesContainer {
+func (bi *CompactedBEIndex) newContainer(_ int) *EntriesContainer {
 	return bi.fieldContainer
 }
 
@@ -37,7 +37,7 @@ func (bi *CompactedBEIndex) compileIndexer() {
 	bi.fieldContainer.compileEntries()
 }
 
-func (bi *CompactedBEIndex) initFieldCursors(ctx *retrieveContext) (fCursors FieldCursors, err error) {
+func (bi *CompactedBEIndex) initCursors(ctx *retrieveContext) (fCursors FieldCursors, err error) {
 
 	fCursors = make(FieldCursors, 0, len(ctx.assigns))
 
@@ -78,14 +78,31 @@ func (bi *CompactedBEIndex) initFieldCursors(ctx *retrieveContext) (fCursors Fie
 	return fCursors, nil
 }
 
-func (bi *CompactedBEIndex) Retrieve(queries Assignments, opts ...IndexOpt) (result DocIDList, err error) {
+func (bi *CompactedBEIndex) Retrieve(
+	queries Assignments, opts ...IndexOpt) (result DocIDList, err error) {
+
+	collector := PickCollector()
+	defer PutCollector(collector)
+
+	if err = bi.RetrieveWithCollector(queries, collector, opts...); err != nil {
+		return nil, err
+	}
+
+	result = collector.GetDocIDs()
+	return result, nil
+}
+
+func (bi *CompactedBEIndex) RetrieveWithCollector(
+	queries Assignments, collector ResultCollector, opts ...IndexOpt) (err error) {
 
 	ctx := newRetrieveCtx(queries, opts...)
+	util.PanicIf(ctx.collector != nil, "can't specify collector twice")
 
+	ctx.collector = collector
 	var fieldCursors FieldCursors
-	fieldCursors, err = bi.initFieldCursors(&ctx)
+	fieldCursors, err = bi.initCursors(&ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	fieldCursors.Sort()
@@ -109,7 +126,7 @@ RETRIEVE:
 
 		// remove those entries that have already reached end;
 		// the end-up cursor will in the end of slice after sorting
-		for len(fieldCursors) > 0 && fieldCursors[len(fieldCursors)-1].GetCurEntryID().IsNULLEntry() {
+		for len(fieldCursors) > 0 && fieldCursors[len(fieldCursors)-1].ReachEnd() {
 			fieldCursors = fieldCursors[:len(fieldCursors)-1]
 		}
 
@@ -134,6 +151,7 @@ RETRIEVE:
 			if eid.IsInclude() {
 
 				ctx.collector.Add(conjID.DocID(), conjID)
+
 				if ctx.dumpStepInfo {
 					Logger.Infof("step k:%d add doc:%d conj:%d\n", k, conjID.DocID(), conjID)
 				}
@@ -154,21 +172,12 @@ RETRIEVE:
 
 		fieldCursors.Sort()
 		if ctx.dumpStepInfo {
-			Logger.Infof("step result\n%+v", result)
+			Logger.Infof("step result\n%+v", collector.GetDocIDs())
 			Logger.Infof("sorted entries\n%s", fieldCursors.Dump())
 		}
 	}
 
-	if ctx.userCollector {
-		return nil, nil
-	}
-	// default collector
-	collector, ok := ctx.collector.(*DocIDCollector)
-	util.PanicIf(!ok, "should not reach, default collector changed?")
-
-	result = collector.DocIDs()
-	reuseCollector(collector)
-	return result, nil
+	return nil
 }
 
 func (bi *CompactedBEIndex) DumpEntriesSummary() string {

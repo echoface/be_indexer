@@ -6,6 +6,8 @@ import (
 	"strings"
 )
 
+var ErrBadRangeValue = fmt.Errorf("NumberRangeParser need:'start:end:step'")
+
 /*
 NumberRangeParser parse syntax like format: start:end:step
 step ist optional, it will generate start, start+step, start+2*stem ....
@@ -60,11 +62,11 @@ func (p *NumberRangeParser) ParseAssign(v interface{}) (res []uint64, err error)
 func (p *NumberRangeParser) ParseValue(v interface{}) (res []uint64, err error) {
 	content, ok := v.(string)
 	if !ok {
-		return nil, fmt.Errorf("NumberRangeParser only support string format like 'start:end:step'")
+		return nil, ErrBadRangeValue
 	}
 	opt := NewRangeDesc(content)
 	if opt == nil {
-		return nil, fmt.Errorf("invalid format like start:end:step")
+		return nil, ErrBadRangeValue
 	}
 	for s := opt.start; s <= opt.end; s += opt.step {
 		res = append(res, uint64(s))

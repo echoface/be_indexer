@@ -11,8 +11,6 @@ type (
 	}
 )
 
-var DefaultIDAllocator = NewIDAllocatorImpl()
-
 func NewCommonStrParser() FieldValueParser {
 	return &CommonStrParser{
 		idAlloc: DefaultIDAllocator,

@@ -9,9 +9,9 @@ import (
 )
 
 type (
-	// for default Entries Holder, it can hold different field's entries,
+	// EntriesContainer for default Entries Holder, it can hold different field's entries,
 	// but for ACMatcher or other Holder, it may only hold entries for one field
-	fieldEntriesContainer struct {
+	EntriesContainer struct {
 		defaultHolder EntriesHolder // shared entries holder
 
 		fieldHolder map[BEField]EntriesHolder // special field holder
@@ -19,18 +19,18 @@ type (
 
 	SizeGroupedBEIndex struct {
 		indexBase
-		kSizeContainers []*fieldEntriesContainer
+		kSizeContainers []*EntriesContainer
 	}
 )
 
-func newFieldEntriesContainer() *fieldEntriesContainer {
-	return &fieldEntriesContainer{
+func newFieldEntriesContainer() *EntriesContainer {
+	return &EntriesContainer{
 		defaultHolder: NewDefaultEntriesHolder(),
 		fieldHolder:   map[BEField]EntriesHolder{},
 	}
 }
 
-func (c *fieldEntriesContainer) compileEntries() {
+func (c *EntriesContainer) compileEntries() {
 	c.defaultHolder.CompileEntries()
 
 	for _, holder := range c.fieldHolder {
@@ -39,7 +39,7 @@ func (c *fieldEntriesContainer) compileEntries() {
 	}
 }
 
-func (c *fieldEntriesContainer) getFieldHolder(desc *FieldDesc) EntriesHolder {
+func (c *EntriesContainer) getFieldHolder(desc *FieldDesc) EntriesHolder {
 	if desc.option.Container == HolderNameDefault {
 		return c.defaultHolder
 	}
@@ -49,7 +49,7 @@ func (c *fieldEntriesContainer) getFieldHolder(desc *FieldDesc) EntriesHolder {
 	return nil
 }
 
-func (c *fieldEntriesContainer) newEntriesHolder(desc *FieldDesc) EntriesHolder {
+func (c *EntriesContainer) newEntriesHolder(desc *FieldDesc) EntriesHolder {
 	if desc.option.Container == HolderNameDefault {
 		return c.defaultHolder
 	}
@@ -65,7 +65,7 @@ func (c *fieldEntriesContainer) newEntriesHolder(desc *FieldDesc) EntriesHolder 
 	return holder
 }
 
-func (c *fieldEntriesContainer) DumpString(buf *strings.Builder) {
+func (c *EntriesContainer) DumpString(buf *strings.Builder) {
 	c.defaultHolder.DumpEntries(buf)
 	for field, holder := range c.fieldHolder {
 		buf.WriteString(fmt.Sprintf("field:%s entries:", field))
@@ -78,7 +78,7 @@ func NewSizeGroupedBEIndex() BEIndex {
 		indexBase: indexBase{
 			fieldsData: make(map[BEField]*FieldDesc),
 		},
-		kSizeContainers: make([]*fieldEntriesContainer, 0),
+		kSizeContainers: make([]*EntriesContainer, 0),
 	}
 	return index
 }
@@ -87,8 +87,8 @@ func (bi *SizeGroupedBEIndex) maxK() int {
 	return len(bi.kSizeContainers) - 1
 }
 
-// newEntriesContainerIfNeeded(k int) *fieldEntriesContainer get a container if created, otherwise create one
-func (bi *SizeGroupedBEIndex) newContainer(k int) *fieldEntriesContainer {
+// newEntriesContainerIfNeeded(k int) *EntriesContainer get a container if created, otherwise create one
+func (bi *SizeGroupedBEIndex) newContainer(k int) *EntriesContainer {
 	for k >= len(bi.kSizeContainers) {
 		container := newFieldEntriesContainer()
 		bi.kSizeContainers = append(bi.kSizeContainers, container)
@@ -105,14 +105,14 @@ func (bi *SizeGroupedBEIndex) compileIndexer() {
 	}
 }
 
-func (bi *SizeGroupedBEIndex) getKSizeEntries(k int) *fieldEntriesContainer {
+func (bi *SizeGroupedBEIndex) getKSizeEntries(k int) *EntriesContainer {
 	if k >= len(bi.kSizeContainers) {
 		panic(fmt.Errorf("k:[%d] out of range", k))
 	}
 	return bi.kSizeContainers[k]
 }
 
-func (bi *SizeGroupedBEIndex) initFieldCursors(ctx *retrieveContext, k int) (fCursors FieldCursors, err error) {
+func (bi *SizeGroupedBEIndex) initCursors(ctx *retrieveContext, k int) (fCursors FieldCursors, err error) {
 
 	fCursors = make(FieldCursors, 0, len(bi.fieldsData))
 
@@ -138,7 +138,7 @@ func (bi *SizeGroupedBEIndex) initFieldCursors(ctx *retrieveContext, k int) (fCu
 
 		if holder = kSizeContainer.getFieldHolder(desc); holder == nil {
 			// Logger.Debugf("entries holder not found, field:%s", desc.Field)
-			// case 1: user/client can  pass non-exist assign, so just skip this field
+			// case 1: user/client can pass non-exist assign, so just skip this field
 			// case 2: no any document has condition on this field
 			continue
 		}
@@ -165,7 +165,7 @@ func (bi *SizeGroupedBEIndex) initFieldCursors(ctx *retrieveContext, k int) (fCu
 	return fCursors, nil
 }
 
-// retrieveK MOVE TO: FieldCursors ?
+// retrieveK retrieve matched result from k size index data
 func (bi *SizeGroupedBEIndex) retrieveK(ctx *retrieveContext, fieldCursors FieldCursors, k int) {
 
 	// sort.Sort(fieldCursors)
@@ -215,17 +215,37 @@ func (bi *SizeGroupedBEIndex) retrieveK(ctx *retrieveContext, fieldCursors Field
 	}
 }
 
-func (bi *SizeGroupedBEIndex) Retrieve(queries Assignments, opts ...IndexOpt) (result DocIDList, err error) {
+func (bi *SizeGroupedBEIndex) Retrieve(
+	queries Assignments, opts ...IndexOpt) (result DocIDList, err error) {
+
+	collector := PickCollector()
+
+	defer PutCollector(collector)
+
+	if err = bi.RetrieveWithCollector(queries, collector, opts...); err != nil {
+		return nil, err
+	}
+
+	result = collector.GetDocIDs()
+
+	return result, nil
+}
+
+func (bi *SizeGroupedBEIndex) RetrieveWithCollector(
+	queries Assignments, collector ResultCollector, opts ...IndexOpt) (err error) {
 
 	ctx := newRetrieveCtx(queries, opts...)
+	util.PanicIf(ctx.collector != nil, "can't specify collector twice")
+
+	ctx.collector = collector
 
 	var fCursors FieldCursors
 	for k := util.MinInt(queries.Size(), bi.maxK()); k >= 0; k-- {
 		if ctx.dumpStepInfo {
 			Logger.Infof("start retrieve k:", k)
 		}
-		if fCursors, err = bi.initFieldCursors(&ctx, k); err != nil {
-			return nil, err
+		if fCursors, err = bi.initCursors(&ctx, k); err != nil {
+			return err
 		}
 
 		tempK := k
@@ -239,17 +259,7 @@ func (bi *SizeGroupedBEIndex) Retrieve(queries Assignments, opts ...IndexOpt) (r
 
 		bi.retrieveK(&ctx, fCursors, tempK)
 	}
-	if ctx.userCollector {
-		return nil, nil
-	}
-	// default collector
-	collector, ok := ctx.collector.(*DocIDCollector)
-	util.PanicIf(!ok, "should not reach, default collector changed?")
-
-	result = collector.DocIDs()
-
-	reuseCollector(collector)
-	return result, nil
+	return nil
 }
 
 func (bi *SizeGroupedBEIndex) DumpEntries() string {

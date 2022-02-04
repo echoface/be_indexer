@@ -2,26 +2,33 @@ package roaringidx
 
 import (
 	"fmt"
-	"github.com/echoface/be_indexer/util"
 	"strings"
+
+	"github.com/echoface/be_indexer/util"
 
 	"github.com/echoface/be_indexer"
 )
 
 type (
 	IvtScanner struct {
-		inited  bool
-		ended   bool
-		results PostingList
+		debug bool
+
+		inited bool
+
+		ended bool
+
 		indexer *IvtBEIndexer
-		debug   bool
+
+		// conjIDResults this hold temp result
+		// NOTE: it's conjunction id, not document id
+		conjIDResults PostingList
 	}
 )
 
 func NewScanner(indexer *IvtBEIndexer) *IvtScanner {
 	return &IvtScanner{
-		results: NewPostingList(),
-		indexer: indexer,
+		conjIDResults: NewPostingList(),
+		indexer:       indexer,
 	}
 }
 
@@ -35,8 +42,8 @@ func FormatBitMapResult(ids []uint64) string {
 }
 
 func (scanner *IvtScanner) WithHint(hint ...uint64) {
-	util.PanicIf(scanner.inited, "can't atatch hint result in progress")
-	scanner.results.AddMany(hint)
+	util.PanicIf(scanner.inited, "can't attach hint result in progress")
+	scanner.conjIDResults.AddMany(hint)
 	scanner.inited = true
 }
 
@@ -47,60 +54,91 @@ func (scanner *IvtScanner) SetDebug(debugOn bool) {
 func (scanner *IvtScanner) Reset() {
 	scanner.inited = false
 	scanner.ended = false
-	scanner.results.Clear()
 	scanner.debug = false
+
+	scanner.conjIDResults.Clear()
 }
 
-func (scanner *IvtScanner) MergeFieldResult(field be_indexer.BEField, pl PostingList) {
+// GetRawResult return the raw conjunction id result
+// for some cases, this will be useful for users to judge
+// which boolean condition matched in document when one document has many condition group(CONJUNCTION/DNF)
+func (scanner *IvtScanner) GetRawResult() *PostingList {
+	return &scanner.conjIDResults
+}
+
+func (scanner *IvtScanner) mergeFieldResult(field be_indexer.BEField, pl PostingList) {
 	defer func() {
 		if scanner.debug {
 			be_indexer.Logger.Infof("merger result from field:%s pl:%s \n after:%s",
-				field, FormatBitMapResult(pl.ToArray()), FormatBitMapResult(scanner.results.ToArray()))
+				field, FormatBitMapResult(pl.ToArray()), FormatBitMapResult(scanner.conjIDResults.ToArray()))
 		}
+		scanner.ended = scanner.conjIDResults.IsEmpty()
 	}()
+	if scanner.Ended() {
+		return
+	}
 	if !scanner.inited {
-		scanner.results.Or(pl.Bitmap)
 		scanner.inited = true
+		scanner.conjIDResults.Or(pl.Bitmap)
 		return
 	}
-
-	if scanner.ended {
-		return
-	}
-	scanner.results.And(pl.Bitmap)
-	scanner.ended = scanner.results.IsEmpty()
+	scanner.conjIDResults.And(pl.Bitmap)
 }
 
+func (scanner *IvtScanner) retrieve(assigns be_indexer.Assignments) (err error) {
+	tmpPl := NewPostingList()
+
+	for field, meta := range scanner.indexer.data {
+		if scanner.ended {
+			break
+		}
+		values := assigns[field]
+
+		if err = meta.container.Retrieve(values, &tmpPl); err != nil {
+			return err
+		}
+
+		scanner.mergeFieldResult(field, tmpPl)
+		tmpPl.Clear()
+	}
+
+	ReleasePostingList(tmpPl)
+	return nil
+}
+
+func (scanner *IvtScanner) Ended() bool {
+	return scanner.inited && scanner.conjIDResults.IsEmpty()
+}
+
+// RetrieveDocs return document id as map
 func (scanner *IvtScanner) RetrieveDocs(assignments be_indexer.Assignments) (docs map[int64]struct{}, err error) {
-	conjIDs, e := scanner.Retrieve(assignments)
-	if e != nil {
-		return nil, e
+	if err = scanner.retrieve(assignments); err != nil {
+		return nil, err
 	}
 	docs = make(map[int64]struct{})
-	for _, conjID := range conjIDs {
-		docs[ConjunctionID(conjID).DocID()] = struct{}{}
+
+	iter := scanner.conjIDResults.Iterator()
+	for iter.HasNext() {
+		conjID := ConjunctionID(iter.Next())
+		docs[conjID.DocID()] = struct{}{}
 	}
 	return docs, nil
 }
 
-func (scanner *IvtScanner) Retrieve(assignments be_indexer.Assignments) ([]uint64, error) {
-	var err error
-	pl := NewPostingList()
-
-	for field, fieldData := range scanner.indexer.data {
-		if scanner.ended {
-			break
-		}
-		values := assignments[field]
-
-		if err = fieldData.container.Retrieve(values, &pl); err != nil {
-			return nil, err
-		}
-		scanner.MergeFieldResult(field, pl)
-		pl.Clear()
+// Retrieve return document id list
+func (scanner *IvtScanner) Retrieve(assignments be_indexer.Assignments) (docs []uint64, err error) {
+	if err = scanner.retrieve(assignments); err != nil {
+		return nil, err
 	}
 
-	ReleasePostingList(pl)
+	docBits := NewPostingList()
+	iter := scanner.conjIDResults.Iterator()
+	for iter.HasNext() {
+		conjID := ConjunctionID(iter.Next())
+		docBits.Add(uint64(conjID.DocID()))
+	}
+	docs = docBits.ToArray()
+	ReleasePostingList(docBits)
 
-	return scanner.results.ToArray(), nil
+	return docs, nil
 }

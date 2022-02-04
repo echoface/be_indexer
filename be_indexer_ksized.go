@@ -112,13 +112,13 @@ func (bi *SizeGroupedBEIndex) getKSizeEntries(k int) *fieldEntriesContainer {
 	return bi.kSizeContainers[k]
 }
 
-func (bi *SizeGroupedBEIndex) initFieldScanners(ctx *RetrieveContext, k int) (fieldScanners FieldScanners, err error) {
+func (bi *SizeGroupedBEIndex) initFieldCursors(ctx *retrieveContext, k int) (fCursors FieldCursors, err error) {
 
-	fieldScanners = make(FieldScanners, 0, len(bi.fieldsData))
+	fCursors = make(FieldCursors, 0, len(bi.fieldsData))
 
 	if k == 0 && len(bi.wildcardEntries) > 0 {
 		pl := NewEntriesCursor(wildcardQKey, bi.wildcardEntries)
-		fieldScanners = append(fieldScanners, NewFieldScanner(pl))
+		fCursors = append(fCursors, NewFieldCursor(pl))
 	}
 
 	kSizeContainer := bi.getKSizeEntries(k)
@@ -138,7 +138,7 @@ func (bi *SizeGroupedBEIndex) initFieldScanners(ctx *RetrieveContext, k int) (fi
 
 		if holder = kSizeContainer.getFieldHolder(desc); holder == nil {
 			// Logger.Debugf("entries holder not found, field:%s", desc.Field)
-			// case 1: user/client can  pass non-exist assign, so just skip this field
+			// case 1: user/client can pass non-exist assign, so just skip this field
 			// case 2: no any document has condition on this field
 			continue
 		}
@@ -149,8 +149,8 @@ func (bi *SizeGroupedBEIndex) initFieldScanners(ctx *RetrieveContext, k int) (fi
 		}
 
 		if len(entriesList) > 0 {
-			scanner := NewFieldScanner(entriesList...)
-			fieldScanners = append(fieldScanners, scanner)
+			scanner := NewFieldCursor(entriesList...)
+			fCursors = append(fCursors, scanner)
 
 			Logger.Debugf("<%s,%v> fetch %d posting list\n", desc.Field, values, len(entriesList))
 		} else {
@@ -158,23 +158,23 @@ func (bi *SizeGroupedBEIndex) initFieldScanners(ctx *RetrieveContext, k int) (fi
 		}
 	}
 
-	if ctx.DumpEntriesDetail {
-		Logger.Infof("matched entries\n%s", fieldScanners.Dump())
+	if ctx.dumpEntriesDetail {
+		Logger.Infof("matched entries:\n%s", fCursors.Dump())
 	}
 
-	return fieldScanners, nil
+	return fCursors, nil
 }
 
-// retrieveK MOVE TO: FieldScanners ?
-func (bi *SizeGroupedBEIndex) retrieveK(ctx *RetrieveContext, fieldScanners FieldScanners, k int) {
+// retrieveK MOVE TO: FieldCursors ?
+func (bi *SizeGroupedBEIndex) retrieveK(ctx *retrieveContext, fieldCursors FieldCursors, k int) {
 
-	//sort.Sort(fieldScanners)
-	fieldScanners.Sort()
+	// sort.Sort(fieldCursors)
+	fieldCursors.Sort()
 
-	for !fieldScanners[k-1].GetCurEntryID().IsNULLEntry() {
+	for !fieldCursors[k-1].GetCurEntryID().IsNULLEntry() {
 
-		eid := fieldScanners[0].GetCurEntryID()
-		endEID := fieldScanners[k-1].GetCurEntryID()
+		eid := fieldCursors[0].GetCurEntryID()
+		endEID := fieldCursors[k-1].GetCurEntryID()
 
 		conjID := eid.GetConjID()
 		endConjID := endEID.GetConjID()
@@ -188,46 +188,64 @@ func (bi *SizeGroupedBEIndex) retrieveK(ctx *RetrieveContext, fieldScanners Fiel
 			if eid.IsInclude() {
 
 				ctx.collector.Add(conjID.DocID(), conjID)
-				if ctx.DumpStepInfo {
-					Logger.Infof("step k:%d add doc:%s conj:%d\n", k, conjID.DocID(), conjID)
+				if ctx.dumpStepInfo {
+					Logger.Infof("step k:%d add doc:%d conj:%d\n", k, conjID.DocID(), conjID)
 				}
 			} else { //exclude
 
-				for i := k; i < fieldScanners.Len(); i++ {
-					if fieldScanners[i].GetCurConjID() != eid.GetConjID() {
+				for i := k; i < fieldCursors.Len(); i++ {
+					if fieldCursors[i].GetCurConjID() != eid.GetConjID() {
 						break
 					}
-					fieldScanners[i].Skip(nextID)
+					fieldCursors[i].Skip(nextID)
 				}
 			}
 		}
 		// 推进游标
 		for i := 0; i < k; i++ {
-			fieldScanners[i].SkipTo(nextID)
+			fieldCursors[i].SkipTo(nextID)
 		}
 
-		// sort.Sort(fieldScanners)
-		fieldScanners.Sort()
+		// sort.Sort(fieldCursors)
+		fieldCursors.Sort()
 
-		if ctx.DumpStepInfo {
-			Logger.Infof("sorted entries\n%s", fieldScanners.Dump())
+		if ctx.dumpStepInfo {
+			Logger.Infof("sorted entries\n%s", fieldCursors.Dump())
 		}
 	}
 }
 
-func (bi *SizeGroupedBEIndex) Retrieve(queries Assignments, opts ...IndexOpt) (result DocIDList, err error) {
+func (bi *SizeGroupedBEIndex) Retrieve(
+	queries Assignments, opts ...IndexOpt) (result DocIDList, err error) {
 
-	ctx := NewRetrieveCtx()
-	ctx.assigns = queries
-	for _, fn := range opts {
-		fn(ctx)
+	collector := PickCollector()
+
+	defer PutCollector(collector)
+
+	if err = bi.RetrieveWithCollector(queries, collector, opts...); err != nil {
+		return nil, err
 	}
 
-	var fieldScanners FieldScanners
-	for k := util.MinInt(queries.Size(), bi.maxK()); k >= 0; k-- {
+	result = collector.GetDocIDs()
 
-		if fieldScanners, err = bi.initFieldScanners(ctx, k); err != nil {
-			return nil, err
+	return result, nil
+}
+
+func (bi *SizeGroupedBEIndex) RetrieveWithCollector(
+	queries Assignments, collector ResultCollector, opts ...IndexOpt) (err error) {
+
+	ctx := newRetrieveCtx(queries, opts...)
+	util.PanicIf(ctx.collector != nil, "can't specify collector twice")
+
+	ctx.collector = collector
+
+	var fCursors FieldCursors
+	for k := util.MinInt(queries.Size(), bi.maxK()); k >= 0; k-- {
+		if ctx.dumpStepInfo {
+			Logger.Infof("start retrieve k:", k)
+		}
+		if fCursors, err = bi.initFieldCursors(&ctx, k); err != nil {
+			return err
 		}
 
 		tempK := k
@@ -235,25 +253,13 @@ func (bi *SizeGroupedBEIndex) Retrieve(queries Assignments, opts ...IndexOpt) (r
 			tempK = 1
 		}
 
-		if len(fieldScanners) < tempK {
+		if len(fCursors) < tempK {
 			continue
 		}
 
-		bi.retrieveK(ctx, fieldScanners, tempK)
+		bi.retrieveK(&ctx, fCursors, tempK)
 	}
-	if ctx.userCollector {
-		return nil, nil
-	}
-	// default collector
-	collector, ok := ctx.collector.(*DocIDCollector)
-	util.PanicIf(!ok, "should not reach")
-
-	result = make(DocIDList, 0, collector.DocCount())
-	iter := collector.docBits.Iterator()
-	if iter.HasNext() {
-		result = append(result, DocID(iter.Next()))
-	}
-	return result, nil
+	return nil
 }
 
 func (bi *SizeGroupedBEIndex) DumpEntries() string {

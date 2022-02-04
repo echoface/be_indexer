@@ -2,6 +2,7 @@ package roaringidx
 
 import (
 	"fmt"
+
 	"github.com/echoface/be_indexer/util"
 
 	"github.com/echoface/be_indexer"
@@ -9,42 +10,69 @@ import (
 
 type (
 	IvtBEIndexerBuilder struct {
+		// panicOnError will panic program when build indexer meta
+		panicOnError bool
+
 		containerBuilder map[be_indexer.BEField]BEContainerBuilder
 	}
 )
 
 func NewIndexerBuilder() *IvtBEIndexerBuilder {
 	return &IvtBEIndexerBuilder{
+		panicOnError:     false,
 		containerBuilder: map[be_indexer.BEField]BEContainerBuilder{},
 	}
 }
 
-func (builder *IvtBEIndexerBuilder) ConfigureField(field string, option FieldSetting) {
+func (builder *IvtBEIndexerBuilder) WithErrPanic(panic bool) *IvtBEIndexerBuilder {
+	builder.panicOnError = panic
+	return builder
+}
+
+func (builder *IvtBEIndexerBuilder) ConfigureField(field string, option FieldSetting) error {
 	fieldContainerBuilder := NewContainerBuilder(option.Container, option)
 	if fieldContainerBuilder == nil {
-		panic(fmt.Errorf("field:%s setttings:%+v not supported", field, option))
+		util.PanicIf(builder.panicOnError, "field:%s settings:%+v not supported", field, option)
+		return fmt.Errorf("field:%s settings:%+v not supported", field, option)
 	}
 
 	builder.containerBuilder[be_indexer.BEField(field)] = fieldContainerBuilder
+	return nil
 }
 
-func (builder *IvtBEIndexerBuilder) AddDocuments(docs ...*be_indexer.Document) {
+func (builder *IvtBEIndexerBuilder) AddDocuments(docs ...*be_indexer.Document) (err error) {
 	for _, doc := range docs {
-		builder.AddDocument(doc)
+		err = builder.AddDocument(doc)
+		if err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
-func (builder *IvtBEIndexerBuilder) AddDocument(doc *be_indexer.Document) {
-	util.PanicIf(len(doc.Cons) == 0, "zero conjunction in this document")
+func (builder *IvtBEIndexerBuilder) AddDocument(doc *be_indexer.Document) (err error) {
+
+	if doc == nil || len(doc.Cons) == 0 {
+		util.PanicIf(builder.panicOnError, "zero conjunction in this document")
+		return fmt.Errorf("empty document(zero conjunctions) is not allowed")
+	}
 
 	for idx, conj := range doc.Cons {
 
-		conjID := NewConjunctionID(idx, int64(doc.ID))
+		var conjID ConjunctionID
+		if conjID, err = NewConjunctionID(idx, int64(doc.ID)); err != nil {
+			be_indexer.Logger.Errorf("gen conjunction id for doc:%d fail, err:%s", doc.ID, err.Error())
+			util.PanicIf(builder.panicOnError, "gen conj id fail,%v", err)
+			return err
+		}
+
 		// NOTE: check conjunction contains none-configured field expression
 		// this may case logic error if we omit those boolean-expression
 		for field := range conj.Expressions {
 			if _, ok := builder.containerBuilder[field]; !ok {
-				panic(fmt.Errorf("document contains none-configured field:%s", field))
+				util.PanicIf(builder.panicOnError, "document contains none-configured field:%s", field)
+				be_indexer.LogErrIf(true, "document contains none-configured field:%", field)
+				return fmt.Errorf("document contains none-configured field:%s", field)
 			}
 		}
 
@@ -54,21 +82,27 @@ func (builder *IvtBEIndexerBuilder) AddDocument(doc *be_indexer.Document) {
 				containerBuilder.EncodeWildcard(conjID)
 				continue
 			}
-			if err := containerBuilder.EncodeExpr(conjID, be_indexer.NewBoolExpr2(field, *expr)); err != nil {
-				panic(fmt.Errorf("faild evaluate boolean expression:%+v", expr))
+
+			if err = containerBuilder.EncodeExpr(conjID, be_indexer.NewBoolExpr2(field, *expr)); err != nil {
+				util.PanicIf(builder.panicOnError, "failed evaluate boolean expression:%+v", expr)
+				return err
 			}
 		}
 	}
+	return nil
 }
 
 func (builder *IvtBEIndexerBuilder) BuildIndexer() (*IvtBEIndexer, error) {
+
 	indexer := NewIvtBEIndexer()
-	for field, builder := range builder.containerBuilder {
-		container, err := builder.BuildBEContainer()
+
+	for field, fieldBuilder := range builder.containerBuilder {
+		container, err := fieldBuilder.BuildBEContainer()
 		if err != nil {
 			return nil, err
 		}
-		indexer.data[field] = &fieldData{
+		indexer.data[field] = &fieldMeta{
+			field:     field,
 			container: container,
 		}
 	}

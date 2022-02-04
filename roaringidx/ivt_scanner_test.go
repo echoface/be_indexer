@@ -2,10 +2,11 @@ package roaringidx
 
 import (
 	"fmt"
+	"testing"
+
 	"github.com/echoface/be_indexer"
 	"github.com/echoface/be_indexer/parser"
 	"github.com/smartystreets/goconvey/convey"
-	"testing"
 )
 
 func TestIvtScanner_Retrieve(t *testing.T) {
@@ -52,19 +53,19 @@ func TestIvtScanner_Retrieve(t *testing.T) {
 		convey.So(indexer, convey.ShouldNotBeNil)
 
 		scanner := NewScanner(indexer)
-		conjs, err := scanner.Retrieve(map[be_indexer.BEField]be_indexer.Values{
+		docs, err := scanner.Retrieve(map[be_indexer.BEField]be_indexer.Values{
 			"ad_id":   []interface{}{100, 102},
 			"package": []interface{}{"com.echoface.be", "com.echoface.not"},
 		})
 		convey.So(err, convey.ShouldBeNil)
-		fmt.Println(FormatBitMapResult(conjs))
+		convey.So(docs, convey.ShouldResemble, []uint64{1, 5, 20})
 
 		scanner.Reset()
-		conjs, err = scanner.Retrieve(map[be_indexer.BEField]be_indexer.Values{
+		docs, err = scanner.Retrieve(map[be_indexer.BEField]be_indexer.Values{
 			"package": []interface{}{"com.echoface.not"},
 		})
 		convey.So(err, convey.ShouldBeNil)
-		fmt.Println(FormatBitMapResult(conjs))
+		convey.So(docs, convey.ShouldResemble, []uint64{20})
 	})
 }
 
@@ -101,22 +102,67 @@ func TestIvtScanner_Retrieve2(t *testing.T) {
 		convey.So(indexer, convey.ShouldNotBeNil)
 
 		scanner := NewScanner(indexer)
-		conjs, err := scanner.Retrieve(map[be_indexer.BEField]be_indexer.Values{
+		docs, err := scanner.Retrieve(map[be_indexer.BEField]be_indexer.Values{
 			"keywords": []interface{}{"恭喜发财红包拿来", "坚决查处色情娱乐场所"},
 		})
 		convey.So(err, convey.ShouldBeNil)
-		fmt.Println(FormatBitMapResult(conjs))
+		convey.So(docs, convey.ShouldResemble, []uint64{1, 5, 10})
+		fmt.Println("result:", FormatBitMapResult(scanner.GetRawResult().ToArray()))
 
 		scanner.Reset()
-		conjs, err = scanner.Retrieve(map[be_indexer.BEField]be_indexer.Values{
+		docs, err = scanner.Retrieve(map[be_indexer.BEField]be_indexer.Values{
 			"package": []interface{}{"恭喜发财红包拿来"},
 		})
-		fmt.Println(FormatBitMapResult(conjs))
+		convey.So(err, convey.ShouldBeNil)
+		convey.So(docs, convey.ShouldResemble, []uint64{10, 20})
+		fmt.Println("result:", FormatBitMapResult(scanner.GetRawResult().ToArray()))
 
 		scanner.Reset()
-		conjs, err = scanner.Retrieve(map[be_indexer.BEField]be_indexer.Values{
+		docs, err = scanner.Retrieve(map[be_indexer.BEField]be_indexer.Values{
 			"package": []interface{}{"坚决查处色情娱乐场所"},
 		})
-		fmt.Println(FormatBitMapResult(conjs))
+		convey.So(err, convey.ShouldBeNil)
+		convey.So(docs, convey.ShouldResemble, []uint64{10, 20})
+		fmt.Println("result:", FormatBitMapResult(scanner.GetRawResult().ToArray()))
+	})
+}
+
+func TestIvtScanner_Retrieve3(t *testing.T) {
+
+	convey.Convey("test conjunction duplicated", t, func() {
+		builder := NewIndexerBuilder()
+		convey.So(builder, convey.ShouldNotBeNil)
+
+		builder.ConfigureField("ad_id", FieldSetting{
+			Container: "default",
+			Parser:    parser.ParserNameNumber,
+		})
+		builder.ConfigureField("package", FieldSetting{
+			Container: "default",
+			Parser:    parser.ParserNameStrHash,
+		})
+
+		doc1 := be_indexer.NewDocument(1)
+		doc1.AddConjunction(be_indexer.NewConjunction().
+			Include("ad_id", be_indexer.NewIntValues(100, 101, 108)).
+			Include("package", be_indexer.NewStrValues("com.echoface.be")))
+		doc1.AddConjunction(be_indexer.NewConjunction().
+			Include("package", be_indexer.NewStrValues("com.echoface.x")))
+
+		builder.AddDocuments(doc1)
+
+		indexer, err := builder.BuildIndexer()
+		convey.So(err, convey.ShouldBeNil)
+		convey.So(indexer, convey.ShouldNotBeNil)
+
+		scanner := NewScanner(indexer)
+		docs, err := scanner.Retrieve(map[be_indexer.BEField]be_indexer.Values{
+			"ad_id":   []interface{}{100, 102},
+			"package": []interface{}{"com.echoface.be", "com.echoface.x"},
+		})
+		convey.So(err, convey.ShouldBeNil)
+		convey.So(docs, convey.ShouldResemble, []uint64{1})
+		fmt.Println("result:", FormatBitMapResult(scanner.GetRawResult().ToArray()))
+		convey.So(scanner.GetRawResult().GetCardinality(), convey.ShouldEqual, 2)
 	})
 }

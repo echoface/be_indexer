@@ -2,6 +2,9 @@ package main
 
 import (
 	"fmt"
+	"math/rand"
+	"sync"
+	"time"
 
 	"github.com/echoface/be_indexer"
 	"github.com/echoface/be_indexer/parser"
@@ -47,10 +50,35 @@ func main() {
 	util.PanicIfErr(err, "should not err here")
 
 	scanner := roaringidx.NewScanner(indexer)
-	conjIDs, err := scanner.Retrieve(map[be_indexer.BEField]be_indexer.Values{
+	docs, err := scanner.Retrieve(map[be_indexer.BEField]be_indexer.Values{
 		"ad_id":   []interface{}{100, 102},
 		"package": []interface{}{"com.echoface.be", "com.echoface.not"},
 	})
-	fmt.Println(roaringidx.FormatBitMapResult(conjIDs))
+	util.PanicIfErr(err, "retrieve fail, err:%v", err)
+	fmt.Println("docs:", docs)
+	fmt.Println("raw result:", roaringidx.FormatBitMapResult(scanner.GetRawResult().ToArray()))
 	scanner.Reset()
+
+	// concurrency retrieve
+	fmt.Println("start concurrency retrieve test")
+	wg := &sync.WaitGroup{}
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			var e error
+			sc := roaringidx.NewScanner(indexer)
+			for j := 0; j < 100; j++ {
+				_, e = sc.Retrieve(map[be_indexer.BEField]be_indexer.Values{
+					"ad_id":   []interface{}{rand.Intn(4) + 98, rand.Intn(4) + 100},
+					"package": []interface{}{"com.echoface.be", "com.echoface.not"},
+				})
+				util.PanicIfErr(e, "retrieve fail, err:%v", e)
+				scanner.Reset()
+			}
+		}()
+	}
+	time.Sleep(time.Second * 1)
+	wg.Wait()
 }

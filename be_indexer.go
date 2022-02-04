@@ -18,42 +18,25 @@ type (
 	FieldDesc struct {
 		ID     uint64
 		Field  BEField
-		Parser parser.FieldValueParser
 		option FieldOption
+
+		Parser parser.FieldValueParser
 	}
 
 	FieldOption struct {
 		Parser    string
-		Container string // specific the holder|container all tokenized value and correspondent Entries
+		Container string // specify Entries holder for all tokenized value Entries
 	}
 
 	IndexerSettings struct {
-		EnableDebugMode bool
-		FieldConfig     map[BEField]FieldOption
+		FieldConfig map[BEField]FieldOption
 	}
-
-	RetrieveContext struct {
-		RetrieveOption
-		assigns Assignments
-	}
-
-	RetrieveOption struct {
-		DumpStepInfo bool
-
-		DumpEntriesDetail bool
-
-		userCollector bool
-
-		collector ResultCollector
-	}
-
-	IndexOpt func(ctx *RetrieveContext)
 
 	BEIndex interface {
 		// addWildcardEID interface used by builder
 		addWildcardEID(id EntryID)
 
-		// set a field desc
+		// set fields desc/settings
 		setFieldDesc(fieldsData map[BEField]*FieldDesc)
 
 		// newContainer indexer need return a valid Container for k size
@@ -63,8 +46,10 @@ type (
 		compileIndexer()
 
 		// Retrieve scan index data and retrieve satisfied document
-		// NOTE: when use a customized Collector, it will return nil/empty result for performance reason
-		Retrieve(queries Assignments, opt ...IndexOpt) (result DocIDList, err error)
+		Retrieve(queries Assignments, opt ...IndexOpt) (DocIDList, error)
+
+		// Retrieve scan index data and retrieve satisfied document
+		RetrieveWithCollector(Assignments, ResultCollector, ...IndexOpt) error
 
 		// DumpEntries debug api
 		DumpEntries() string
@@ -98,48 +83,56 @@ var collectorPool = sync.Pool{
 	},
 }
 
+func PickCollector() *DocIDCollector {
+	return collectorPool.Get().(*DocIDCollector)
+}
+
+func PutCollector(c *DocIDCollector) {
+	if c == nil {
+		return
+	}
+	c.Reset()
+	collectorPool.Put(c)
+}
+
+type (
+	retrieveContext struct {
+		dumpStepInfo bool
+
+		dumpEntriesDetail bool
+
+		collector ResultCollector
+
+		assigns Assignments
+	}
+
+	IndexOpt func(ctx *retrieveContext)
+)
+
 func WithStepDetail() IndexOpt {
-	return func(ctx *RetrieveContext) {
-		ctx.DumpStepInfo = true
+	return func(ctx *retrieveContext) {
+		ctx.dumpStepInfo = true
 	}
 }
 
 func WithDumpEntries() IndexOpt {
-	return func(ctx *RetrieveContext) {
-		ctx.DumpEntriesDetail = true
+	return func(ctx *retrieveContext) {
+		ctx.dumpEntriesDetail = true
 	}
 }
 
-// WithCollector specific a user defined collector
+// WithCollector specify a user defined collector
 func WithCollector(fn ResultCollector) IndexOpt {
-	if fn == nil {
-		return func(*RetrieveContext) {}
-	}
-
-	return func(ctx *RetrieveContext) {
+	return func(ctx *retrieveContext) {
 		ctx.collector = fn
-		ctx.userCollector = true
 	}
 }
 
-func (ctx *RetrieveContext) Reset() {
-	ctx.collector = nil
-	ctx.userCollector = false
-	ctx.DumpStepInfo = false
-	ctx.DumpEntriesDetail = false
-}
-
-func (ctx *RetrieveContext) Init(opt ...IndexOpt) {
-	for _, fn := range opt {
-		fn(ctx)
+func newRetrieveCtx(ass Assignments, opts ...IndexOpt) retrieveContext {
+	ctx := retrieveContext{}
+	ctx.assigns = ass
+	for _, fn := range opts {
+		fn(&ctx)
 	}
-}
-
-func NewRetrieveCtx() *RetrieveContext {
-	return collectorPool.Get().(*RetrieveContext)
-}
-
-func ReleaseRetrieveCtx(ctx *RetrieveContext) {
-	collectorPool.Put(ctx.collector)
-	ctx.Reset()
+	return ctx
 }

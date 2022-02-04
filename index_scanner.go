@@ -7,7 +7,7 @@ import (
 )
 
 /*
-IndexScanner
+IndexScan
 a scanner for indexer, it helps to retrieve result document id from posting entries
 currently, it is used by BEIndex, but as a part of design, it should top on BEIndex
 that seems more reasonable. so may be next version, should be refactored(fixed).
@@ -33,14 +33,14 @@ type (
 	}
 	CursorGroup []*EntriesCursor
 
-	//FieldScanner for a boolean expression: {"tag", "in", [1, 2, 3]}
+	// FieldCursor for a boolean expression: {"tag", "in", [1, 2, 3]}
 	// tag_2: [ID5]
 	// tag_1: [ID1, ID2, ID7]
-	FieldScanner struct {
+	FieldCursor struct {
 		current     *EntriesCursor
 		cursorGroup CursorGroup
 	}
-	FieldScanners []*FieldScanner
+	FieldCursors []*FieldCursor
 )
 
 func newQKey(field BEField, v interface{}) QKey {
@@ -155,16 +155,16 @@ func (sc *EntriesCursor) SkipTo(id EntryID) EntryID {
 	return sc.GetCurEntryID()
 }
 
-//Len FieldScanners sort API
-func (s FieldScanners) Len() int      { return len(s) }
-func (s FieldScanners) Swap(i, j int) { s[i], s[j] = s[j], s[i] }
-func (s FieldScanners) Less(i, j int) bool {
+// Len FieldCursors sort API
+func (s FieldCursors) Len() int      { return len(s) }
+func (s FieldCursors) Swap(i, j int) { s[i], s[j] = s[j], s[i] }
+func (s FieldCursors) Less(i, j int) bool {
 	return s[i].GetCurEntryID() < s[j].GetCurEntryID()
 }
 
 // Sort golang's internal sort.Sort method have obvious overhead in performance.(runtime convTSlice)
 // so here use a simple insert sort replace it. bz not much Element, may another quickSort here later
-func (s FieldScanners) Sort() {
+func (s FieldCursors) Sort() {
 	x := len(s)
 	if x <= 1 {
 		return
@@ -185,17 +185,16 @@ func (s FieldScanners) Sort() {
 	}
 }
 
-func (s FieldScanners) Dump() string {
+func (s FieldCursors) Dump() string {
 	sb := &strings.Builder{}
 	for _, scanner := range s {
-		sb.WriteString("\n")
 		sb.WriteString(scanner.DumpEntries())
+		sb.WriteString("\n")
 	}
-	sb.WriteString("\n")
 	return sb.String()
 }
 
-func (s FieldScanners) DumpCurrent() string {
+func (s FieldCursors) DumpCurrent() string {
 	sb := &strings.Builder{}
 	for idx, pl := range s {
 		sb.WriteString(fmt.Sprintf("idx:%d, eid:%s\n", idx, pl.GetCurEntryID().DocString()))
@@ -203,8 +202,8 @@ func (s FieldScanners) DumpCurrent() string {
 	return sb.String()
 }
 
-func NewFieldScanner(cursors ...*EntriesCursor) *FieldScanner {
-	scanner := &FieldScanner{
+func NewFieldCursor(cursors ...*EntriesCursor) *FieldCursor {
+	scanner := &FieldCursor{
 		current:     nil,
 		cursorGroup: cursors,
 	}
@@ -218,7 +217,7 @@ func NewFieldScanner(cursors ...*EntriesCursor) *FieldScanner {
 	return scanner
 }
 
-func (sg *FieldScanner) AddPostingList(cursor *EntriesCursor) {
+func (sg *FieldCursor) AddPostingList(cursor *EntriesCursor) {
 	sg.cursorGroup = append(sg.cursorGroup, cursor)
 	if sg.current == nil {
 		sg.current = cursor
@@ -229,15 +228,19 @@ func (sg *FieldScanner) AddPostingList(cursor *EntriesCursor) {
 	}
 }
 
-func (sg *FieldScanner) GetCurConjID() ConjID {
+func (sg *FieldCursor) GetCurConjID() ConjID {
 	return sg.GetCurEntryID().GetConjID()
 }
 
-func (sg *FieldScanner) GetCurEntryID() EntryID {
+func (sg *FieldCursor) ReachEnd() bool {
+	return sg.current.GetCurEntryID().IsNULLEntry()
+}
+
+func (sg *FieldCursor) GetCurEntryID() EntryID {
 	return sg.current.GetCurEntryID()
 }
 
-func (sg *FieldScanner) Skip(id EntryID) (newMin EntryID) {
+func (sg *FieldCursor) Skip(id EntryID) (newMin EntryID) {
 	newMin = NULLENTRY
 	for _, cursor := range sg.cursorGroup {
 		if tId := cursor.Skip(id); tId < newMin {
@@ -248,7 +251,7 @@ func (sg *FieldScanner) Skip(id EntryID) (newMin EntryID) {
 	return
 }
 
-func (sg *FieldScanner) SkipTo(id EntryID) (newMin EntryID) {
+func (sg *FieldCursor) SkipTo(id EntryID) (newMin EntryID) {
 	newMin = NULLENTRY
 	for _, cursor := range sg.cursorGroup {
 		if tId := cursor.SkipTo(id); tId < newMin {
@@ -259,7 +262,7 @@ func (sg *FieldScanner) SkipTo(id EntryID) (newMin EntryID) {
 	return
 }
 
-func (sg *FieldScanner) DumpEntries() string {
+func (sg *FieldCursor) DumpEntries() string {
 	sb := &strings.Builder{}
 	sg.cursorGroup.DumpEntries(sb)
 	return sb.String()

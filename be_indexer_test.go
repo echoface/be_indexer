@@ -3,14 +3,15 @@ package be_indexer
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/echoface/be_indexer/parser"
-	"github.com/echoface/be_indexer/util"
-	"github.com/smartystreets/goconvey/convey"
 	"io/ioutil"
 	"math/rand"
 	"sort"
 	"testing"
 	"time"
+
+	"github.com/echoface/be_indexer/parser"
+	"github.com/echoface/be_indexer/util"
+	"github.com/smartystreets/goconvey/convey"
 )
 
 func buildTestDoc() []*Document {
@@ -375,7 +376,7 @@ func TestCompactedBEIndex_Retrieve(t *testing.T) {
 func TestBEIndex_Retrieve2(t *testing.T) {
 	LogLevel = ErrorLevel
 
-	convey.Convey("test index logic", t, func() {
+	convey.Convey("test index and simple bench for kGroup/Compacted indexer", t, func() {
 		docs, queries := BuildTestDocumentAndQueries(10000, 10000, false)
 		b := NewIndexerBuilder()
 		cb := NewCompactIndexerBuilder()
@@ -386,14 +387,14 @@ func TestBEIndex_Retrieve2(t *testing.T) {
 		index := b.BuildIndex()
 		compactedIndex := cb.BuildIndex()
 
-		fmt.Println("summary", index.DumpEntriesSummary())
+		fmt.Println("kGroupIndex summary", index.DumpEntriesSummary())
 		fmt.Println("compactedIndex summary", compactedIndex.DumpEntriesSummary())
 
-		idxRes := make(map[int]DocIDList)
-		idxUnionRes := make(map[int]DocIDList)
+		queriesCnt := int64(len(queries))
+
 		noneIdxRes := make(map[int]DocIDList)
-		fmt.Println("queries count:", len(queries))
-		start := time.Now().UnixNano() / 1000000
+		fmt.Println("queries count:", queriesCnt)
+		start := time.Now()
 		for idx, q := range queries {
 			var docIDS []DocID
 			for id, target := range docs {
@@ -403,9 +404,12 @@ func TestBEIndex_Retrieve2(t *testing.T) {
 			}
 			noneIdxRes[idx] = docIDS
 		}
-		fmt.Printf("NontIndexQuery Take %d(ms)\n", time.Now().UnixNano()/1000000-start)
+		duration := time.Since(start)
+		fmt.Printf("NoneIndexQuery Take %d(ms) %d(us)/ops\n",
+			duration.Milliseconds(), duration.Microseconds()/queriesCnt)
 
-		start = time.Now().UnixNano() / 1000000
+		start = time.Now()
+		idxRes := make(map[int]DocIDList)
 		for idx, ass := range queries {
 			ids, _ := index.Retrieve(ass.ToAssigns())
 			idxRes[idx] = ids
@@ -422,9 +426,12 @@ func TestBEIndex_Retrieve2(t *testing.T) {
 				convey.So(nil, convey.ShouldNotBeNil)
 			}
 		}
-		fmt.Printf("IndexQuery Take %d(ms)\n", time.Now().UnixNano()/1000000-start)
+		duration = time.Since(start)
+		fmt.Printf("KGroupIndexQuery Take %d(ms), %d(us)/ops\n",
+			duration.Milliseconds(), duration.Microseconds()/queriesCnt)
 
-		start = time.Now().UnixNano() / 1000000
+		start = time.Now()
+		idxUnionRes := make(map[int]DocIDList)
 		for idx, ass := range queries {
 			ids, _ := compactedIndex.Retrieve(ass.ToAssigns())
 			idxUnionRes[idx] = ids
@@ -435,13 +442,15 @@ func TestBEIndex_Retrieve2(t *testing.T) {
 				for _, id := range ids {
 					fmt.Println("doc:", docs[id])
 				}
-				fmt.Println("query:", ass)
+				fmt.Println("idx:", idx, ",query:", ass)
 				fmt.Printf("unionIdxRes:%+v\n", ids)
 				fmt.Printf("noneIdxRes:%+v\n", noneIdxRes[idx])
 				convey.So(nil, convey.ShouldNotBeNil)
 			}
 		}
-		fmt.Printf("UnionIndexQuery Take %d(ms)\n", time.Now().UnixNano()/1000000-start)
+		duration = time.Since(start)
+		fmt.Printf("CompactedIndexQuery Take %d(ms), %d(us)/ops\n",
+			duration.Milliseconds(), duration.Microseconds()/queriesCnt)
 	})
 
 }
@@ -466,8 +475,8 @@ func DocIDToIncludeEntries(ids []DocID, k int) (res []EntryID) {
 }
 
 func TestBEIndex_Retrieve3(t *testing.T) {
-	plgs := FieldScanners{
-		NewFieldScanner(CursorGroup{
+	plgs := FieldCursors{
+		NewFieldCursor(CursorGroup{
 			{
 				entries: DocIDToIncludeEntries([]DocID{17, 32, 37}, 2),
 			},
@@ -481,7 +490,7 @@ func TestBEIndex_Retrieve3(t *testing.T) {
 				entries: DocIDToIncludeEntries(DocIDList{53, 54}, 2),
 			},
 		}...),
-		NewFieldScanner(CursorGroup{
+		NewFieldCursor(CursorGroup{
 			{
 				entries: DocIDToIncludeEntries(DocIDList{10, 19, 27, 32, 54, 81}, 2),
 			},
@@ -494,15 +503,14 @@ func TestBEIndex_Retrieve3(t *testing.T) {
 		plg.current = plg.cursorGroup[0]
 	}
 
-	ctx := &RetrieveContext{
-		assigns: nil,
-		option:  RetrieveOption{},
-	}
+	ctx := newRetrieveCtx(nil)
+	ctx.collector = PickCollector()
 
 	index := &SizeGroupedBEIndex{}
 	convey.Convey("test retrieve k:2", t, func() {
-		result := index.retrieveK(ctx, plgs, 2)
-		convey.So(result, convey.ShouldResemble, []DocID{19, 32, 54})
+		index.retrieveK(&ctx, plgs, 2)
+		collector := ctx.collector.(*DocIDCollector)
+		convey.So(collector.GetDocIDs(), convey.ShouldResemble, DocIDList{19, 32, 54})
 	})
 }
 
@@ -542,7 +550,7 @@ func TestBEIndex_Retrieve4(t *testing.T) {
 		convey.So(result, convey.ShouldResemble, DocIDList{12})
 
 		result, e = indexer.Retrieve(Assignments{
-			"age": NewIntValues2(40),
+			"age": NewIntValues2(40), // age not in 40 so should be nil result
 			"tag": NewInt32Values2(1),
 		})
 		convey.So(e, convey.ShouldBeNil)
@@ -558,6 +566,14 @@ func TestBEIndex_Retrieve4(t *testing.T) {
 			})
 
 		}, convey.ShouldNotPanic)
+
+		customizedCollector := PickCollector()
+		e = indexer.RetrieveWithCollector(Assignments{
+			"age": NewInt32Values2(25),
+			"tag": NewInt32Values2(1),
+		}, customizedCollector)
+		convey.So(e, convey.ShouldBeNil)
+		convey.So(customizedCollector.GetDocIDs(), convey.ShouldResemble, DocIDList{12})
 	})
 }
 
@@ -606,7 +622,7 @@ func TestBEIndex_Retrieve5(t *testing.T) {
 		var ids DocIDList
 		ids, err = indexer.Retrieve(Assignments{
 			"sex": []interface{}{"man"},
-		})
+		}, WithDumpEntries(), WithStepDetail())
 		fmt.Println(ids)
 		sort.Sort(ids)
 		convey.So(ids, convey.ShouldResemble, DocIDList{13, 14})

@@ -3,7 +3,6 @@ package be_indexer
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/echoface/be_indexer/parser"
 )
 
 type (

@@ -43,6 +43,14 @@ func LogErrIf(condition bool, format string, v ...interface{}) {
 	}
 }
 
+func LogIfErr(err error, format string, v ...interface{}) {
+	if err == nil {
+		return
+	}
+	Logger.Errorf(format, v...)
+	Logger.Errorf("Error:%s", err.Error())
+}
+
 func (l *DefaultLogger) Debugf(format string, v ...interface{}) {
 	if LogLevel > DebugLevel {
 		return

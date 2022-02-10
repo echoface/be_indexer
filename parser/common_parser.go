@@ -13,7 +13,7 @@ type (
 
 func NewCommonStrParser() FieldValueParser {
 	return &CommonStrParser{
-		idAlloc: DefaultIDAllocator,
+		idAlloc: NewIDAllocatorImpl(),
 	}
 }
 

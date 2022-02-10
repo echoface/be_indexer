@@ -88,13 +88,13 @@ func (scanner *IvtScanner) mergeFieldResult(field be_indexer.BEField, pl Posting
 func (scanner *IvtScanner) retrieve(assigns be_indexer.Assignments) (err error) {
 	tmpPl := NewPostingList()
 
-	for field, meta := range scanner.indexer.data {
+	for field, can := range scanner.indexer.data {
 		if scanner.ended {
 			break
 		}
 		values := assigns[field]
 
-		if err = meta.container.Retrieve(values, &tmpPl); err != nil {
+		if err = can.Retrieve(values, &tmpPl); err != nil {
 			return err
 		}
 

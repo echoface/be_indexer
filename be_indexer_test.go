@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/echoface/be_indexer/parser"
 	"github.com/echoface/be_indexer/util"
 	"github.com/smartystreets/goconvey/convey"
 )
@@ -653,7 +652,6 @@ func TestBEIndex_Retrieve6(t *testing.T) {
 	LogLevel = ErrorLevel
 	builder := NewIndexerBuilder()
 	builder.ConfigField("keyword", FieldOption{
-		Parser:    parser.ParserNameCommon,
 		Container: HolderNameACMatcher,
 	})
 
@@ -663,7 +661,7 @@ func TestBEIndex_Retrieve6(t *testing.T) {
 		In("tag", NewInt32Values2(1)).
 		In("keyword", NewStrValues("abc", "红包", "棋牌"))
 	doc.AddConjunction(conj)
-	builder.AddDocument(doc)
+	_ = builder.AddDocument(doc)
 
 	// 13: (tag IN 1 && age Not 27) or (tag Not 60)
 	doc = NewDocument(13)

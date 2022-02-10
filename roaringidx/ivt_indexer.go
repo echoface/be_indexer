@@ -2,28 +2,33 @@ package roaringidx
 
 import (
 	"github.com/echoface/be_indexer"
+	"github.com/echoface/be_indexer/parser"
 )
 
 type (
 	// FieldSetting public settings for configuring a field
 	FieldSetting struct {
-		Parser    string `json:"parser" yaml:"parser"`
-		Container string `json:"container" yaml:"container"`
+		Parser    parser.FieldValueParser
+		Container string
 	}
 
-	fieldMeta struct {
-		container BEContainer
+	FieldMeta struct {
+		FieldSetting
 
 		field be_indexer.BEField
 	}
 
 	IvtBEIndexer struct {
-		data map[be_indexer.BEField]*fieldMeta
+		data map[be_indexer.BEField]BEContainer
 	}
 )
 
 func NewIvtBEIndexer() *IvtBEIndexer {
 	return &IvtBEIndexer{
-		data: make(map[be_indexer.BEField]*fieldMeta),
+		data: make(map[be_indexer.BEField]BEContainer),
 	}
+}
+
+func (meta *FieldMeta) FieldName() string {
+	return string(meta.field)
 }

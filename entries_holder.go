@@ -16,11 +16,11 @@ type (
 		// according to the paper, entries must be sorted
 		CompileEntries()
 
-		GetEntries(field *FieldDesc, assigns Values) (CursorGroup, error)
-		//GetEntries(field *FieldDesc, assigns Values) (FieldCursor, error)
+		GetEntries(field *fieldDesc, assigns Values) (CursorGroup, error)
+		//GetEntries(field *fieldDesc, assigns Values) (FieldCursor, error)
 
 		// AddFieldEID tokenize values and add it to holder container
-		AddFieldEID(field *FieldDesc, values Values, eid EntryID) error
+		AddFieldEID(field *fieldDesc, values Values, eid EntryID) error
 	}
 
 	// DefaultEntriesHolder EntriesHolder implement base on hash map holder map<key, Entries>
@@ -55,7 +55,7 @@ func (h *DefaultEntriesHolder) CompileEntries() {
 	h.makeEntriesSorted()
 }
 
-func (h *DefaultEntriesHolder) GetEntries(field *FieldDesc, assigns Values) (r CursorGroup, e error) {
+func (h *DefaultEntriesHolder) GetEntries(field *fieldDesc, assigns Values) (r CursorGroup, e error) {
 	var ids []uint64
 
 	for _, vi := range assigns {
@@ -75,7 +75,7 @@ func (h *DefaultEntriesHolder) GetEntries(field *FieldDesc, assigns Values) (r C
 	return r, nil
 }
 
-func (h *DefaultEntriesHolder) AddFieldEID(field *FieldDesc, values Values, eid EntryID) (err error) {
+func (h *DefaultEntriesHolder) AddFieldEID(field *fieldDesc, values Values, eid EntryID) (err error) {
 	var ids []uint64
 	// NOTE: ids can be replicated if expression contain cross condition
 	for _, value := range values {

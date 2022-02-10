@@ -15,13 +15,13 @@ func TestIvtScanner_Retrieve(t *testing.T) {
 		builder := NewIndexerBuilder()
 		convey.So(builder, convey.ShouldNotBeNil)
 
-		builder.ConfigureField("ad_id", FieldSetting{
+		_ = builder.ConfigureField("ad_id", FieldSetting{
 			Container: "default",
-			Parser:    parser.ParserNameNumber,
+			Parser:    parser.NewNumberParser(),
 		})
-		builder.ConfigureField("package", FieldSetting{
+		_ = builder.ConfigureField("package", FieldSetting{
 			Container: "default",
-			Parser:    parser.ParserNameStrHash,
+			Parser:    parser.NewStrHashParser(),
 		})
 
 		doc1 := be_indexer.NewDocument(1)
@@ -75,9 +75,8 @@ func TestIvtScanner_Retrieve2(t *testing.T) {
 		builder := NewIndexerBuilder()
 		convey.So(builder, convey.ShouldNotBeNil)
 
-		builder.ConfigureField("keywords", FieldSetting{
+		_ = builder.ConfigureField("keywords", FieldSetting{
 			Container: "ac_matcher",
-			Parser:    "",
 		})
 
 		doc1 := be_indexer.NewDocument(1)
@@ -95,7 +94,7 @@ func TestIvtScanner_Retrieve2(t *testing.T) {
 		doc4.AddConjunction(be_indexer.NewConjunction().
 			Exclude("keywords", be_indexer.NewStrValues("色情", "在线视频")))
 
-		builder.AddDocuments(doc1, doc2, doc3, doc4)
+		_ = builder.AddDocuments(doc1, doc2, doc3, doc4)
 
 		indexer, err := builder.BuildIndexer()
 		convey.So(err, convey.ShouldBeNil)
@@ -133,13 +132,13 @@ func TestIvtScanner_Retrieve3(t *testing.T) {
 		builder := NewIndexerBuilder()
 		convey.So(builder, convey.ShouldNotBeNil)
 
-		builder.ConfigureField("ad_id", FieldSetting{
+		_ = builder.ConfigureField("ad_id", FieldSetting{
 			Container: "default",
-			Parser:    parser.ParserNameNumber,
+			Parser:    parser.NewNumberParser(),
 		})
-		builder.ConfigureField("package", FieldSetting{
+		_ = builder.ConfigureField("package", FieldSetting{
 			Container: "default",
-			Parser:    parser.ParserNameStrHash,
+			Parser:    parser.NewStrHashParser(),
 		})
 
 		doc1 := be_indexer.NewDocument(1)
@@ -149,7 +148,7 @@ func TestIvtScanner_Retrieve3(t *testing.T) {
 		doc1.AddConjunction(be_indexer.NewConjunction().
 			Include("package", be_indexer.NewStrValues("com.echoface.x")))
 
-		builder.AddDocuments(doc1)
+		_ = builder.AddDocuments(doc1)
 
 		indexer, err := builder.BuildIndexer()
 		convey.So(err, convey.ShouldBeNil)

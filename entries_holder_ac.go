@@ -67,7 +67,7 @@ func (h *ACEntriesHolder) DumpEntries(buffer *strings.Builder) {
 	}
 }
 
-func (h *ACEntriesHolder) AddFieldEID(field *FieldDesc, values Values, eid EntryID) error {
+func (h *ACEntriesHolder) AddFieldEID(field *fieldDesc, values Values, eid EntryID) error {
 	for _, value := range values {
 		switch v := value.(type) {
 		case string:
@@ -81,7 +81,7 @@ func (h *ACEntriesHolder) AddFieldEID(field *FieldDesc, values Values, eid Entry
 	return nil
 }
 
-func (h *ACEntriesHolder) GetEntries(field *FieldDesc, assigns Values) (CursorGroup, error) {
+func (h *ACEntriesHolder) GetEntries(field *fieldDesc, assigns Values) (CursorGroup, error) {
 	buf := make([]rune, 0, 256)
 	for _, assign := range assigns {
 		switch v := assign.(type) {

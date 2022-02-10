@@ -2,25 +2,28 @@ package be_indexer
 
 import (
 	"fmt"
+
 	"github.com/echoface/be_indexer/parser"
 	"github.com/echoface/be_indexer/util"
 )
 
 type (
 	IndexerBuilder struct {
-		indexer    BEIndex
-		fieldsData map[BEField]*FieldDesc
-		debugOn    bool
+		indexer BEIndex
+
+		fieldsData map[BEField]*fieldDesc
+
+		idAllocator parser.IDAllocator
 	}
 )
 
 func NewIndexerBuilder() *IndexerBuilder {
 	builder := &IndexerBuilder{
-		indexer:    NewSizeGroupedBEIndex(),
-		fieldsData: map[BEField]*FieldDesc{},
+		indexer:     NewSizeGroupedBEIndex(),
+		fieldsData:  map[BEField]*fieldDesc{},
+		idAllocator: parser.NewIDAllocatorImpl(),
 	}
 	_, _ = builder.configureField(WildcardFieldName, FieldOption{
-		Parser:    parser.ParserNameCommon,
 		Container: HolderNameDefault,
 	})
 	return builder
@@ -28,18 +31,14 @@ func NewIndexerBuilder() *IndexerBuilder {
 
 func NewCompactIndexerBuilder() *IndexerBuilder {
 	builder := &IndexerBuilder{
-		indexer:    NewCompactedBEIndex(),
-		fieldsData: map[BEField]*FieldDesc{},
+		indexer:     NewCompactedBEIndex(),
+		fieldsData:  map[BEField]*fieldDesc{},
+		idAllocator: parser.NewIDAllocatorImpl(),
 	}
 	_, _ = builder.configureField(WildcardFieldName, FieldOption{
-		Parser:    parser.ParserNameCommon,
 		Container: HolderNameDefault,
 	})
 	return builder
-}
-
-func (b *IndexerBuilder) SetDebugMode(debug bool) {
-	b.debugOn = debug
 }
 
 func (b *IndexerBuilder) ConfigField(field BEField, settings FieldOption) {
@@ -64,12 +63,12 @@ func (b *IndexerBuilder) BuildIndex() BEIndex {
 	return b.indexer
 }
 
-func (b *IndexerBuilder) configureField(field BEField, option FieldOption) (*FieldDesc, error) {
+func (b *IndexerBuilder) configureField(field BEField, option FieldOption) (*fieldDesc, error) {
 	if _, ok := b.fieldsData[field]; ok {
 		return nil, fmt.Errorf("can't configure field:%s twice", field)
 	}
-	if len(option.Parser) == 0 {
-		option.Parser = parser.ParserNameCommon
+	if option.Parser == nil {
+		option.Parser = parser.NewCommonParserWithAllocator(b.idAllocator)
 		Logger.Infof("not configure Parser for field:%s, use default", field)
 	}
 	if len(option.Container) == 0 {
@@ -77,17 +76,11 @@ func (b *IndexerBuilder) configureField(field BEField, option FieldOption) (*Fie
 		Logger.Infof("not configure container for field:%s, use default", field)
 	}
 
-	valueParser := parser.NewParser(option.Parser)
-	if valueParser == nil {
-		return nil, fmt.Errorf("parser:%s not found, forget register it", option.Parser)
-	}
-
 	fieldID := uint64(len(b.fieldsData))
-	desc := &FieldDesc{
-		Field:  field,
-		Parser: valueParser,
-		ID:     fieldID,
-		option: option,
+	desc := &fieldDesc{
+		FieldOption: option,
+		Field:       field,
+		ID:          fieldID,
 	}
 	b.fieldsData[field] = desc
 	Logger.Infof("configure field:%s, fieldID:%d\n", field, desc.ID)
@@ -106,12 +99,11 @@ func (b *IndexerBuilder) validDocument(doc *Document) error {
 	return nil
 }
 
-func (b *IndexerBuilder) createFieldData(field BEField) *FieldDesc {
+func (b *IndexerBuilder) createFieldData(field BEField) *fieldDesc {
 	if desc, hit := b.fieldsData[field]; hit {
 		return desc
 	}
 	desc, err := b.configureField(field, FieldOption{
-		Parser:    parser.ParserNameCommon,
 		Container: HolderNameDefault,
 	})
 	util.PanicIfErr(err, "this should not happened for default settings")

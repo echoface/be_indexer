@@ -18,7 +18,7 @@ type (
 func NewCompactedBEIndex() *CompactedBEIndex {
 	index := &CompactedBEIndex{
 		indexBase: indexBase{
-			fieldsData: make(map[BEField]*FieldDesc),
+			fieldsData: make(map[BEField]*fieldDesc),
 		},
 		fieldContainer: newFieldEntriesContainer(),
 	}
@@ -47,7 +47,7 @@ func (bi *CompactedBEIndex) initCursors(ctx *retrieveContext) (fCursors FieldCur
 	}
 
 	var ok bool
-	var desc *FieldDesc
+	var desc *fieldDesc
 	var holder EntriesHolder
 	var entriesList CursorGroup
 

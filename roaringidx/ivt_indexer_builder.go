@@ -3,6 +3,8 @@ package roaringidx
 import (
 	"fmt"
 
+	"github.com/echoface/be_indexer/parser"
+
 	"github.com/echoface/be_indexer/util"
 
 	"github.com/echoface/be_indexer"
@@ -14,14 +16,22 @@ type (
 		panicOnError bool
 
 		containerBuilder map[be_indexer.BEField]BEContainerBuilder
+
+		strIDGen parser.IDAllocator
 	}
 )
 
 func NewIndexerBuilder() *IvtBEIndexerBuilder {
 	return &IvtBEIndexerBuilder{
 		panicOnError:     false,
+		strIDGen:         parser.NewIDAllocatorImpl(),
 		containerBuilder: map[be_indexer.BEField]BEContainerBuilder{},
 	}
+}
+
+func (builder *IvtBEIndexerBuilder) WithIDGen(gen parser.IDAllocator) *IvtBEIndexerBuilder {
+	builder.strIDGen = gen
+	return builder
 }
 
 func (builder *IvtBEIndexerBuilder) WithErrPanic(panic bool) *IvtBEIndexerBuilder {
@@ -30,7 +40,14 @@ func (builder *IvtBEIndexerBuilder) WithErrPanic(panic bool) *IvtBEIndexerBuilde
 }
 
 func (builder *IvtBEIndexerBuilder) ConfigureField(field string, option FieldSetting) error {
-	fieldContainerBuilder := NewContainerBuilder(option.Container, option)
+	fieldMeta := &FieldMeta{
+		FieldSetting: option,
+		field:        be_indexer.BEField(field),
+	}
+	fieldContainerBuilder := NewContainerBuilder(fieldMeta)
+	if fieldContainerBuilder.NeedParser() && option.Parser == nil {
+		fieldMeta.Parser = parser.NewCommonParserWithAllocator(builder.strIDGen)
+	}
 	if fieldContainerBuilder == nil {
 		util.PanicIf(builder.panicOnError, "field:%s settings:%+v not supported", field, option)
 		return fmt.Errorf("field:%s settings:%+v not supported", field, option)
@@ -101,10 +118,7 @@ func (builder *IvtBEIndexerBuilder) BuildIndexer() (*IvtBEIndexer, error) {
 		if err != nil {
 			return nil, err
 		}
-		indexer.data[field] = &fieldMeta{
-			field:     field,
-			container: container,
-		}
+		indexer.data[field] = container
 	}
 	return indexer, nil
 }

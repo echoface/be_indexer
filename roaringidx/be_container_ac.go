@@ -3,12 +3,16 @@ package roaringidx
 import (
 	"fmt"
 
+	"github.com/echoface/be_indexer/util"
+
 	aho "github.com/anknown/ahocorasick"
 	"github.com/echoface/be_indexer"
 )
 
 type (
 	ACBEContainer struct {
+		meta *FieldMeta
+
 		wc PostingList
 
 		inc *aho.Machine
@@ -25,20 +29,26 @@ type (
 	}
 )
 
-func NewACBEContainerBuilder(_ FieldSetting) BEContainerBuilder {
+func NewACBEContainerBuilder(meta *FieldMeta) BEContainerBuilder {
+	util.PanicIf(meta == nil, "nil FieldMeta is not allowed")
 	return &ACBEContainerBuilder{
-		container: NewACBEContainer(),
+		container: NewACBEContainer(meta),
 	}
 }
 
-func NewACBEContainer() *ACBEContainer {
+func NewACBEContainer(meta *FieldMeta) *ACBEContainer {
 	return &ACBEContainer{
+		meta:      meta,
 		wc:        NewPostingList(),
 		inc:       nil,
 		exc:       nil,
 		incValues: map[string]PostingList{},
 		excValues: map[string]PostingList{},
 	}
+}
+
+func (c *ACBEContainer) Meta() *FieldMeta {
+	return c.meta
 }
 
 func (c *ACBEContainer) AddWildcard(id ConjunctionID) {
@@ -150,4 +160,8 @@ func (builder *ACBEContainerBuilder) BuildBEContainer() (BEContainer, error) {
 		}
 	}
 	return builder.container, nil
+}
+
+func (builder *ACBEContainerBuilder) NeedParser() bool {
+	return false
 }

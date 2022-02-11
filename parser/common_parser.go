@@ -11,16 +11,20 @@ type (
 	}
 )
 
-func NewCommonStrParser() FieldValueParser {
+func NewCommonStrParser() *CommonStrParser {
 	return &CommonStrParser{
 		idAlloc: NewIDAllocatorImpl(),
 	}
 }
 
-func NewCommonParserWithAllocator(alloc IDAllocator) FieldValueParser {
+func NewCommonParserWithAllocator(alloc IDAllocator) *CommonStrParser {
 	return &CommonStrParser{
 		idAlloc: alloc,
 	}
+}
+
+func (p *CommonStrParser) IDGen() IDAllocator {
+	return p.idAlloc
 }
 
 func (p *CommonStrParser) ParseAssign(v interface{}) (values []uint64, e error) {

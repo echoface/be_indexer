@@ -8,11 +8,20 @@ import (
 
 type (
 	NumberParser struct {
+		floatAsInt bool
 	}
 )
 
-func NewNumberParser() FieldValueParser {
-	return &NumberParser{}
+func NewNumberParser() *NumberParser {
+	return &NumberParser{
+		floatAsInt: true,
+	}
+}
+
+func NewNumberParser2(f2i bool) *NumberParser {
+	return &NumberParser{
+		floatAsInt: true,
+	}
 }
 
 func (p *NumberParser) ParseAssign(v interface{}) (values []uint64, e error) {
@@ -33,8 +42,13 @@ func (p *NumberParser) ParseValue(v interface{}) ([]uint64, error) {
 	case uint, uint8, uint16, uint32, uint64:
 		number := reflect.ValueOf(t).Uint()
 		return []uint64{number}, nil
+	case float32, float64:
+		if p.floatAsInt {
+			vf := reflect.ValueOf(v)
+			return []uint64{uint64(vf.Float())}, nil
+		}
 	default:
-		valueType := reflect.TypeOf(v)
-		return nil, fmt.Errorf("value type [%s] not support", valueType.String())
 	}
+	valueType := reflect.TypeOf(v)
+	return nil, fmt.Errorf("value type [%s] not support", valueType.String())
 }

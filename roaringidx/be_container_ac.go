@@ -162,4 +162,3 @@ func (c *ACBEContainer) BuildBEContainer() (BEContainer, error) {
 func (c *ACBEContainer) NeedParser() bool {
 	return false
 }
-

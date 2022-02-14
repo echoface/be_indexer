@@ -52,7 +52,7 @@ func NewRangeDesc(v string) *RangeDesc {
 
 // ParseAssign only single number supported, float will round into integer
 func (p *NumberRangeParser) ParseAssign(v interface{}) (res []uint64, err error) {
-	num, err := ParseIntegerNumber(v)
+	num, err := ParseIntegerNumber(v, true)
 	if err != nil {
 		return nil, err
 	}

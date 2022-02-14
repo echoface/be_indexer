@@ -12,25 +12,24 @@ import (
 
 type (
 	IvtBEIndexerBuilder struct {
+		docMaxConjSize int
+
 		// panicOnError will panic program when build indexer meta
 		panicOnError bool
 
 		containerBuilder map[be_indexer.BEField]BEContainerBuilder
 
-		strIDGen parser.IDAllocator
+		defaultParser *parser.CommonStrParser
 	}
 )
 
 func NewIndexerBuilder() *IvtBEIndexerBuilder {
-	return &IvtBEIndexerBuilder{
+	builder := &IvtBEIndexerBuilder{
 		panicOnError:     false,
-		strIDGen:         parser.NewIDAllocatorImpl(),
 		containerBuilder: map[be_indexer.BEField]BEContainerBuilder{},
+		docMaxConjSize:   1,
+		defaultParser:    parser.NewCommonStrParser(),
 	}
-}
-
-func (builder *IvtBEIndexerBuilder) WithIDGen(gen parser.IDAllocator) *IvtBEIndexerBuilder {
-	builder.strIDGen = gen
 	return builder
 }
 
@@ -44,10 +43,10 @@ func (builder *IvtBEIndexerBuilder) ConfigureField(field string, option FieldSet
 		FieldSetting: option,
 		field:        be_indexer.BEField(field),
 	}
-	fieldContainerBuilder := NewContainerBuilder(fieldMeta)
-	if fieldContainerBuilder.NeedParser() && option.Parser == nil {
-		fieldMeta.Parser = parser.NewCommonParserWithAllocator(builder.strIDGen)
+	if fieldMeta.Parser == nil {
+		fieldMeta.Parser = builder.defaultParser
 	}
+	fieldContainerBuilder := NewContainerBuilder(fieldMeta)
 	if fieldContainerBuilder == nil {
 		util.PanicIf(builder.panicOnError, "field:%s settings:%+v not supported", field, option)
 		return fmt.Errorf("field:%s settings:%+v not supported", field, option)
@@ -106,6 +105,8 @@ func (builder *IvtBEIndexerBuilder) AddDocument(doc *be_indexer.Document) (err e
 			}
 		}
 	}
+
+	builder.docMaxConjSize = util.MaxInt(len(doc.Cons), builder.docMaxConjSize)
 	return nil
 }
 
@@ -120,5 +121,8 @@ func (builder *IvtBEIndexerBuilder) BuildIndexer() (*IvtBEIndexer, error) {
 		}
 		indexer.data[field] = container
 	}
+
+	indexer.docMaxConjSize = builder.docMaxConjSize
+
 	return indexer, nil
 }

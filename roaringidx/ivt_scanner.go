@@ -41,9 +41,23 @@ func FormatBitMapResult(ids []uint64) string {
 	return strings.Join(vs, ",")
 }
 
-func (scanner *IvtScanner) WithHint(hint ...uint64) {
+func (scanner *IvtScanner) WithHint(hints ...int64) {
 	util.PanicIf(scanner.inited, "can't attach hint result in progress")
-	scanner.conjIDResults.AddMany(hint)
+
+	hintConjIDs := make([]uint64, 0, len(hints)*scanner.indexer.docMaxConjSize)
+	for _, hintID := range hints {
+		for conjIdx := 0; conjIdx < scanner.indexer.docMaxConjSize; conjIdx++ {
+			conjID, err := NewConjunctionID(conjIdx, hintID)
+			if err != nil {
+				continue
+			}
+			hintConjIDs = append(hintConjIDs, uint64(conjID))
+		}
+	}
+	scanner.conjIDResults.AddMany(hintConjIDs)
+	if scanner.debug {
+		be_indexer.Logger.Infof("init with hints:%s", FormatBitMapResult(scanner.conjIDResults.ToArray()))
+	}
 	scanner.inited = true
 }
 

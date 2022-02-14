@@ -15,10 +15,10 @@ func init() {
 	containerFactory = make(map[string]ContainerBuilderFunc)
 
 	containerFactory[ContainerNameDefault] = func(meta *FieldMeta) BEContainerBuilder {
-		return NewDefaultBEContainerBuilder(meta)
+		return NewDefaultBEContainer(meta)
 	}
 	containerFactory[ContainerNameAcMatch] = func(meta *FieldMeta) BEContainerBuilder {
-		return NewACBEContainerBuilder(meta)
+		return NewACBEContainer(meta, DefaultACContainerQueryJoinSep)
 	}
 	//containerFactory["bsi"] = func(setting FieldSetting) BEContainerBuilder {
 	//	return NewBSIBEContainerBuilder(setting)

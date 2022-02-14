@@ -1,10 +1,8 @@
 package roaringidx
 
 import (
-	"github.com/echoface/be_indexer/parser"
-	"github.com/echoface/be_indexer/util"
-
 	"github.com/echoface/be_indexer"
+	"github.com/echoface/be_indexer/util"
 )
 
 type (
@@ -36,22 +34,11 @@ type (
 
 		exc map[BEValue]PostingList
 	}
-
-	DefaultBEContainerBuilder struct {
-		parser    parser.FieldValueParser
-		container *DefaultBEContainer
-	}
 )
 
-func NewDefaultBEContainerBuilder(meta *FieldMeta) *DefaultBEContainerBuilder {
-	util.PanicIf(meta.Parser == nil, "default container must need parser")
-	return &DefaultBEContainerBuilder{
-		parser:    meta.Parser,
-		container: NewDefaultBEContainer(meta),
-	}
-}
-
 func NewDefaultBEContainer(meta *FieldMeta) *DefaultBEContainer {
+	util.PanicIf(meta.Parser == nil, "default container must need parser")
+
 	return &DefaultBEContainer{
 		meta: meta,
 		wc:   NewPostingList(),
@@ -115,31 +102,31 @@ func (c *DefaultBEContainer) Retrieve(values be_indexer.Values, inout *PostingLi
 	return nil
 }
 
-func (builder *DefaultBEContainerBuilder) EncodeWildcard(id ConjunctionID) {
-	builder.container.AddWildcard(id)
+func (c *DefaultBEContainer) EncodeWildcard(id ConjunctionID) {
+	c.AddWildcard(id)
 }
 
-func (builder *DefaultBEContainerBuilder) EncodeExpr(id ConjunctionID, expr *be_indexer.BooleanExpr) error {
+func (c *DefaultBEContainer) EncodeExpr(id ConjunctionID, expr *be_indexer.BooleanExpr) error {
 	if expr == nil {
-		builder.EncodeWildcard(id)
+		c.EncodeWildcard(id)
 	}
 	for _, vi := range expr.Value {
-		valueIDs, err := builder.parser.ParseValue(vi)
+		valueIDs, err := c.meta.Parser.ParseValue(vi)
 		if err != nil {
 			return err
 		}
 		for _, value := range valueIDs {
 			if expr.Incl {
-				builder.container.AddInclude(BEValue(value), id)
+				c.AddInclude(BEValue(value), id)
 			} else {
-				builder.container.AddExclude(BEValue(value), id)
+				c.AddExclude(BEValue(value), id)
 			}
 		}
 	}
 	return nil
 }
 
-func (builder *DefaultBEContainerBuilder) BuildBEContainer() (BEContainer, error) {
+func (c *DefaultBEContainer) BuildBEContainer() (BEContainer, error) {
 	//for _, v := range builder.container.inc {
 	//	v.RunOptimize()
 	//}
@@ -147,9 +134,9 @@ func (builder *DefaultBEContainerBuilder) BuildBEContainer() (BEContainer, error
 	//	v.RunOptimize()
 	//}
 	//builder.container.wc.RunOptimize()
-	return builder.container, nil
+	return c, nil
 }
 
-func (builder *DefaultBEContainerBuilder) NeedParser() bool {
+func (c *DefaultBEContainer) NeedParser() bool {
 	return true
 }

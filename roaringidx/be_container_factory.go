@@ -3,7 +3,7 @@ package roaringidx
 var containerFactory map[string]ContainerBuilderFunc
 
 type (
-	ContainerBuilderFunc func(setting FieldSetting) BEContainerBuilder
+	ContainerBuilderFunc func(meta *FieldMeta) BEContainerBuilder
 )
 
 const (
@@ -14,11 +14,11 @@ const (
 func init() {
 	containerFactory = make(map[string]ContainerBuilderFunc)
 
-	containerFactory[ContainerNameDefault] = func(setting FieldSetting) BEContainerBuilder {
-		return NewDefaultBEContainerBuilder(setting)
+	containerFactory[ContainerNameDefault] = func(meta *FieldMeta) BEContainerBuilder {
+		return NewDefaultBEContainer(meta)
 	}
-	containerFactory[ContainerNameAcMatch] = func(setting FieldSetting) BEContainerBuilder {
-		return NewACBEContainerBuilder(setting)
+	containerFactory[ContainerNameAcMatch] = func(meta *FieldMeta) BEContainerBuilder {
+		return NewACBEContainer(meta, DefaultACContainerQueryJoinSep)
 	}
 	//containerFactory["bsi"] = func(setting FieldSetting) BEContainerBuilder {
 	//	return NewBSIBEContainerBuilder(setting)
@@ -33,9 +33,9 @@ func RegisterContainerBuilder(name string, builderFunc ContainerBuilderFunc) boo
 	return true
 }
 
-func NewContainerBuilder(name string, setting FieldSetting) BEContainerBuilder {
-	if fn, ok := containerFactory[name]; ok {
-		return fn(setting)
+func NewContainerBuilder(meta *FieldMeta) BEContainerBuilder {
+	if fn, ok := containerFactory[meta.Container]; ok {
+		return fn(meta)
 	}
 	return nil
 }

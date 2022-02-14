@@ -15,7 +15,15 @@ type (
 		values map[string]Entries
 	}
 
+	ACHolderOption struct {
+		// QuerySep 查询时，当存在多个值时，使用什么分隔符拼接多个查询字段来组成查询语句, 默认使用whitespace
+		// 这是因为在语义上'空'更符合逻辑表达的正确性
+		QuerySep string
+	}
+
 	ACEntriesHolder struct {
+		ACHolderOption
+
 		builder *acMatcherBuilder
 		// matcher     *cedar.Matcher
 		machine     *aho.Machine
@@ -41,12 +49,14 @@ func newAcHolderBuilder() *acMatcherBuilder {
 //     return holder
 // })
 // NOTE: this just for debugging usage, it will consume memory much more
-func NewACEntriesHolder() *ACEntriesHolder {
-	return &ACEntriesHolder{
-		builder: newAcHolderBuilder(),
-		// matcher: cedar.NewMatcher(),
-		machine: new(aho.Machine),
+func NewACEntriesHolder(option ACHolderOption) *ACEntriesHolder {
+	holder := &ACEntriesHolder{
+		ACHolderOption: option,
+		builder:        newAcHolderBuilder(),
+		machine:        new(aho.Machine),
+		// matcher: cedar.NewMatcher(), deprecated for bug reason
 	}
+	return holder
 }
 
 func (h *ACEntriesHolder) EnableDebug(debug bool) {
@@ -67,7 +77,7 @@ func (h *ACEntriesHolder) DumpEntries(buffer *strings.Builder) {
 	}
 }
 
-func (h *ACEntriesHolder) AddFieldEID(field *FieldDesc, values Values, eid EntryID) error {
+func (h *ACEntriesHolder) AddFieldEID(field *fieldDesc, values Values, eid EntryID) error {
 	for _, value := range values {
 		switch v := value.(type) {
 		case string:
@@ -81,7 +91,7 @@ func (h *ACEntriesHolder) AddFieldEID(field *FieldDesc, values Values, eid Entry
 	return nil
 }
 
-func (h *ACEntriesHolder) GetEntries(field *FieldDesc, assigns Values) (CursorGroup, error) {
+func (h *ACEntriesHolder) GetEntries(field *fieldDesc, assigns Values) (CursorGroup, error) {
 	buf := make([]rune, 0, 256)
 	for _, assign := range assigns {
 		switch v := assign.(type) {
@@ -90,6 +100,7 @@ func (h *ACEntriesHolder) GetEntries(field *FieldDesc, assigns Values) (CursorGr
 		default:
 			Logger.Errorf("field:%s query assign need string type, but:%+v", field.Field, assign)
 		}
+		buf = append(buf, []rune(h.QuerySep)...)
 	}
 	if len(buf) == 0 {
 		return nil, nil

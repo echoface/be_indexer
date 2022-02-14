@@ -15,7 +15,7 @@ var holderFactory = make(map[string]HolderBuilder)
 
 func init() {
 	_ = RegisterEntriesHolder(HolderNameACMatcher, func() EntriesHolder {
-		return NewACEntriesHolder()
+		return NewACEntriesHolder(ACHolderOption{QuerySep: " "})
 	})
 	_ = RegisterEntriesHolder(HolderNameDefault, NewDefaultEntriesHolder)
 }

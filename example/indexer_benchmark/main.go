@@ -73,19 +73,19 @@ func (ctx *benchmarkContext) RunRoaringBench() {
 	fmt.Println("start configure roaringidx builder .........")
 	for i := 0; i < ctx.numFieldCnt; i++ {
 		fieldName := fmt.Sprintf("number_%d", i)
-		builder.ConfigureField(fieldName, roaringidx.FieldSetting{
-			Parser:    parser.ParserNameNumber,
+		_ = builder.ConfigureField(fieldName, roaringidx.FieldSetting{
+			Parser:    parser.NewNumberParser(),
 			Container: "default",
 		})
 	}
 	for i := 0; i < ctx.acFieldCnt; i++ {
 		fieldName := fmt.Sprintf("ac_%d", i)
-		builder.ConfigureField(fieldName, roaringidx.FieldSetting{
+		_ = builder.ConfigureField(fieldName, roaringidx.FieldSetting{
 			Container: "ac_matcher",
 		})
 	}
 	createTestIndexer(ctx, func(doc *be_indexer.Document) {
-		builder.AddDocument(doc)
+		_ = builder.AddDocument(doc)
 	})
 
 	idxer, err := builder.BuildIndexer()
@@ -116,7 +116,7 @@ func (ctx *benchmarkContext) RunKGroupIndexBench() {
 	for i := 0; i < ctx.numFieldCnt; i++ {
 		fieldName := fmt.Sprintf("number_%d", i)
 		builder.ConfigField(be_indexer.BEField(fieldName), be_indexer.FieldOption{
-			Parser:    parser.ParserNameNumber,
+			Parser:    parser.NewNumberParser(),
 			Container: "default",
 		})
 	}
@@ -156,7 +156,7 @@ func (ctx *benchmarkContext) RunCompactIndexBench() {
 	for i := 0; i < ctx.numFieldCnt; i++ {
 		fieldName := fmt.Sprintf("number_%d", i)
 		builder.ConfigField(be_indexer.BEField(fieldName), be_indexer.FieldOption{
-			Parser:    parser.ParserNameNumber,
+			Parser:    parser.NewNumberParser(),
 			Container: "default",
 		})
 	}

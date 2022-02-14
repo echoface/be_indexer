@@ -12,8 +12,6 @@ type (
 	}
 )
 
-var DefaultIDAllocator = NewIDAllocatorImpl()
-
 func NewIDAllocatorImpl() IDAllocator {
 	return &IDAllocatorImpl{
 		strBox: make(map[string]uint64),

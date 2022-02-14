@@ -11,8 +11,8 @@ import (
 
 func TestNewIvtBEIndexer(t *testing.T) {
 	convey.Convey("test new Indexer", t, func() {
-		indxer := NewIvtBEIndexer()
-		convey.So(indxer, convey.ShouldNotBeNil)
+		indexer := NewIvtBEIndexer()
+		convey.So(indexer, convey.ShouldNotBeNil)
 	})
 }
 
@@ -22,13 +22,13 @@ func TestIvtBEIndexer_ConfigureField(t *testing.T) {
 		convey.So(indexer, convey.ShouldNotBeNil)
 
 		convey.So(func() {
-			indexer.ConfigureField("ad_id", FieldSetting{
-				Parser:    parser.ParserNameNumber,
+			_ = indexer.ConfigureField("ad_id", FieldSetting{
+				Parser:    parser.NewNumberParser(),
 				Container: "default",
 			})
-			indexer.ConfigureField("package", FieldSetting{
+			_ = indexer.ConfigureField("package", FieldSetting{
 				Container: "default",
-				Parser:    parser.ParserNameStrHash,
+				Parser:    parser.NewNumberParser(),
 			})
 		}, convey.ShouldNotPanic)
 
@@ -43,11 +43,11 @@ func TestIvtBEIndexer_AddDocument(t *testing.T) {
 
 		_ = builder.ConfigureField("ad_id", FieldSetting{
 			Container: "default",
-			Parser:    parser.ParserNameNumber,
+			Parser:    parser.NewNumberParser(),
 		})
 		_ = builder.ConfigureField("package", FieldSetting{
 			Container: "default",
-			Parser:    parser.ParserNameStrHash,
+			Parser:    parser.NewStrHashParser(),
 		})
 
 		doc1 := be_indexer.NewDocument(1)

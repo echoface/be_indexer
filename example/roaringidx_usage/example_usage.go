@@ -16,17 +16,16 @@ func main() {
 
 	builder := roaringidx.NewIndexerBuilder()
 
-	builder.ConfigureField("ad_id", roaringidx.FieldSetting{
+	_ = builder.ConfigureField("ad_id", roaringidx.FieldSetting{
 		Container: roaringidx.ContainerNameDefault,
-		Parser:    parser.ParserNameNumber,
+		Parser:    parser.NewNumberParser(),
 	})
-	builder.ConfigureField("package", roaringidx.FieldSetting{
+	_ = builder.ConfigureField("package", roaringidx.FieldSetting{
 		Container: roaringidx.ContainerNameDefault,
-		Parser:    parser.ParserNameStrHash,
+		Parser:    parser.NewStrHashParser(),
 	})
-	builder.ConfigureField("keywords", roaringidx.FieldSetting{
+	_ = builder.ConfigureField("keywords", roaringidx.FieldSetting{
 		Container: roaringidx.ContainerNameAcMatch,
-		Parser:    parser.ParserNameCommon,
 	})
 
 	doc1 := be_indexer.NewDocument(1)

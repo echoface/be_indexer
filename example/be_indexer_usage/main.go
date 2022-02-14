@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/echoface/be_indexer"
-	"github.com/echoface/be_indexer/parser"
 	"github.com/echoface/be_indexer/util"
 )
 
@@ -19,7 +18,6 @@ func main() {
 
 	// optional special a holder/container for field
 	builder.ConfigField("keyword", be_indexer.FieldOption{
-		Parser:    parser.ParserNameCommon,
 		Container: be_indexer.HolderNameACMatcher,
 	})
 

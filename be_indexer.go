@@ -15,16 +15,9 @@ var (
 )
 
 type (
-	FieldDesc struct {
-		ID     uint64
-		Field  BEField
-		option FieldOption
-
-		Parser parser.FieldValueParser
-	}
-
 	FieldOption struct {
-		Parser    string
+		Parser parser.FieldValueParser // will create a default parser if parser is nil
+
 		Container string // specify Entries holder for all tokenized value Entries
 	}
 
@@ -37,7 +30,7 @@ type (
 		addWildcardEID(id EntryID)
 
 		// set fields desc/settings
-		setFieldDesc(fieldsData map[BEField]*FieldDesc)
+		setFieldDesc(fieldsData map[BEField]*fieldDesc)
 
 		// newContainer indexer need return a valid Container for k size
 		newContainer(k int) *EntriesContainer
@@ -57,17 +50,24 @@ type (
 		DumpEntriesSummary() string
 	}
 
+	fieldDesc struct {
+		FieldOption
+
+		ID    uint64
+		Field BEField
+	}
+
 	indexBase struct {
 		// fieldsData a field settings and resource, if not configured, it will use default parser and container
 		// for expression values;
-		fieldsData map[BEField]*FieldDesc
+		fieldsData map[BEField]*fieldDesc
 
 		// wildcardEntries hold all entry id that conjunction size is zero;
 		wildcardEntries Entries
 	}
 )
 
-func (bi *indexBase) setFieldDesc(fieldsData map[BEField]*FieldDesc) {
+func (bi *indexBase) setFieldDesc(fieldsData map[BEField]*fieldDesc) {
 	bi.fieldsData = fieldsData
 }
 

@@ -3,18 +3,19 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/echoface/be_indexer"
-	"github.com/echoface/be_indexer/parser"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/echoface/be_indexer"
+	"github.com/echoface/be_indexer/parser"
 )
 
 func main() {
 	builder := be_indexer.NewIndexerBuilder()
 	builder.ConfigField("age", be_indexer.FieldOption{
-		Parser: parser.ParserNameNumRange,
+		Parser: parser.NewNumRangeParser(),
 	})
 
 	var docs []*be_indexer.Document
@@ -37,7 +38,7 @@ func main() {
 	})
 	for _, doc := range docs {
 		fmt.Println("add document:", doc.ID)
-		builder.AddDocument(doc)
+		_ = builder.AddDocument(doc)
 	}
 
 	indexer := builder.BuildIndex()

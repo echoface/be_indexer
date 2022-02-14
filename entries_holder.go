@@ -16,11 +16,11 @@ type (
 		// according to the paper, entries must be sorted
 		CompileEntries()
 
-		GetEntries(field *FieldDesc, assigns Values) (CursorGroup, error)
-		//GetEntries(field *FieldDesc, assigns Values) (FieldCursor, error)
+		GetEntries(field *fieldDesc, assigns Values) (CursorGroup, error)
+		//GetEntries(field *fieldDesc, assigns Values) (FieldCursor, error)
 
 		// AddFieldEID tokenize values and add it to holder container
-		AddFieldEID(field *FieldDesc, values Values, eid EntryID) error
+		AddFieldEID(field *fieldDesc, values Values, eid EntryID) error
 	}
 
 	// DefaultEntriesHolder EntriesHolder implement base on hash map holder map<key, Entries>
@@ -55,7 +55,7 @@ func (h *DefaultEntriesHolder) CompileEntries() {
 	h.makeEntriesSorted()
 }
 
-func (h *DefaultEntriesHolder) GetEntries(field *FieldDesc, assigns Values) (r CursorGroup, e error) {
+func (h *DefaultEntriesHolder) GetEntries(field *fieldDesc, assigns Values) (r CursorGroup, e error) {
 	var ids []uint64
 
 	for _, vi := range assigns {
@@ -75,7 +75,7 @@ func (h *DefaultEntriesHolder) GetEntries(field *FieldDesc, assigns Values) (r C
 	return r, nil
 }
 
-func (h *DefaultEntriesHolder) AddFieldEID(field *FieldDesc, values Values, eid EntryID) (err error) {
+func (h *DefaultEntriesHolder) AddFieldEID(field *fieldDesc, values Values, eid EntryID) (err error) {
 	var ids []uint64
 	// NOTE: ids can be replicated if expression contain cross condition
 	for _, value := range values {
@@ -89,32 +89,32 @@ func (h *DefaultEntriesHolder) AddFieldEID(field *FieldDesc, values Values, eid 
 	return nil
 }
 
-func (kse *DefaultEntriesHolder) AppendEntryID(key Key, id EntryID) {
-	entries, hit := kse.plEntries[key]
+func (h *DefaultEntriesHolder) AppendEntryID(key Key, id EntryID) {
+	entries, hit := h.plEntries[key]
 	if !hit {
-		kse.plEntries[key] = Entries{id}
+		h.plEntries[key] = Entries{id}
 	}
 	entries = append(entries, id)
-	kse.plEntries[key] = entries
+	h.plEntries[key] = entries
 }
 
-func (kse *DefaultEntriesHolder) getEntries(key Key) Entries {
-	if entries, hit := kse.plEntries[key]; hit {
+func (h *DefaultEntriesHolder) getEntries(key Key) Entries {
+	if entries, hit := h.plEntries[key]; hit {
 		return entries
 	}
 	return nil
 }
 
-func (kse *DefaultEntriesHolder) makeEntriesSorted() {
+func (h *DefaultEntriesHolder) makeEntriesSorted() {
 	var total int64
-	for _, entries := range kse.plEntries {
+	for _, entries := range h.plEntries {
 		sort.Sort(entries)
-		if kse.maxLen < int64(len(entries)) {
-			kse.maxLen = int64(len(entries))
+		if h.maxLen < int64(len(entries)) {
+			h.maxLen = int64(len(entries))
 		}
 		total += int64(len(entries))
 	}
-	if len(kse.plEntries) > 0 {
-		kse.avgLen = total / int64(len(kse.plEntries))
+	if len(h.plEntries) > 0 {
+		h.avgLen = total / int64(len(h.plEntries))
 	}
 }

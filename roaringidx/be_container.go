@@ -1,14 +1,15 @@
 package roaringidx
 
 import (
-	"fmt"
+	"github.com/echoface/be_indexer/util"
 
 	"github.com/echoface/be_indexer"
-	"github.com/echoface/be_indexer/parser"
 )
 
 type (
 	BEContainer interface {
+		Meta() *FieldMeta
+
 		AddWildcard(id ConjunctionID)
 
 		Retrieve(values be_indexer.Values, inout *PostingList) error
@@ -20,11 +21,13 @@ type (
 		EncodeExpr(id ConjunctionID, expr *be_indexer.BooleanExpr) error
 
 		BuildBEContainer() (BEContainer, error)
+
+		NeedParser() bool
 	}
 
 	// DefaultBEContainer a common value based inverted index bitmap container
 	DefaultBEContainer struct {
-		parser parser.FieldValueParser
+		meta *FieldMeta
 
 		wc PostingList
 
@@ -32,32 +35,21 @@ type (
 
 		exc map[BEValue]PostingList
 	}
-
-	DefaultBEContainerBuilder struct {
-		parser parser.FieldValueParser
-
-		container *DefaultBEContainer
-	}
 )
 
-func NewDefaultBEContainerBuilder(setting FieldSetting) *DefaultBEContainerBuilder {
-	valueParser := parser.NewParser(setting.Parser)
-	if valueParser == nil {
-		panic(fmt.Errorf("parser:%s not found", setting.Parser))
-	}
-	return &DefaultBEContainerBuilder{
-		parser:    valueParser,
-		container: NewDefaultBEContainer(valueParser),
+func NewDefaultBEContainer(meta *FieldMeta) *DefaultBEContainer {
+	util.PanicIf(meta.Parser == nil, "default container must need parser")
+
+	return &DefaultBEContainer{
+		meta: meta,
+		wc:   NewPostingList(),
+		inc:  map[BEValue]PostingList{},
+		exc:  map[BEValue]PostingList{},
 	}
 }
 
-func NewDefaultBEContainer(parser parser.FieldValueParser) *DefaultBEContainer {
-	return &DefaultBEContainer{
-		parser: parser,
-		wc:     NewPostingList(),
-		inc:    map[BEValue]PostingList{},
-		exc:    map[BEValue]PostingList{},
-	}
+func (c *DefaultBEContainer) Meta() *FieldMeta {
+	return c.meta
 }
 
 func (c *DefaultBEContainer) AddWildcard(id ConjunctionID) {
@@ -92,7 +84,7 @@ func (c *DefaultBEContainer) Retrieve(values be_indexer.Values, inout *PostingLi
 
 	fieldIDs := make([]uint64, 0, len(values))
 	for _, vi := range values {
-		ids, err := c.parser.ParseAssign(vi)
+		ids, err := c.meta.Parser.ParseAssign(vi)
 		if err != nil {
 			return err
 		}
@@ -111,31 +103,31 @@ func (c *DefaultBEContainer) Retrieve(values be_indexer.Values, inout *PostingLi
 	return nil
 }
 
-func (builder *DefaultBEContainerBuilder) EncodeWildcard(id ConjunctionID) {
-	builder.container.AddWildcard(id)
+func (c *DefaultBEContainer) EncodeWildcard(id ConjunctionID) {
+	c.AddWildcard(id)
 }
 
-func (builder *DefaultBEContainerBuilder) EncodeExpr(id ConjunctionID, expr *be_indexer.BooleanExpr) error {
+func (c *DefaultBEContainer) EncodeExpr(id ConjunctionID, expr *be_indexer.BooleanExpr) error {
 	if expr == nil {
-		builder.EncodeWildcard(id)
+		c.EncodeWildcard(id)
 	}
 	for _, vi := range expr.Value {
-		valueIDs, err := builder.parser.ParseValue(vi)
+		valueIDs, err := c.meta.Parser.ParseValue(vi)
 		if err != nil {
 			return err
 		}
 		for _, value := range valueIDs {
 			if expr.Incl {
-				builder.container.AddInclude(BEValue(value), id)
+				c.AddInclude(BEValue(value), id)
 			} else {
-				builder.container.AddExclude(BEValue(value), id)
+				c.AddExclude(BEValue(value), id)
 			}
 		}
 	}
 	return nil
 }
 
-func (builder *DefaultBEContainerBuilder) BuildBEContainer() (BEContainer, error) {
+func (c *DefaultBEContainer) BuildBEContainer() (BEContainer, error) {
 	//for _, v := range builder.container.inc {
 	//	v.RunOptimize()
 	//}
@@ -143,5 +135,9 @@ func (builder *DefaultBEContainerBuilder) BuildBEContainer() (BEContainer, error
 	//	v.RunOptimize()
 	//}
 	//builder.container.wc.RunOptimize()
-	return builder.container, nil
+	return c, nil
+}
+
+func (c *DefaultBEContainer) NeedParser() bool {
+	return true
 }

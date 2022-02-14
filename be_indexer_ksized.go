@@ -39,8 +39,8 @@ func (c *EntriesContainer) compileEntries() {
 	}
 }
 
-func (c *EntriesContainer) getFieldHolder(desc *FieldDesc) EntriesHolder {
-	if desc.option.Container == HolderNameDefault {
+func (c *EntriesContainer) getFieldHolder(desc *fieldDesc) EntriesHolder {
+	if desc.Container == HolderNameDefault {
 		return c.defaultHolder
 	}
 	if holder, ok := c.fieldHolder[desc.Field]; ok {
@@ -49,16 +49,16 @@ func (c *EntriesContainer) getFieldHolder(desc *FieldDesc) EntriesHolder {
 	return nil
 }
 
-func (c *EntriesContainer) newEntriesHolder(desc *FieldDesc) EntriesHolder {
-	if desc.option.Container == HolderNameDefault {
+func (c *EntriesContainer) newEntriesHolder(desc *fieldDesc) EntriesHolder {
+	if desc.Container == HolderNameDefault {
 		return c.defaultHolder
 	}
 
 	if holder, ok := c.fieldHolder[desc.Field]; ok {
 		return holder
 	}
-	holder := NewEntriesHolder(desc.option.Container)
-	util.PanicIf(holder == nil, "field:%s, container:%s not found, register before using", desc.Field, desc.option.Container)
+	holder := NewEntriesHolder(desc.Container)
+	util.PanicIf(holder == nil, "field:%s, container:%s not found, register before using", desc.Field, desc.Container)
 
 	c.fieldHolder[desc.Field] = holder
 
@@ -76,7 +76,7 @@ func (c *EntriesContainer) DumpString(buf *strings.Builder) {
 func NewSizeGroupedBEIndex() BEIndex {
 	index := &SizeGroupedBEIndex{
 		indexBase: indexBase{
-			fieldsData: make(map[BEField]*FieldDesc),
+			fieldsData: make(map[BEField]*fieldDesc),
 		},
 		kSizeContainers: make([]*EntriesContainer, 0),
 	}
@@ -127,7 +127,7 @@ func (bi *SizeGroupedBEIndex) initCursors(ctx *retrieveContext, k int) (fCursors
 	var holder EntriesHolder
 
 	var ok bool
-	var desc *FieldDesc
+	var desc *fieldDesc
 
 	for field, values := range ctx.assigns {
 

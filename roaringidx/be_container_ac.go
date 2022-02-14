@@ -3,12 +3,17 @@ package roaringidx
 import (
 	"fmt"
 
+	"github.com/echoface/be_indexer/util"
 	aho "github.com/anknown/ahocorasick"
 	"github.com/echoface/be_indexer"
 )
 
 type (
 	ACBEContainer struct {
+		querySep string
+
+		meta *FieldMeta
+
 		wc PostingList
 
 		inc *aho.Machine
@@ -18,27 +23,28 @@ type (
 		incValues map[string]PostingList
 		excValues map[string]PostingList
 	}
-
-	// ACBEContainerBuilder implement BEContainerBuilder interface
-	ACBEContainerBuilder struct {
-		container *ACBEContainer
-	}
 )
 
-func NewACBEContainerBuilder(_ FieldSetting) BEContainerBuilder {
-	return &ACBEContainerBuilder{
-		container: NewACBEContainer(),
-	}
-}
+const (
+	DefaultACContainerQueryJoinSep = " "
+)
 
-func NewACBEContainer() *ACBEContainer {
+func NewACBEContainer(meta *FieldMeta, sep string) *ACBEContainer {
+	util.PanicIf(meta == nil, "nil FieldMeta is not allowed")
+
 	return &ACBEContainer{
+		querySep:  sep,
+		meta:      meta,
 		wc:        NewPostingList(),
 		inc:       nil,
 		exc:       nil,
 		incValues: map[string]PostingList{},
 		excValues: map[string]PostingList{},
 	}
+}
+
+func (c *ACBEContainer) Meta() *FieldMeta {
+	return c.meta
 }
 
 func (c *ACBEContainer) AddWildcard(id ConjunctionID) {
@@ -74,6 +80,7 @@ func (c *ACBEContainer) Retrieve(values be_indexer.Values, inout *PostingList) e
 	for _, vi := range values {
 		if str, ok := vi.(string); ok {
 			data = append(data, []rune(str)...)
+			data = append(data, []rune(c.querySep)...)
 			continue
 		}
 		return fmt.Errorf("query assign:%+v not string type", vi)
@@ -98,13 +105,13 @@ func (c *ACBEContainer) Retrieve(values be_indexer.Values, inout *PostingList) e
 }
 
 // EncodeWildcard equal to: EncodeExpr(id ConjunctionID, nil)
-func (builder *ACBEContainerBuilder) EncodeWildcard(id ConjunctionID) {
-	builder.container.AddWildcard(id)
+func (c *ACBEContainer) EncodeWildcard(id ConjunctionID) {
+	c.AddWildcard(id)
 }
 
-func (builder *ACBEContainerBuilder) EncodeExpr(id ConjunctionID, expr *be_indexer.BooleanExpr) error {
+func (c *ACBEContainer) EncodeExpr(id ConjunctionID, expr *be_indexer.BooleanExpr) error {
 	if expr == nil {
-		builder.container.AddWildcard(id)
+		c.AddWildcard(id)
 		return nil
 	}
 
@@ -115,39 +122,43 @@ func (builder *ACBEContainerBuilder) EncodeExpr(id ConjunctionID, expr *be_index
 			return fmt.Errorf("not supported none string value")
 		}
 		if expr.Incl {
-			builder.container.AddIncludeID(kw, id)
+			c.AddIncludeID(kw, id)
 		} else {
-			builder.container.AddExcludeID(kw, id)
+			c.AddExcludeID(kw, id)
 		}
 	}
 	if !expr.Incl {
-		builder.container.AddWildcard(id)
+		c.AddWildcard(id)
 	}
 	return nil
 }
 
-func (builder *ACBEContainerBuilder) BuildBEContainer() (BEContainer, error) {
+func (c *ACBEContainer) BuildBEContainer() (BEContainer, error) {
 	var err error
-	keys := make([][]rune, 0, len(builder.container.incValues))
-	if len(builder.container.incValues) > 0 {
-		for kw, _ := range builder.container.incValues {
+	keys := make([][]rune, 0, len(c.incValues))
+	if len(c.incValues) > 0 {
+		for kw, _ := range c.incValues {
 			keys = append(keys, []rune(kw))
 		}
-		builder.container.inc = &aho.Machine{}
-		if err = builder.container.inc.Build(keys); err != nil {
+		c.inc = &aho.Machine{}
+		if err = c.inc.Build(keys); err != nil {
 			return nil, err
 		}
 	}
 
-	if len(builder.container.excValues) > 0 {
+	if len(c.excValues) > 0 {
 		keys = keys[:0]
-		for kw, _ := range builder.container.excValues {
+		for kw, _ := range c.excValues {
 			keys = append(keys, []rune(kw))
 		}
-		builder.container.exc = &aho.Machine{}
-		if err = builder.container.exc.Build(keys); err != nil {
+		c.exc = &aho.Machine{}
+		if err = c.exc.Build(keys); err != nil {
 			return nil, err
 		}
 	}
-	return builder.container, nil
+	return c, nil
+}
+
+func (c *ACBEContainer) NeedParser() bool {
+	return false
 }

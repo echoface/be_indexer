@@ -3,6 +3,8 @@ package roaringidx
 import (
 	"fmt"
 
+	"github.com/echoface/be_indexer/parser"
+
 	"github.com/echoface/be_indexer/util"
 
 	"github.com/echoface/be_indexer"
@@ -10,18 +12,25 @@ import (
 
 type (
 	IvtBEIndexerBuilder struct {
+		docMaxConjSize int
+
 		// panicOnError will panic program when build indexer meta
 		panicOnError bool
 
 		containerBuilder map[be_indexer.BEField]BEContainerBuilder
+
+		defaultParser *parser.CommonStrParser
 	}
 )
 
 func NewIndexerBuilder() *IvtBEIndexerBuilder {
-	return &IvtBEIndexerBuilder{
+	builder := &IvtBEIndexerBuilder{
 		panicOnError:     false,
 		containerBuilder: map[be_indexer.BEField]BEContainerBuilder{},
+		docMaxConjSize:   1,
+		defaultParser:    parser.NewCommonStrParser(),
 	}
+	return builder
 }
 
 func (builder *IvtBEIndexerBuilder) WithErrPanic(panic bool) *IvtBEIndexerBuilder {
@@ -30,7 +39,14 @@ func (builder *IvtBEIndexerBuilder) WithErrPanic(panic bool) *IvtBEIndexerBuilde
 }
 
 func (builder *IvtBEIndexerBuilder) ConfigureField(field string, option FieldSetting) error {
-	fieldContainerBuilder := NewContainerBuilder(option.Container, option)
+	fieldMeta := &FieldMeta{
+		FieldSetting: option,
+		field:        be_indexer.BEField(field),
+	}
+	if fieldMeta.Parser == nil {
+		fieldMeta.Parser = builder.defaultParser
+	}
+	fieldContainerBuilder := NewContainerBuilder(fieldMeta)
 	if fieldContainerBuilder == nil {
 		util.PanicIf(builder.panicOnError, "field:%s settings:%+v not supported", field, option)
 		return fmt.Errorf("field:%s settings:%+v not supported", field, option)
@@ -89,6 +105,8 @@ func (builder *IvtBEIndexerBuilder) AddDocument(doc *be_indexer.Document) (err e
 			}
 		}
 	}
+
+	builder.docMaxConjSize = util.MaxInt(len(doc.Cons), builder.docMaxConjSize)
 	return nil
 }
 
@@ -101,10 +119,10 @@ func (builder *IvtBEIndexerBuilder) BuildIndexer() (*IvtBEIndexer, error) {
 		if err != nil {
 			return nil, err
 		}
-		indexer.data[field] = &fieldMeta{
-			field:     field,
-			container: container,
-		}
+		indexer.data[field] = container
 	}
+
+	indexer.docMaxConjSize = builder.docMaxConjSize
+
 	return indexer, nil
 }

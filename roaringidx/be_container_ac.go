@@ -3,6 +3,7 @@ package roaringidx
 import (
 	"fmt"
 
+	"github.com/echoface/be_indexer/util"
 	aho "github.com/anknown/ahocorasick"
 	"github.com/echoface/be_indexer"
 	"github.com/echoface/be_indexer/util"

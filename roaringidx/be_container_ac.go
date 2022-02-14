@@ -3,9 +3,9 @@ package roaringidx
 import (
 	"fmt"
 
-	"github.com/echoface/be_indexer/util"
 	aho "github.com/anknown/ahocorasick"
 	"github.com/echoface/be_indexer"
+	"github.com/echoface/be_indexer/util"
 )
 
 type (
@@ -162,3 +162,4 @@ func (c *ACBEContainer) BuildBEContainer() (BEContainer, error) {
 func (c *ACBEContainer) NeedParser() bool {
 	return false
 }
+

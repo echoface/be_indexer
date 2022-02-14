@@ -19,7 +19,9 @@ type (
 	}
 
 	IvtBEIndexer struct {
+
 		docMaxConjSize int
+
 		data           map[be_indexer.BEField]BEContainer
 	}
 )

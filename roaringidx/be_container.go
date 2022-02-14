@@ -1,9 +1,8 @@
 package roaringidx
 
 import (
-	"github.com/echoface/be_indexer/util"
-
 	"github.com/echoface/be_indexer"
+	"github.com/echoface/be_indexer/util"
 )
 
 type (

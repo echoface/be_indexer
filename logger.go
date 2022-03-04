@@ -9,7 +9,7 @@ const (
 )
 
 var (
-	LogLevel int           = DebugLevel // control defaultLogger log level
+	LogLevel int           = InfoLevel // control defaultLogger log level
 	Logger   BEIndexLogger = &DefaultLogger{}
 )
 

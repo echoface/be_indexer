@@ -145,6 +145,6 @@ func main() {
 
 Copyright (C) 2018, by HuanGong [gonghuan.dev@gmail.com](mailto:gonghuan.dev@gmail.com).
 
-Under the Apache License, Version 2.0.
+Under the MIT License.
 
 See the [LICENSE](LICENSE) file for details.

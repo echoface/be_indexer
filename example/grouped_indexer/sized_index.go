@@ -9,6 +9,7 @@ import (
 	"os"
 	"runtime"
 	"runtime/pprof"
+	"strings"
 	"time"
 
 	_ "net/http/pprof"
@@ -170,7 +171,9 @@ func main() {
 	be_indexer.LogLevel = be_indexer.ErrorLevel
 
 	index := BuildIndex()
-	fmt.Println("size grouped summary:", index.DumpEntriesSummary())
+	sb := &strings.Builder{}
+	index.DumpIndexInfo(sb)
+	fmt.Println("size grouped summary:", sb.String())
 
 	if enableProfiling {
 		f, err := os.OpenFile("cpu.prof", os.O_RDWR|os.O_CREATE, 0644)

@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"strconv"
@@ -29,6 +30,13 @@ func ParseIntegerNumber(v interface{}, f2i bool) (n int64, err error) {
 	case float64, float32:
 		if f2i {
 			return int64(vf.Float()), nil
+		}
+	case json.Number:
+		if vi, e := tv.Int64(); e == nil {
+			return vi, nil
+		}
+		if vfloat, e := tv.Float64(); e == nil && f2i {
+			return int64(vfloat), nil
 		}
 	default:
 	}

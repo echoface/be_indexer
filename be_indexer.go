@@ -1,6 +1,7 @@
 package be_indexer
 
 import (
+	"strings"
 	"sync"
 
 	"github.com/echoface/be_indexer/parser"
@@ -30,13 +31,13 @@ type (
 		addWildcardEID(id EntryID)
 
 		// set fields desc/settings
-		setFieldDesc(fieldsData map[BEField]*fieldDesc)
+		setFieldDesc(fieldsData map[BEField]*FieldDesc)
 
 		// newContainer indexer need return a valid Container for k size
 		newContainer(k int) *EntriesContainer
 
 		// compileIndexer prepare indexer and optimize index data
-		compileIndexer()
+		compileIndexer() error
 
 		// Retrieve scan index data and retrieve satisfied document
 		Retrieve(queries Assignments, opt ...IndexOpt) (DocIDList, error)
@@ -45,12 +46,12 @@ type (
 		RetrieveWithCollector(Assignments, ResultCollector, ...IndexOpt) error
 
 		// DumpEntries debug api
-		DumpEntries() string
+		DumpEntries(sb *strings.Builder)
 
-		DumpEntriesSummary() string
+		DumpIndexInfo(sb *strings.Builder)
 	}
 
-	fieldDesc struct {
+	FieldDesc struct {
 		FieldOption
 
 		ID    uint64
@@ -60,14 +61,14 @@ type (
 	indexBase struct {
 		// fieldsData a field settings and resource, if not configured, it will use default parser and container
 		// for expression values;
-		fieldsData map[BEField]*fieldDesc
+		fieldsData map[BEField]*FieldDesc
 
 		// wildcardEntries hold all entry id that conjunction size is zero;
 		wildcardEntries Entries
 	}
 )
 
-func (bi *indexBase) setFieldDesc(fieldsData map[BEField]*fieldDesc) {
+func (bi *indexBase) setFieldDesc(fieldsData map[BEField]*FieldDesc) {
 	bi.fieldsData = fieldsData
 }
 

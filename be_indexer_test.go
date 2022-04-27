@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"math/rand"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -26,6 +27,24 @@ func buildTestDoc() []*Document {
 	return docs
 }
 
+func printIndexInfo(index BEIndex) {
+	if index == nil {
+		fmt.Println("nil indexer")
+	}
+	sb := &strings.Builder{}
+	index.DumpIndexInfo(sb)
+	fmt.Println(sb.String())
+}
+
+func printIndexEntries(index BEIndex) {
+	if index == nil {
+		fmt.Println("nil indexer")
+	}
+	sb := &strings.Builder{}
+	index.DumpEntries(sb)
+	fmt.Println(sb.String())
+}
+
 func TestBEIndex_Retrieve(t *testing.T) {
 	LogLevel = InfoLevel
 
@@ -38,8 +57,8 @@ func TestBEIndex_Retrieve(t *testing.T) {
 	}
 
 	indexer := builder.BuildIndex()
-
-	fmt.Println(indexer.DumpEntries())
+	printIndexInfo(indexer)
+	printIndexEntries(indexer)
 
 	result, e := indexer.Retrieve(map[BEField]Values{
 		"age": NewValues2(5),
@@ -229,9 +248,13 @@ func BuildTestDocumentAndQueries(docCnt, queriesCnt int, withNeg bool) (map[DocI
 	var assigns []*Q
 	for queriesCnt > len(assigns) {
 		q := &Q{
-			A: randValue(8),
-			B: randValue(6),
-			C: randValue(4),
+			//A: randValue(8),
+			//B: randValue(6),
+			//C: randValue(4),
+			//D: randValue(2),
+			A: randValue(2),
+			B: randValue(2),
+			C: randValue(2),
 			D: randValue(2),
 		}
 		if len(q.A)+len(q.B)+len(q.C)+len(q.D) > 0 {
@@ -279,13 +302,14 @@ func TestMatch(t *testing.T) {
 
 func TestSizeGroupedBEIndex_Retrieve(t *testing.T) {
 	convey.Convey("test index negative logic", t, func() {
-		docs, queries := BuildTestDocumentAndQueries(100000, 1000, true)
+		docs, queries := BuildTestDocumentAndQueries(100000, 100, true)
 		b := NewIndexerBuilder()
 		for _, doc := range docs {
-			b.AddDocument(doc.ToDocument())
+			_ = b.AddDocument(doc.ToDocument())
 		}
 		index := b.BuildIndex()
-		fmt.Println("summary", index.DumpEntriesSummary())
+		printIndexInfo(index)
+		// printIndexEntries(index)
 
 		idxRes := make(map[int]DocIDList)
 		noneIdxRes := make(map[int]DocIDList)
@@ -326,13 +350,13 @@ func TestSizeGroupedBEIndex_Retrieve(t *testing.T) {
 
 func TestCompactedBEIndex_Retrieve(t *testing.T) {
 	convey.Convey("test index negative logic", t, func() {
-		docs, queries := BuildTestDocumentAndQueries(10000, 1000, true)
-		b := NewIndexerBuilder()
+		docs, queries := BuildTestDocumentAndQueries(100000, 100, true)
+		b := NewCompactIndexerBuilder()
 		for _, doc := range docs {
-			b.AddDocument(doc.ToDocument())
+			_ = b.AddDocument(doc.ToDocument())
 		}
 		compactedIndex := b.BuildIndex()
-		fmt.Println("compactedIndex summary", compactedIndex.DumpEntriesSummary())
+		printIndexInfo(compactedIndex)
 
 		idxUnionRes := make(map[int]DocIDList)
 		noneIdxRes := make(map[int]DocIDList)
@@ -376,18 +400,23 @@ func TestBEIndex_Retrieve2(t *testing.T) {
 	LogLevel = ErrorLevel
 
 	convey.Convey("test index and simple bench for kGroup/Compacted indexer", t, func() {
-		docs, queries := BuildTestDocumentAndQueries(10000, 10000, false)
+		docs, queries := BuildTestDocumentAndQueries(100000, 100, true)
 		b := NewIndexerBuilder()
 		cb := NewCompactIndexerBuilder()
 		for _, doc := range docs {
-			b.AddDocument(doc.ToDocument())
-			cb.AddDocument(doc.ToDocument())
+			_ = b.AddDocument(doc.ToDocument())
+			_ = cb.AddDocument(doc.ToDocument())
 		}
 		index := b.BuildIndex()
 		compactedIndex := cb.BuildIndex()
 
-		fmt.Println("kGroupIndex summary", index.DumpEntriesSummary())
-		fmt.Println("compactedIndex summary", compactedIndex.DumpEntriesSummary())
+		sb := &strings.Builder{}
+		index.DumpIndexInfo(sb)
+		fmt.Println("kGroupIndex summary", sb.String())
+
+		sb.Reset()
+		compactedIndex.DumpIndexInfo(sb)
+		fmt.Println("compactedIndex summary", sb.String())
 
 		queriesCnt := int64(len(queries))
 
@@ -415,7 +444,9 @@ func TestBEIndex_Retrieve2(t *testing.T) {
 			if len(noneIdxRes[idx]) != len(ids) {
 				sort.Sort(ids)
 				sort.Sort(noneIdxRes[idx])
-				fmt.Println(index.DumpEntries())
+
+				printIndexEntries(index)
+
 				for _, id := range ids {
 					fmt.Println("doc:", docs[id])
 				}
@@ -435,7 +466,7 @@ func TestBEIndex_Retrieve2(t *testing.T) {
 			ids, _ := compactedIndex.Retrieve(ass.ToAssigns())
 			idxUnionRes[idx] = ids
 			if len(ids) != len(noneIdxRes[idx]) {
-				fmt.Println(index.DumpEntries())
+				printIndexEntries(index)
 				sort.Sort(ids)
 				sort.Sort(noneIdxRes[idx])
 				for _, id := range ids {
@@ -475,27 +506,15 @@ func DocIDToIncludeEntries(ids []DocID, k int) (res []EntryID) {
 
 func TestBEIndex_Retrieve3(t *testing.T) {
 	plgs := FieldCursors{
-		NewFieldCursor(CursorGroup{
-			{
-				entries: DocIDToIncludeEntries([]DocID{17, 32, 37}, 2),
-			},
-			{
-				entries: DocIDToIncludeEntries(DocIDList{17, 33}, 2),
-			},
-			{
-				entries: DocIDToIncludeEntries(DocIDList{19, 60}, 2),
-			},
-			{
-				entries: DocIDToIncludeEntries(DocIDList{53, 54}, 2),
-			},
+		NewFieldCursor(EntriesCursors{
+			NewEntriesCursor(wildcardQKey, DocIDToIncludeEntries([]DocID{17, 32, 37}, 2)),
+			NewEntriesCursor(wildcardQKey, DocIDToIncludeEntries(DocIDList{17, 33}, 2)),
+			NewEntriesCursor(wildcardQKey, DocIDToIncludeEntries(DocIDList{19, 60}, 2)),
+			NewEntriesCursor(wildcardQKey, DocIDToIncludeEntries(DocIDList{53, 54}, 2)),
 		}...),
-		NewFieldCursor(CursorGroup{
-			{
-				entries: DocIDToIncludeEntries(DocIDList{10, 19, 27, 32, 54, 81}, 2),
-			},
-			{
-				entries: DocIDToIncludeEntries(DocIDList{3, 19, 35, 81}, 2),
-			},
+		NewFieldCursor(EntriesCursors{
+			NewEntriesCursor(wildcardQKey, DocIDToIncludeEntries(DocIDList{10, 19, 27, 32, 54, 81}, 2)),
+			NewEntriesCursor(wildcardQKey, DocIDToIncludeEntries(DocIDList{3, 19, 35, 81}, 2)),
 		}...),
 	}
 	for _, plg := range plgs {
@@ -588,7 +607,7 @@ func TestBEIndex_Retrieve5(t *testing.T) {
 	conj2 := NewConjunction().
 		In("tag", NewInt32Values2(12))
 	doc.AddConjunction(conj, conj2)
-	builder.AddDocument(doc)
+	_ = builder.AddDocument(doc)
 
 	// 13: (tag IN 1 && age Not 27) or (tag Not 60)
 	doc = NewDocument(13)
@@ -598,7 +617,7 @@ func TestBEIndex_Retrieve5(t *testing.T) {
 	conj2 = NewConjunction().
 		NotIn("age", NewInt32Values2(60))
 	doc.AddConjunction(conj, conj2)
-	builder.AddDocument(doc)
+	_ = builder.AddDocument(doc)
 
 	// 14: (tag in 1,2 && tag in 12) or ("age In 60") or (sex In man)
 	doc = NewDocument(14)
@@ -610,12 +629,13 @@ func TestBEIndex_Retrieve5(t *testing.T) {
 	conj3 := NewConjunction().
 		In("sex", NewStrValues("man"))
 	doc.AddConjunction(conj, conj2, conj3)
-	builder.AddDocument(doc)
+	_ = builder.AddDocument(doc)
 
 	convey.Convey("test SizeGroupedIndex Multi Conjunction retrieve", t, func() {
 
 		indexer := builder.BuildIndex()
-		fmt.Println(indexer.DumpEntries())
+		printIndexInfo(indexer)
+		printIndexEntries(indexer)
 
 		var err error
 		var ids DocIDList
@@ -668,7 +688,7 @@ func TestBEIndex_Retrieve6(t *testing.T) {
 	conj = NewConjunction().
 		In("tag", NewInt32Values2(1)).NotIn("age", NewInt32Values2(27, 15, 18, 22, 28, 32))
 	doc.AddConjunction(conj)
-	builder.AddDocument(doc)
+	_ = builder.AddDocument(doc)
 
 	// 14: (tag in 1,2 && tag in 12) or ("age In 60") or (sex In man)
 	doc = NewDocument(14)
@@ -679,7 +699,7 @@ func TestBEIndex_Retrieve6(t *testing.T) {
 		NotIn("keyword", NewStrValues("红包", "拉拉", "解放")).
 		In("age", NewIntValues(12, 24, 28))
 	doc.AddConjunction(conj, conj3)
-	builder.AddDocument(doc)
+	_ = builder.AddDocument(doc)
 
 	convey.Convey("test ac matcher retrieve", t, func() {
 
@@ -689,7 +709,7 @@ func TestBEIndex_Retrieve6(t *testing.T) {
 		var ids DocIDList
 		ids, err = indexer.Retrieve(Assignments{
 			"sex":     []interface{}{"man"},
-			"keyword": NewStrValues(string("解放军发红包"), "abc英文歌"),
+			"keyword": NewStrValues("解放军发红包", "abc英文歌"),
 			"age":     []interface{}{28, 2, 27},
 			"tag":     []interface{}{1, 2, 27},
 		})

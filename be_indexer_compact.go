@@ -9,35 +9,35 @@ import (
 )
 
 type (
-	CompactedBEIndex struct {
+	CompactBEIndex struct {
 		indexBase
-		fieldContainer *EntriesContainer
+		container *EntriesContainer
 	}
 )
 
-func NewCompactedBEIndex() *CompactedBEIndex {
-	index := &CompactedBEIndex{
+func NewCompactedBEIndex() *CompactBEIndex {
+	index := &CompactBEIndex{
 		indexBase: indexBase{
-			fieldsData: make(map[BEField]*fieldDesc),
+			fieldsData: make(map[BEField]*FieldDesc),
 		},
-		fieldContainer: newFieldEntriesContainer(),
+		container: newFieldEntriesContainer(),
 	}
 	return index
 }
 
 // newPostingEntriesIfNeeded(k int)
-func (bi *CompactedBEIndex) newContainer(_ int) *EntriesContainer {
-	return bi.fieldContainer
+func (bi *CompactBEIndex) newContainer(_ int) *EntriesContainer {
+	return bi.container
 }
 
-func (bi *CompactedBEIndex) compileIndexer() {
+func (bi *CompactBEIndex) compileIndexer() error {
 	if bi.wildcardEntries.Len() > 0 {
 		sort.Sort(bi.wildcardEntries)
 	}
-	bi.fieldContainer.compileEntries()
+	return bi.container.compileEntries()
 }
 
-func (bi *CompactedBEIndex) initCursors(ctx *retrieveContext) (fCursors FieldCursors, err error) {
+func (bi *CompactBEIndex) initCursors(ctx *retrieveContext) (fCursors FieldCursors, err error) {
 
 	fCursors = make(FieldCursors, 0, len(ctx.assigns))
 
@@ -47,15 +47,15 @@ func (bi *CompactedBEIndex) initCursors(ctx *retrieveContext) (fCursors FieldCur
 	}
 
 	var ok bool
-	var desc *fieldDesc
+	var desc *FieldDesc
 	var holder EntriesHolder
-	var entriesList CursorGroup
+	var entriesList EntriesCursors
 
 	for field, values := range ctx.assigns {
 		if desc, ok = bi.fieldsData[field]; !ok {
 			continue
 		}
-		if holder = bi.fieldContainer.getFieldHolder(desc); holder == nil {
+		if holder = bi.container.getFieldHolder(desc); holder == nil {
 			// return nil, fmt.Errorf("field:%s no holder found, what happened", field)
 			// no document has condition on this field, so just skip here
 			continue
@@ -78,7 +78,7 @@ func (bi *CompactedBEIndex) initCursors(ctx *retrieveContext) (fCursors FieldCur
 	return fCursors, nil
 }
 
-func (bi *CompactedBEIndex) Retrieve(
+func (bi *CompactBEIndex) Retrieve(
 	queries Assignments, opts ...IndexOpt) (result DocIDList, err error) {
 
 	collector := PickCollector()
@@ -92,7 +92,7 @@ func (bi *CompactedBEIndex) Retrieve(
 	return result, nil
 }
 
-func (bi *CompactedBEIndex) RetrieveWithCollector(
+func (bi *CompactBEIndex) RetrieveWithCollector(
 	queries Assignments, collector ResultCollector, opts ...IndexOpt) (err error) {
 
 	ctx := newRetrieveCtx(queries, opts...)
@@ -106,6 +106,7 @@ func (bi *CompactedBEIndex) RetrieveWithCollector(
 	}
 
 	fieldCursors.Sort()
+	// sort.Sort(fieldCursors)
 
 RETRIEVE:
 	for {
@@ -171,6 +172,8 @@ RETRIEVE:
 		}
 
 		fieldCursors.Sort()
+		// sort.Sort(fieldCursors) // slow 12% compare to fieldCursors.Sort()
+
 		if ctx.dumpStepInfo {
 			Logger.Infof("step result\n%+v", collector.GetDocIDs())
 			Logger.Infof("sorted entries\n%s", fieldCursors.Dump())
@@ -180,20 +183,27 @@ RETRIEVE:
 	return nil
 }
 
-func (bi *CompactedBEIndex) DumpEntriesSummary() string {
-	sb := strings.Builder{}
-	sb.WriteString(fmt.Sprintf("wildcard entries length:%d >>>>>>\n", len(bi.wildcardEntries)))
-	return sb.String()
+// DumpIndexInfo summary info about this indexer
+// +++++++ compact boolean indexing info +++++++++++
+// wildcard info: count: N
+// default holder: {name:%s value_count:%d, max_entries:%d avg_entries:%d}
+// field holder:
+//      >field:%s {name: %s, value_count:%d max_entries:%d avg_entries:%d}
+//      >field:%s {name: %s, value_count:%d max_entries:%d avg_entries:%d}
+func (bi *CompactBEIndex) DumpIndexInfo(sb *strings.Builder) {
+	sb.WriteString("\n+++++++ compact boolean indexing info +++++++++++\n")
+	sb.WriteString(fmt.Sprintf("wildcard info: count:%d\n", len(bi.wildcardEntries)))
+	bi.container.DumpInfo(sb)
+	sb.WriteString("\n++++++++++++++++++ end ++++++++++++++++++++++++\n")
 }
 
-func (bi *CompactedBEIndex) DumpEntries() string {
-	sb := strings.Builder{}
-
-	sb.WriteString(fmt.Sprintf("Z:>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>\n"))
+func (bi *CompactBEIndex) DumpEntries(sb *strings.Builder) {
+	sb.WriteString("\n+++++++ compact boolean indexing entries +++++++++++\n")
+	sb.WriteString(fmt.Sprintf("Z:\n"))
 	sb.WriteString(wildcardQKey.String())
 	sb.WriteString(":")
 	sb.WriteString(fmt.Sprintf("%v", bi.wildcardEntries.DocString()))
 	sb.WriteString("\n")
-	bi.fieldContainer.DumpString(&sb)
-	return sb.String()
+	bi.container.DumpEntries(sb)
+	sb.WriteString("\n++++++++++++++++++ end ++++++++++++++++++++++++\n")
 }

@@ -11,7 +11,7 @@ type (
 	IndexerBuilder struct {
 		indexer BEIndex
 
-		fieldsData map[BEField]*fieldDesc
+		fieldsData map[BEField]*FieldDesc
 
 		idAllocator parser.IDAllocator
 	}
@@ -20,7 +20,7 @@ type (
 func NewIndexerBuilder() *IndexerBuilder {
 	builder := &IndexerBuilder{
 		indexer:     NewSizeGroupedBEIndex(),
-		fieldsData:  map[BEField]*fieldDesc{},
+		fieldsData:  map[BEField]*FieldDesc{},
 		idAllocator: parser.NewIDAllocatorImpl(),
 	}
 	_, _ = builder.configureField(WildcardFieldName, FieldOption{
@@ -32,7 +32,7 @@ func NewIndexerBuilder() *IndexerBuilder {
 func NewCompactIndexerBuilder() *IndexerBuilder {
 	builder := &IndexerBuilder{
 		indexer:     NewCompactedBEIndex(),
-		fieldsData:  map[BEField]*fieldDesc{},
+		fieldsData:  map[BEField]*FieldDesc{},
 		idAllocator: parser.NewIDAllocatorImpl(),
 	}
 	_, _ = builder.configureField(WildcardFieldName, FieldOption{
@@ -58,12 +58,13 @@ func (b *IndexerBuilder) BuildIndex() BEIndex {
 
 	b.indexer.setFieldDesc(b.fieldsData)
 
-	b.indexer.compileIndexer()
+	err := b.indexer.compileIndexer()
+	util.PanicIfErr(err, "fail compile indexer data, err:%+v", err)
 
 	return b.indexer
 }
 
-func (b *IndexerBuilder) configureField(field BEField, option FieldOption) (*fieldDesc, error) {
+func (b *IndexerBuilder) configureField(field BEField, option FieldOption) (*FieldDesc, error) {
 	if _, ok := b.fieldsData[field]; ok {
 		return nil, fmt.Errorf("can't configure field:%s twice", field)
 	}
@@ -77,7 +78,7 @@ func (b *IndexerBuilder) configureField(field BEField, option FieldOption) (*fie
 	}
 
 	fieldID := uint64(len(b.fieldsData))
-	desc := &fieldDesc{
+	desc := &FieldDesc{
 		FieldOption: option,
 		Field:       field,
 		ID:          fieldID,
@@ -99,7 +100,7 @@ func (b *IndexerBuilder) validDocument(doc *Document) error {
 	return nil
 }
 
-func (b *IndexerBuilder) createFieldData(field BEField) *fieldDesc {
+func (b *IndexerBuilder) createFieldData(field BEField) *FieldDesc {
 	if desc, hit := b.fieldsData[field]; hit {
 		return desc
 	}

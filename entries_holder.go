@@ -7,20 +7,27 @@ import (
 )
 
 type (
+	// EntriesHolder 存储索引的PostingList数据
+	// 目前的三种典型场景:
+	// 1. 内存KV 存储所有Field值对应的EntryID列表(PostingList)
+	// 2. AC自动机：用于将所有的values 构建生成AC自动机，对输入的语句找到匹配的PostingList
+	// 3. 1的一种扩展，引入网络存储，内部维护一个LRU/LFU cache减轻内存压力
 	EntriesHolder interface {
 		EnableDebug(debug bool)
+
+		DumpInfo(buffer *strings.Builder)
 
 		DumpEntries(buffer *strings.Builder)
 
 		// CompileEntries finalize entries status for query, build or make sorted
 		// according to the paper, entries must be sorted
-		CompileEntries()
+		CompileEntries() error
 
-		GetEntries(field *fieldDesc, assigns Values) (CursorGroup, error)
-		//GetEntries(field *fieldDesc, assigns Values) (FieldCursor, error)
+		GetEntries(field *FieldDesc, assigns Values) (EntriesCursors, error)
+		//GetEntries(field *FieldDesc, assigns Values) (FieldCursor, error)
 
 		// AddFieldEID tokenize values and add it to holder container
-		AddFieldEID(field *fieldDesc, values Values, eid EntryID) error
+		AddFieldEID(field *FieldDesc, values Values, eid EntryID) error
 	}
 
 	// DefaultEntriesHolder EntriesHolder implement base on hash map holder map<key, Entries>
@@ -42,20 +49,30 @@ func (h *DefaultEntriesHolder) EnableDebug(debug bool) {
 	h.debug = debug
 }
 
+// DumpInfo
+// {name: %s, value_count:%d max_entries:%d avg_entries:%d}
+func (h *DefaultEntriesHolder) DumpInfo(buffer *strings.Builder) {
+	info := fmt.Sprintf("{name: %s, value_count:%d max_entries:%d avg_entries:%d}",
+		"default", len(h.plEntries), h.maxLen, h.avgLen)
+	buffer.WriteString(info)
+}
+
 func (h *DefaultEntriesHolder) DumpEntries(buffer *strings.Builder) {
+	buffer.WriteString("DefaultEntriesHolder entries:")
 	for key, entries := range h.plEntries {
+		buffer.WriteString("\n")
 		buffer.WriteString(key.String())
 		buffer.WriteString(":")
 		buffer.WriteString(strings.Join(entries.DocString(), ","))
-		buffer.WriteString("\n")
 	}
 }
 
-func (h *DefaultEntriesHolder) CompileEntries() {
+func (h *DefaultEntriesHolder) CompileEntries() error {
 	h.makeEntriesSorted()
+	return nil
 }
 
-func (h *DefaultEntriesHolder) GetEntries(field *fieldDesc, assigns Values) (r CursorGroup, e error) {
+func (h *DefaultEntriesHolder) GetEntries(field *FieldDesc, assigns Values) (r EntriesCursors, e error) {
 	var ids []uint64
 
 	for _, vi := range assigns {
@@ -75,7 +92,7 @@ func (h *DefaultEntriesHolder) GetEntries(field *fieldDesc, assigns Values) (r C
 	return r, nil
 }
 
-func (h *DefaultEntriesHolder) AddFieldEID(field *fieldDesc, values Values, eid EntryID) (err error) {
+func (h *DefaultEntriesHolder) AddFieldEID(field *FieldDesc, values Values, eid EntryID) (err error) {
 	var ids []uint64
 	// NOTE: ids can be replicated if expression contain cross condition
 	for _, value := range values {

@@ -30,16 +30,20 @@ func newFieldEntriesContainer() *EntriesContainer {
 	}
 }
 
-func (c *EntriesContainer) compileEntries() {
-	c.defaultHolder.CompileEntries()
+func (c *EntriesContainer) compileEntries() (err error) {
+	if err = c.defaultHolder.CompileEntries(); err != nil {
+		return err
+	}
 
 	for _, holder := range c.fieldHolder {
-
-		holder.CompileEntries()
+		if err = holder.CompileEntries(); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
-func (c *EntriesContainer) getFieldHolder(desc *fieldDesc) EntriesHolder {
+func (c *EntriesContainer) getFieldHolder(desc *FieldDesc) EntriesHolder {
 	if desc.Container == HolderNameDefault {
 		return c.defaultHolder
 	}
@@ -49,7 +53,7 @@ func (c *EntriesContainer) getFieldHolder(desc *fieldDesc) EntriesHolder {
 	return nil
 }
 
-func (c *EntriesContainer) newEntriesHolder(desc *fieldDesc) EntriesHolder {
+func (c *EntriesContainer) newEntriesHolder(desc *FieldDesc) EntriesHolder {
 	if desc.Container == HolderNameDefault {
 		return c.defaultHolder
 	}
@@ -65,18 +69,33 @@ func (c *EntriesContainer) newEntriesHolder(desc *fieldDesc) EntriesHolder {
 	return holder
 }
 
-func (c *EntriesContainer) DumpString(buf *strings.Builder) {
+func (c *EntriesContainer) DumpEntries(buf *strings.Builder) {
 	c.defaultHolder.DumpEntries(buf)
 	for field, holder := range c.fieldHolder {
-		buf.WriteString(fmt.Sprintf("field:%s entries:", field))
+		buf.WriteString(fmt.Sprintf("field:%s entries:\n", field))
 		holder.DumpEntries(buf)
+	}
+}
+
+// DumpInfo
+// default holder: {name:%s value_count:%d, max_entries:%d avg_entries:%d}
+// field holder:
+//      >field:%s {name: %s, value_count:%d max_entries:%d avg_entries:%d}
+//      >field:%s {name: %s, value_count:%d max_entries:%d avg_entries:%d}
+func (c *EntriesContainer) DumpInfo(buf *strings.Builder) {
+	buf.WriteString("default holder:")
+	c.defaultHolder.DumpInfo(buf)
+	for field, holder := range c.fieldHolder {
+		buf.WriteString(fmt.Sprintf("  >field:%s ", field))
+		holder.DumpInfo(buf)
+		buf.WriteString("\n")
 	}
 }
 
 func NewSizeGroupedBEIndex() BEIndex {
 	index := &SizeGroupedBEIndex{
 		indexBase: indexBase{
-			fieldsData: make(map[BEField]*fieldDesc),
+			fieldsData: make(map[BEField]*FieldDesc),
 		},
 		kSizeContainers: make([]*EntriesContainer, 0),
 	}
@@ -96,13 +115,16 @@ func (bi *SizeGroupedBEIndex) newContainer(k int) *EntriesContainer {
 	return bi.kSizeContainers[k]
 }
 
-func (bi *SizeGroupedBEIndex) compileIndexer() {
+func (bi *SizeGroupedBEIndex) compileIndexer() (err error) {
 	for _, sizeEntries := range bi.kSizeContainers {
-		sizeEntries.compileEntries()
+		if err = sizeEntries.compileEntries(); err != nil {
+			return err
+		}
 	}
 	if bi.wildcardEntries.Len() > 0 {
 		sort.Sort(bi.wildcardEntries)
 	}
+	return nil
 }
 
 func (bi *SizeGroupedBEIndex) getKSizeEntries(k int) *EntriesContainer {
@@ -123,11 +145,11 @@ func (bi *SizeGroupedBEIndex) initCursors(ctx *retrieveContext, k int) (fCursors
 
 	kSizeContainer := bi.getKSizeEntries(k)
 
-	var entriesList CursorGroup
+	var entriesList EntriesCursors
 	var holder EntriesHolder
 
 	var ok bool
-	var desc *fieldDesc
+	var desc *FieldDesc
 
 	for field, values := range ctx.assigns {
 
@@ -149,8 +171,8 @@ func (bi *SizeGroupedBEIndex) initCursors(ctx *retrieveContext, k int) (fCursors
 		}
 
 		if len(entriesList) > 0 {
-			scanner := NewFieldCursor(entriesList...)
-			fCursors = append(fCursors, scanner)
+			fieldCursor := NewFieldCursor(entriesList...)
+			fCursors = append(fCursors, fieldCursor)
 
 			Logger.Debugf("<%s,%v> fetch %d posting list\n", desc.Field, values, len(entriesList))
 		} else {
@@ -167,6 +189,9 @@ func (bi *SizeGroupedBEIndex) initCursors(ctx *retrieveContext, k int) (fCursors
 
 // retrieveK retrieve matched result from k size index data
 func (bi *SizeGroupedBEIndex) retrieveK(ctx *retrieveContext, fieldCursors FieldCursors, k int) {
+	if len(fieldCursors) < k {
+		return
+	}
 
 	// sort.Sort(fieldCursors)
 	fieldCursors.Sort()
@@ -194,7 +219,7 @@ func (bi *SizeGroupedBEIndex) retrieveK(ctx *retrieveContext, fieldCursors Field
 			} else { //exclude
 
 				for i := k; i < fieldCursors.Len(); i++ {
-					if fieldCursors[i].GetCurConjID() != eid.GetConjID() {
+					if fieldCursors[i].GetCurConjID() != conjID {
 						break
 					}
 					fieldCursors[i].Skip(nextID)
@@ -242,7 +267,7 @@ func (bi *SizeGroupedBEIndex) RetrieveWithCollector(
 	var fCursors FieldCursors
 	for k := util.MinInt(queries.Size(), bi.maxK()); k >= 0; k-- {
 		if ctx.dumpStepInfo {
-			Logger.Infof("start retrieve k:", k)
+			Logger.Infof("start retrieve k:%d", k)
 		}
 		if fCursors, err = bi.initCursors(&ctx, k); err != nil {
 			return err
@@ -262,26 +287,39 @@ func (bi *SizeGroupedBEIndex) RetrieveWithCollector(
 	return nil
 }
 
-func (bi *SizeGroupedBEIndex) DumpEntries() string {
-	sb := strings.Builder{}
-	sb.WriteString(fmt.Sprintf("Z:>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>\n"))
+func (bi *SizeGroupedBEIndex) DumpEntries(sb *strings.Builder) {
+	sb.WriteString("\n+++++++ size grouped boolean indexing entries +++++++++++ \n")
+	sb.WriteString(fmt.Sprintf(">>Z:\n"))
 	sb.WriteString(wildcardQKey.String())
 	sb.WriteString(":")
 	sb.WriteString(fmt.Sprintf("%v", bi.wildcardEntries.DocString()))
 	sb.WriteString("\n")
-
 	for size, container := range bi.kSizeContainers {
-		sb.WriteString(fmt.Sprintf("\nK:%d >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>\n", size))
-		container.DumpString(&sb)
+		sb.WriteString(fmt.Sprintf(">>K:%d\n", size))
+		container.DumpEntries(sb)
+		sb.WriteString("\n")
 	}
-	return sb.String()
+	sb.WriteString("+++++++++++++++++++++++ end ++++++++++++++++++++++++++\n")
 }
 
-func (bi *SizeGroupedBEIndex) DumpEntriesSummary() string {
-	sb := strings.Builder{}
-	sb.WriteString(fmt.Sprintf("wildcard entries length:%d >>>>>>\n", len(bi.wildcardEntries)))
-	for k := range bi.kSizeContainers {
-		sb.WriteString(fmt.Sprintf("SizeEntries k:%d  >>>>>>\n", k))
+// DumpIndexInfo summary info about this indexer
+// +++++++ compact boolean indexing info +++++++++++
+// wildcard info: count: N
+// >>> K: N
+// default holder: {name:%s value_count:%d, max_entries:%d avg_entries:%d}
+// field holder:
+//      >field:%s {name: %s, value_count:%d max_entries:%d avg_entries:%d}
+// >>> K: N
+// default holder: {name:%s value_count:%d, max_entries:%d avg_entries:%d}
+// field holder:
+//      >field:%s {name: %s, value_count:%d max_entries:%d avg_entries:%d}
+func (bi *SizeGroupedBEIndex) DumpIndexInfo(sb *strings.Builder) {
+	sb.WriteString("\n+++++++ size grouped boolean indexing info +++++++++++\n")
+	sb.WriteString(fmt.Sprintf("wildcard info: count:%d\n", len(bi.wildcardEntries)))
+	for k, c := range bi.kSizeContainers {
+		sb.WriteString(fmt.Sprintf(">> container for size k:%d\n", k))
+		c.DumpInfo(sb)
+		sb.WriteString("\n")
 	}
-	return sb.String()
+	sb.WriteString("+++++++++++++++++++++++ end ++++++++++++++++++++++++++\n")
 }

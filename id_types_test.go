@@ -76,6 +76,9 @@ func TestNewConjID(t *testing.T) {
 			{1, 2, 3},
 			{2, 0, 1},
 			{12, 1, 20},
+			{-111, 1, 20},
+			{MaxDocID, 255, 255},
+			{-MaxDocID, 255, 255},
 		}
 		for _, cs := range cases {
 			id := NewConjID(DocID(cs[0]), cs[1], cs[2])

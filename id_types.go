@@ -5,11 +5,12 @@ import (
 )
 
 const (
+	MaxDocID = 0x7FFFFFFFFFF
+
 	NULLENTRY EntryID = 0xFFFFFFFFFFFFFFFF
 
 	MaxBEFieldID uint64 = 0xFF             // 8bit
 	MaxBEValueID uint64 = 0xFFFFFFFFFFFFFF // 56bit
-
 )
 
 type (
@@ -22,29 +23,82 @@ type (
 	Key uint64
 
 	// EntryID [-- ConjID(48bit) --|-- empty(15bit) -- | --incl/excl(1bit) --]
-	//               |--[(reserved(16)) | size(8bit) | index(8bit)  | docID(32bit)]
+	// |--[(reserved(16)) | size(8bit) | index(8bit)  | docID(32bit)]
 	EntryID uint64
 
 	// Entries a type define for sort option
 	Entries []EntryID
 )
 
-// NewConjID (reserved(16))| size(8bit) | index(8bit)  | docID(32bit)
-func NewConjID(docID DocID, index, size int) ConjID {
-	u := (uint64(size) << 40) | (uint64(index) << 32) | (uint64(docID))
-	return ConjID(u)
+func ValidDocID(id DocID) bool {
+	return (id <= MaxDocID) && (id >= -MaxDocID)
+}
+func ValidIdxOrSize(v int) bool {
+	return v >= 0 && v < 256
 }
 
-func (id ConjID) Index() int {
-	return int((id >> 32) & 0xFF)
+// NewConjID
+// |--[ reserved(4bit) | size(8bit) | index(8bit)  | negSign(1bit) | docID(43bit)]
+func NewConjID(docID DocID, index, size int) ConjID {
+	if !ValidDocID(docID) || !ValidIdxOrSize(index) || !ValidIdxOrSize(size) {
+		panic(fmt.Errorf("id overflow, id:%d, idx:%d size:%d", docID, index, size))
+	}
+	negSign := uint64(0)
+	if docID < 0 {
+		negSign = 1
+		docID = -docID
+	}
+	return ConjID((uint64(size) << 52) | (uint64(index) << 44) | (negSign << 43) | (uint64(docID)))
 }
 
 func (id ConjID) Size() int {
-	return int((id >> 40) & 0xFF)
+	return int((id >> 52) & 0xFF)
+}
+
+func (id ConjID) Index() int {
+	return int((id >> 44) & 0xFF)
 }
 
 func (id ConjID) DocID() DocID {
-	return DocID(id & 0xFFFFFFFF)
+	negSign := (id >> 43) & 0x1
+	docID := DocID(id & MaxDocID)
+	if negSign > 0 {
+		return -docID
+	}
+	return docID
+}
+
+// NewEntryID encode entry id
+// |--          		         ConjID(60bit)                  --|-- empty(3bit) --|--incl/excl(1bit) --|
+// |--[ size(8bit) | index(8bit) | negSign(1bit) | docID(43bit)]--|-- empty(3bit) --|--incl/excl(1bit) --|
+func NewEntryID(id ConjID, incl bool) EntryID {
+	if !incl {
+		return EntryID(id << 4)
+	}
+	return EntryID((id << 4) | 0x01)
+}
+
+func (entry EntryID) IsExclude() bool {
+	return entry&0x01 == 0
+}
+
+func (entry EntryID) IsInclude() bool {
+	return entry&0x01 > 0
+}
+
+func (entry EntryID) GetConjID() ConjID {
+	return ConjID(entry >> 4)
+}
+
+func (entry EntryID) IsNULLEntry() bool {
+	return entry == NULLENTRY
+}
+
+func (entry EntryID) DocString() string {
+	if entry.IsNULLEntry() {
+		return "<nil,nil>"
+	}
+	return fmt.Sprintf("<%d,%t>", entry.GetConjID().DocID(), entry.IsInclude())
 }
 
 // NewKey API
@@ -78,35 +132,4 @@ func (s Entries) DocString() []string {
 		res = append(res, eid.DocString())
 	}
 	return res
-}
-
-//NewEntryID |-- ConjID(48bit) --|-- empty(15bit) -- | --incl/excl(1bit) --|
-func NewEntryID(id ConjID, incl bool) EntryID {
-	if !incl {
-		return EntryID(id << 16)
-	}
-	return EntryID((id << 16) | 0x01)
-}
-
-func (entry EntryID) IsExclude() bool {
-	return entry&0x01 == 0
-}
-
-func (entry EntryID) IsInclude() bool {
-	return entry&0x01 > 0
-}
-
-func (entry EntryID) GetConjID() ConjID {
-	return ConjID(entry >> 16)
-}
-
-func (entry EntryID) IsNULLEntry() bool {
-	return entry == NULLENTRY
-}
-
-func (entry EntryID) DocString() string {
-	if entry.IsNULLEntry() {
-		return "<nil,nil>"
-	}
-	return fmt.Sprintf("<%d,%t>", entry.GetConjID().DocID(), entry.IsInclude())
 }

@@ -158,7 +158,3 @@ func (c *ACBEContainer) BuildBEContainer() (BEContainer, error) {
 	}
 	return c, nil
 }
-
-func (c *ACBEContainer) NeedParser() bool {
-	return false
-}

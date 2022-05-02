@@ -4,12 +4,14 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"github.com/echoface/be_indexer"
-	"github.com/echoface/be_indexer/util"
 	"math/rand"
 	"os"
 	"runtime/pprof"
+	"strings"
 	"time"
+
+	"github.com/echoface/be_indexer"
+	"github.com/echoface/be_indexer/util"
 )
 
 type MockTargeting struct {
@@ -117,10 +119,14 @@ func main() {
 	}
 
 	index := b.BuildIndex()
-	fmt.Println("index summary:", index.DumpEntriesSummary())
+	sb := &strings.Builder{}
+	index.DumpIndexInfo(sb)
+	fmt.Println("index summary:", sb.String())
 
 	compactedIndex := cb.BuildIndex()
-	fmt.Println("compactedIndex summary:", compactedIndex.DumpEntriesSummary())
+	sb.Reset()
+	compactedIndex.DumpIndexInfo(sb)
+	fmt.Println("compactedIndex summary:", sb.String())
 
 	type Q struct {
 		A []int

@@ -14,16 +14,15 @@ const (
 )
 
 type (
-	// ConjID max support 56bit len
-	// |--[(reserved(16)) | size(8bit) | index(8bit)  | docID(32bit)]
+	// ConjID max support 60bit len
+	// |--[ reserved(4bit) | size(8bit) | index(8bit)  | negSign(1bit) | docID(43bit)]
 	ConjID uint64
 
 	// Key is the term represent field and its value, eg: <age,15>
 	// <field-8bit> | <value-56bit>
 	Key uint64
 
-	// EntryID [-- ConjID(48bit) --|-- empty(15bit) -- | --incl/excl(1bit) --]
-	// |--[(reserved(16)) | size(8bit) | index(8bit)  | docID(32bit)]
+	// EntryID [--ConjID(60bit)--|--empty(3bit)--|--incl/excl(1bit)--]
 	EntryID uint64
 
 	// Entries a type define for sort option
@@ -96,9 +95,9 @@ func (entry EntryID) IsNULLEntry() bool {
 
 func (entry EntryID) DocString() string {
 	if entry.IsNULLEntry() {
-		return "<nil,nil>"
+		return "nil"
 	}
-	return fmt.Sprintf("<%d,%t>", entry.GetConjID().DocID(), entry.IsInclude())
+	return fmt.Sprintf("%d#%d", entry.GetConjID().DocID(), entry&0x01)
 }
 
 // NewKey API

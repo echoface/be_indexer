@@ -10,11 +10,8 @@ import (
 
 func TestPostingList_Skip(t *testing.T) {
 	convey.Convey("skip test", t, func() {
-		sc := EntriesCursor{
-			key:     newQKey("age", 2),
-			cursor:  0,
-			entries: []EntryID{1, 2, 3, 10, 10, 10, 11, 12, 15, 15, 22, 111, 111},
-		}
+		entries := []EntryID{1, 2, 3, 10, 10, 10, 11, 12, 15, 15, 22, 111, 111}
+		sc := NewEntriesCursor(newQKey("age", 2), entries)
 		convey.So(sc.Skip(0), convey.ShouldEqual, 1)
 
 		convey.So(sc.Skip(1), convey.ShouldEqual, 2)
@@ -30,11 +27,8 @@ func TestPostingList_Skip(t *testing.T) {
 	fmt.Println("skip test finish")
 
 	convey.Convey("skip to test", t, func() {
-		scanner := EntriesCursor{
-			key:     newQKey("age", 2),
-			cursor:  0,
-			entries: []EntryID{1, 2, 3, 10, 10, 10, 11, 12, 15, 15, 22, 111, 111},
-		}
+		entries := []EntryID{1, 2, 3, 10, 10, 10, 11, 12, 15, 15, 22, 111, 111}
+		scanner := NewEntriesCursor(newQKey("age", 2), entries)
 		convey.So(scanner.SkipTo(0), convey.ShouldEqual, 1)
 		convey.So(scanner.SkipTo(1), convey.ShouldEqual, 1)
 		convey.So(scanner.SkipTo(3), convey.ShouldEqual, 3)

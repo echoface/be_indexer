@@ -14,7 +14,8 @@ that seems more reasonable. so may be next version, should be refactored(fixed).
 */
 
 const (
-	LinearSearchLengthThreshold = 8
+	LinearSkipDistance = 8
+	FastTestOffset     = 256
 )
 
 type (
@@ -30,15 +31,18 @@ type (
 		key     QKey
 		cursor  int // current cur cursor
 		entries Entries
+		// Local slice: length will be cached and there is no overhead
+		// Global slice or passed (by reference): length cannot be cached and there is overhead
+		idSize int
 	}
-	CursorGroup []*EntriesCursor
+	EntriesCursors []*EntriesCursor
 
 	// FieldCursor for a boolean expression: {"tag", "in", [1, 2, 3]}
 	// tag_2: [ID5]
 	// tag_1: [ID1, ID2, ID7]
 	FieldCursor struct {
 		current     *EntriesCursor
-		cursorGroup CursorGroup
+		cursorGroup EntriesCursors
 	}
 	FieldCursors []*FieldCursor
 )
@@ -65,94 +69,74 @@ func NewEntriesCursor(key QKey, entries Entries) *EntriesCursor {
 		key:     key,
 		cursor:  0,
 		entries: entries,
+		idSize:  len(entries),
 	}
 }
 
-func (sc *EntriesCursor) GetCurEntryID() EntryID {
-	if len(sc.entries) <= sc.cursor {
-		return NULLENTRY
+func (ec *EntriesCursor) GetCurEntryID() EntryID {
+	if ec.idSize > ec.cursor {
+		return ec.entries[ec.cursor]
 	}
-	return sc.entries[sc.cursor]
+	return NULLENTRY
 }
 
-func (sc *EntriesCursor) LinearSkip(id EntryID) EntryID {
-	entry := sc.GetCurEntryID()
-	if entry > id {
-		return entry
-	}
-	size := len(sc.entries)
-	for ; sc.cursor < size && sc.entries[sc.cursor] <= id; sc.cursor++ {
-	}
-	return sc.GetCurEntryID()
-}
-
-func (sc *EntriesCursor) Skip(id EntryID) EntryID {
-
-	entry := sc.GetCurEntryID()
-	if entry > id {
+func (ec *EntriesCursor) Skip(id EntryID) EntryID {
+	if entry := ec.GetCurEntryID(); entry > id {
 		return entry
 	}
 
-	//according generated asm code, for a reference slice, len() have overhead
-	size := len(sc.entries)
+	rightIdx := ec.idSize
+	if j := ec.cursor + FastTestOffset; j < ec.idSize && ec.entries[j] > id {
+		rightIdx = j
+	}
 
-	rightIdx := size
 	var mid int
-	for sc.cursor < rightIdx {
-		if rightIdx-sc.cursor < LinearSearchLengthThreshold {
-			return sc.LinearSkip(id)
+	for ec.cursor < rightIdx && ec.entries[ec.cursor] <= id {
+		if rightIdx-ec.cursor < LinearSkipDistance {
+			for ec.cursor < ec.idSize && ec.entries[ec.cursor] <= id {
+				ec.cursor++
+			}
+			return ec.GetCurEntryID()
 		}
 
-		mid = (sc.cursor + rightIdx) >> 1
-		if sc.entries[mid] <= id {
-			sc.cursor = mid + 1
+		mid = (ec.cursor + rightIdx) >> 1
+		if ec.entries[mid] <= id {
+			ec.cursor = mid + 1
 		} else {
 			rightIdx = mid
 		}
-		if sc.cursor >= size || sc.entries[sc.cursor] > id {
-			break
-		}
 	}
-	return sc.GetCurEntryID()
+	return ec.GetCurEntryID()
 }
 
-func (sc *EntriesCursor) LinearSkipTo(id EntryID) EntryID {
-	entry := sc.GetCurEntryID()
-	if entry >= id {
-		return entry
-	}
-	size := len(sc.entries)
-	for ; sc.cursor < size && sc.entries[sc.cursor] < id; sc.cursor++ {
-	}
-	return sc.GetCurEntryID()
-}
-
-func (sc *EntriesCursor) SkipTo(id EntryID) EntryID {
-	entry := sc.GetCurEntryID()
-	if entry >= id {
+func (ec *EntriesCursor) SkipTo(id EntryID) EntryID {
+	if entry := ec.GetCurEntryID(); entry >= id {
 		return entry
 	}
 
-	//according generated asm code, for a reference slice, len() have overhead
-	size := len(sc.entries)
-	rightIdx := size
+	rightIdx := ec.idSize
+	if j := ec.cursor + FastTestOffset; j < ec.idSize && ec.entries[j] >= id {
+		rightIdx = j
+	}
 
 	var mid int
-	for sc.cursor < rightIdx {
-		if rightIdx-sc.cursor < LinearSearchLengthThreshold {
-			return sc.LinearSkipTo(id)
+	for ec.cursor < rightIdx && ec.entries[ec.cursor] < id {
+
+		if rightIdx-ec.cursor < LinearSkipDistance {
+			for ec.cursor < ec.idSize && ec.entries[ec.cursor] < id {
+				ec.cursor++
+			}
+			return ec.GetCurEntryID()
 		}
-		mid = (sc.cursor + rightIdx) >> 1
-		if sc.entries[mid] >= id {
+
+		mid = (ec.cursor + rightIdx) >> 1
+		if ec.entries[mid] >= id {
 			rightIdx = mid
 		} else {
-			sc.cursor = mid + 1
-		}
-		if sc.cursor >= size || sc.entries[sc.cursor] >= id {
-			break
+			ec.cursor = mid + 1
 		}
 	}
-	return sc.GetCurEntryID()
+	return ec.GetCurEntryID()
 }
 
 // Len FieldCursors sort API
@@ -187,17 +171,9 @@ func (s FieldCursors) Sort() {
 
 func (s FieldCursors) Dump() string {
 	sb := &strings.Builder{}
-	for _, scanner := range s {
-		sb.WriteString(scanner.DumpEntries())
+	for _, fc := range s {
+		fc.DumpEntries(sb)
 		sb.WriteString("\n")
-	}
-	return sb.String()
-}
-
-func (s FieldCursors) DumpCurrent() string {
-	sb := &strings.Builder{}
-	for idx, pl := range s {
-		sb.WriteString(fmt.Sprintf("idx:%d, eid:%s\n", idx, pl.GetCurEntryID().DocString()))
 	}
 	return sb.String()
 }
@@ -217,71 +193,92 @@ func NewFieldCursor(cursors ...*EntriesCursor) *FieldCursor {
 	return scanner
 }
 
-func (sg *FieldCursor) AddPostingList(cursor *EntriesCursor) {
-	sg.cursorGroup = append(sg.cursorGroup, cursor)
-	if sg.current == nil {
-		sg.current = cursor
+func (fc *FieldCursor) AddPostingList(cursor *EntriesCursor) {
+	fc.cursorGroup = append(fc.cursorGroup, cursor)
+	if fc.current == nil {
+		fc.current = cursor
 		return
 	}
-	if cursor.GetCurEntryID() < sg.current.GetCurEntryID() {
-		sg.current = cursor
+	if cursor.GetCurEntryID() < fc.current.GetCurEntryID() {
+		fc.current = cursor
 	}
 }
 
-func (sg *FieldCursor) GetCurConjID() ConjID {
-	return sg.GetCurEntryID().GetConjID()
+func (fc *FieldCursor) GetCurConjID() ConjID {
+	return fc.GetCurEntryID().GetConjID()
 }
 
-func (sg *FieldCursor) ReachEnd() bool {
-	return sg.current.GetCurEntryID().IsNULLEntry()
+func (fc *FieldCursor) ReachEnd() bool {
+	return fc.current.GetCurEntryID().IsNULLEntry()
 }
 
-func (sg *FieldCursor) GetCurEntryID() EntryID {
-	return sg.current.GetCurEntryID()
+func (fc *FieldCursor) GetCurEntryID() EntryID {
+	return fc.current.GetCurEntryID()
 }
 
-func (sg *FieldCursor) Skip(id EntryID) (newMin EntryID) {
+func (fc *FieldCursor) Skip(id EntryID) (newMin EntryID) {
 	newMin = NULLENTRY
-	for _, cursor := range sg.cursorGroup {
+	for _, cursor := range fc.cursorGroup {
 		if tId := cursor.Skip(id); tId < newMin {
 			newMin = tId
-			sg.current = cursor
+			fc.current = cursor
 		}
 	}
 	return
 }
 
-func (sg *FieldCursor) SkipTo(id EntryID) (newMin EntryID) {
+func (fc *FieldCursor) SkipTo(id EntryID) (newMin EntryID) {
 	newMin = NULLENTRY
-	for _, cursor := range sg.cursorGroup {
+	for _, cursor := range fc.cursorGroup {
 		if tId := cursor.SkipTo(id); tId < newMin {
 			newMin = tId
-			sg.current = cursor
+			fc.current = cursor
 		}
 	}
 	return
 }
 
-func (sg *FieldCursor) DumpEntries() string {
-	sb := &strings.Builder{}
-	sg.cursorGroup.DumpEntries(sb)
-	return sb.String()
-}
-
-func (cur *EntriesCursor) DumpEntries(sb *strings.Builder) {
-	// [xx,x]^<2,false>:<1,true>,<2,false><nil,nil>
-	sb.WriteString(cur.key.String())
-	sb.WriteString("^")
-	sb.WriteString(cur.GetCurEntryID().DocString())
-	sb.WriteString(":")
-	sb.WriteString(strings.Join(cur.entries.DocString(), ","))
-}
-
-func (cg CursorGroup) DumpEntries(sb *strings.Builder) {
-	sb.Grow(1024)
-	for _, it := range cg {
-		sb.WriteString("\t->")
+func (fc *FieldCursor) DumpEntries(sb *strings.Builder) {
+	sb.WriteString("============== Field Cursors ==============\n")
+	for _, it := range fc.cursorGroup {
+		if it == fc.current {
+			sb.WriteString(">")
+		} else {
+			sb.WriteString(" ")
+		}
 		it.DumpEntries(sb)
 		sb.WriteString("\n")
+	}
+}
+
+// DumpEntries in normal cases, posting-list has thousands/million ids,
+// so here only dump part of (nearby) ids about current cursor
+// [age,12]^<2,false>:<1,true>,<2,false><nil,nil>
+func (ec *EntriesCursor) DumpEntries(sb *strings.Builder) {
+	sb.WriteString(ec.key.String())
+	sb.WriteString(fmt.Sprintf(",idx:%02d,EID:", ec.cursor))
+	left := ec.cursor - 2
+	if left < 0 {
+		left = 0
+	}
+	right := ec.cursor + 10
+	if right >= len(ec.entries) {
+		right = len(ec.entries)
+	}
+	if left > 0 {
+		sb.WriteString("...,")
+	}
+	// [left,right)
+	for i := left; i < right; i++ {
+		if i == ec.cursor {
+			sb.WriteString("^")
+		}
+		sb.WriteString(ec.entries[i].DocString())
+		if i != right-1 {
+			sb.WriteString(",")
+		}
+	}
+	if remain := len(ec.entries) - right; remain > 0 {
+		sb.WriteString(fmt.Sprintf("...another %d", remain))
 	}
 }

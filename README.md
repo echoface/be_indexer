@@ -8,14 +8,21 @@
 - 在线广告、某些功能模块借助其可以实现非常优雅的代码实现
 - 论文没有提及的多值查询的问题没有直接给出实现提示，但是实际应用中都特别需要支持
 
-这个Golang版本基本上是之前实现的C++版本的clone,[C++实现移步](https://github.com/echoface/ltio/blob/master/components/boolean_indexer)
-使用限制：
-因为存在对信息存在编码和压缩，所以存在一些限制，使用时注意规避
-- 文档ID最大值限制为:`2^32`
+本库是基于[C++实现移步](https://github.com/echoface/ltio/blob/master/components/boolean_indexer)逻辑的基础上，进行整理改进之后的版本
+
+因为存在对信息存在编码和压缩，所以存在一些限制，使用时注意规避:
+- 文档ID最大值限制为:`[-2^43, 2^43]`
 - 每个文档最多拥有256个Conjunction
 - 每个DNF最大支持组合条件(field)个数：256
 - 支持任何可以通过parse值化的类型，见parser的定义
 - 默认倒排容器是hash, 因抽用了8bit用在存储field id，所以最大值数量限制：数值/字符串各2^56个（约7.205...e16）
+
+在引入Aho-corasick模式匹配查找容器后，Indexer的构建可能失败，整个库中因为一些限制，不允许一些错误的出现，否则布尔逻辑可能失败，因此对不可恢复
+错误引入了panic，需要集成的应用自己recover对应的panic进行业务逻辑的处理，而对于AddDocument 等允许返回错误的借口，需要业务自行判断是否继续
+构建索引；注意这里可能出现逻辑错误:eg：`docID: {"age" in [16...100] && "badField" not in ["ValueCantParser"]}`可能出现部分逻辑表达已经
+添加进索引(`"age" in [16...100]`)，但另一部分`"badField" not in ["ValueCantParser"]`并没有构建成功而返回错误， 如果此时允许错误而继续
+构建索引数据， 那么对于查询`{age: 20, badField:"被排除的值"}` 会得到满足的文档`docID`，而这是一个逻辑错误，因为`被排除的值` 是这个文档排除的
+表达式一部分， 但是因为AddDocument中的错误而没有构建进索引数据中。
 
 ### usage:
 
@@ -43,7 +50,7 @@ func main() {
 
 	// optional special a holder/container for field
 	builder.ConfigField("keyword", be_indexer.FieldOption{
-		Parser:    parser.ParserNameCommon,
+		Parser:    nil,
 		Container: be_indexer.HolderNameACMatcher,
 	})
 
@@ -75,10 +82,15 @@ func main() {
 
 
 ## roaring bitmap based boolean expression index(roaringidx)
-基于bitmap的布尔索引实现，相对于Boolean expression index论文的实现， 是利用bitmap在集合运算方面的优势实现的DNF Match逻辑，目前支持普通的倒排
-以及基于AhoCorasick的字符串模式匹配逻辑实现。从benchmark 结果来看， 在大规模多fields的场景下， 性能相对于Boolean expression index的实现性能
-相对来说要差一些，但是其可理解性要好一点。 bitmap方面借助roaring bitmap的实现，在大基数稀疏场景下可以节省大量的内存。aho corasick 选型上也选取
+
+基于roaring bitmap的布尔索引实现，相对于Boolean expression index论文的实现，是利用bitmap在集合运算方面的优势实现的DNF Match逻辑，目前支持普通的倒排
+以及基于AhoCorasick的字符串模式匹配逻辑实现。从benchmark 结果来看，在fields数量较多的场景下性能相对于Boolean expression index的实现性能
+相对来说要差一些，但是其可理解性要好一点。 借助roaring bitmap的实现，在文档数规模大、特征数较小的场景下可以节省大量的内存。aho corasick 选型上也选取
 了使用double array trie的实现，索引上内存有所压缩。
+
+限制：
+- 文档ID范围[-2^56, 2^56]
+- 单个Conjunction数量小于256个
 
 ### usage
 ```go

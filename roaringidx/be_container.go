@@ -20,8 +20,6 @@ type (
 		EncodeExpr(id ConjunctionID, expr *be_indexer.BooleanExpr) error
 
 		BuildBEContainer() (BEContainer, error)
-
-		NeedParser() bool
 	}
 
 	// DefaultBEContainer a common value based inverted index bitmap container
@@ -135,8 +133,4 @@ func (c *DefaultBEContainer) BuildBEContainer() (BEContainer, error) {
 	//}
 	//builder.container.wc.RunOptimize()
 	return c, nil
-}
-
-func (c *DefaultBEContainer) NeedParser() bool {
-	return true
 }

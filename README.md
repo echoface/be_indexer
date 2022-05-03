@@ -1,11 +1,13 @@
 # Boolean Expression Index
 
 ## Boolean expression index
-算法描述来源于论文：[Boolean expression index](https://theory.stanford.edu/~sergei/papers/vldb09-indexing.pdf)
+算法描述来源于论文：[Boolean expression indexing](https://theory.stanford.edu/~sergei/papers/vldb09-indexing.pdf),代码中也附带
+了一份pdf[doc/vldb09-indexing.pdf](doc/vldb09-indexing.pdf).
+
 为什么写它:
-- 大佬写的(优秀的代码)并没有开源
+- 大佬(Wolfhead)的实现并没有开源
 - 网络上能看到的描述和实现模糊不清，完全不能够工程化
-- 在线广告、某些功能模块借助其可以实现非常优雅的代码实现
+- 在线广告很多功能模块借助其可以实现非常优雅的代码实现
 - 论文没有提及的多值查询的问题没有直接给出实现提示，但是实际应用中都特别需要支持
 
 本库是基于[C++实现移步](https://github.com/echoface/ltio/blob/master/components/boolean_indexer)逻辑的基础上，进行整理改进之后的版本
@@ -15,14 +17,15 @@
 - 每个文档最多拥有256个Conjunction
 - 每个DNF最大支持组合条件(field)个数：256
 - 支持任何可以通过parse值化的类型，见parser的定义
-- 默认倒排容器是hash, 因抽用了8bit用在存储field id，所以最大值数量限制：数值/字符串各2^56个（约7.205...e16）
+- 默认倒排容器是hashmap,因抽用了8bit存储field，所以最大值：2^56
+- 支持AC自动机倒排容器，用于支持模式匹配逻辑查询(上下文内容定向等等)
 
 在引入Aho-corasick模式匹配查找容器后，Indexer的构建可能失败，整个库中因为一些限制，不允许一些错误的出现，否则布尔逻辑可能失败，因此对不可恢复
 错误引入了panic，需要集成的应用自己recover对应的panic进行业务逻辑的处理，而对于AddDocument 等允许返回错误的借口，需要业务自行判断是否继续
 构建索引；注意这里可能出现逻辑错误:eg：`docID: {"age" in [16...100] && "badField" not in ["ValueCantParser"]}`可能出现部分逻辑表达已经
 添加进索引(`"age" in [16...100]`)，但另一部分`"badField" not in ["ValueCantParser"]`并没有构建成功而返回错误， 如果此时允许错误而继续
-构建索引数据， 那么对于查询`{age: 20, badField:"被排除的值"}` 会得到满足的文档`docID`，而这是一个逻辑错误，因为`被排除的值` 是这个文档排除的
-表达式一部分， 但是因为AddDocument中的错误而没有构建进索引数据中。
+构建索引数据，那么对于查询`{age: 20, badField:"被排除的值"}` 会得到满足的文档`docID`，而这是一个逻辑错误，因为`被排除的值` 是这个文档排除的
+表达式一部分，但是因为AddDocument中的错误而没有构建进索引数据中。
 
 ### usage:
 

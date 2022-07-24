@@ -1,6 +1,9 @@
 # Boolean Expression Index
 
 ## Boolean expression index
+
+![design](./doc/yahoo-indexer.png):
+
 算法描述来源于论文：[Boolean expression indexing](https://theory.stanford.edu/~sergei/papers/vldb09-indexing.pdf),代码中也附带
 了一份pdf[doc/vldb09-indexing.pdf](doc/vldb09-indexing.pdf).
 
@@ -8,7 +11,7 @@
 - 大佬(Wolfhead)的实现并没有开源
 - 网络上能看到的描述和实现模糊不清，完全不能够工程化
 - 在线广告很多功能模块借助其可以实现非常优雅的代码实现
-- 论文没有提及的多值查询的问题没有直接给出实现提示，但是实际应用中都特别需要支持
+- 论文仅仅描述了核心算法逻辑,没有给出类似于多值查询等其他工程时实践和扩展的设计建议
 
 本库是基于[C++实现移步](https://github.com/echoface/ltio/blob/master/components/boolean_indexer)逻辑的基础上，进行整理改进之后的版本
 
@@ -16,9 +19,9 @@
 - 文档ID最大值限制为:`[-2^43, 2^43]`
 - 每个文档最多拥有256个Conjunction
 - 每个DNF最大支持组合条件(field)个数：256
-- 支持任何可以通过parse值化的类型，见parser的定义
-- 默认倒排容器是hashmap,因抽用了8bit存储field，所以最大值：2^56
-- 支持AC自动机倒排容器，用于支持模式匹配逻辑查询(上下文内容定向等等)
+- 支持自定义Tokenizer，见parser的定义
+- 支持容器扩展(eg:外部kv存储); 默认容器是hashmap,因抽用了8bit存储field，所以最大值：2^56
+- 支持模式匹配逻辑查询(基于AC自动机,用于上下文内容定向等等)
 
 在引入Aho-corasick模式匹配查找容器后，Indexer的构建可能失败，整个库中因为一些限制，不允许一些错误的出现，否则布尔逻辑可能失败，因此对不可恢复
 错误引入了panic，需要集成的应用自己recover对应的panic进行业务逻辑的处理，而对于AddDocument 等允许返回错误的借口，需要业务自行判断是否继续
@@ -34,11 +37,8 @@ package main
 
 import (
 	"fmt"
-
 	"github.com/echoface/be_indexer/parser"
-
 	"github.com/echoface/be_indexer/util"
-
 	"github.com/echoface/be_indexer"
 )
 
@@ -85,6 +85,8 @@ func main() {
 
 
 ## roaring bitmap based boolean expression index(roaringidx)
+
+![design](./doc/indexer_design.png):
 
 基于roaring bitmap的布尔索引实现，相对于Boolean expression index论文的实现，是利用bitmap在集合运算方面的优势实现的DNF Match逻辑，目前支持普通的倒排
 以及基于AhoCorasick的字符串模式匹配逻辑实现。从benchmark 结果来看，在fields数量较多的场景下性能相对于Boolean expression index的实现性能

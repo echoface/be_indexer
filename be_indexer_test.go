@@ -438,9 +438,11 @@ func TestBEIndex_Retrieve2(t *testing.T) {
 
 		start = time.Now()
 		idxRes := make(map[int]DocIDList)
+		sum := 0
 		for idx, ass := range queries {
 			ids, _ := index.Retrieve(ass.ToAssigns())
 			idxRes[idx] = ids
+			sum += len(ids)
 			if len(noneIdxRes[idx]) != len(ids) {
 				sort.Sort(ids)
 				sort.Sort(noneIdxRes[idx])
@@ -457,6 +459,7 @@ func TestBEIndex_Retrieve2(t *testing.T) {
 			}
 		}
 		duration = time.Since(start)
+		fmt.Println("avg result len:", int64(sum)/queriesCnt)
 		fmt.Printf("KGroupIndexQuery Take %d(ms), %d(us)/ops\n",
 			duration.Milliseconds(), duration.Microseconds()/queriesCnt)
 

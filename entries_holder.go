@@ -100,19 +100,11 @@ func (h *DefaultEntriesHolder) AddFieldEID(field *FieldDesc, values Values, eid 
 			return fmt.Errorf("field:%s parser value:%+v fail, err:%s", field.Field, value, err.Error())
 		}
 		for _, id := range ids {
-			h.AppendEntryID(NewKey(field.ID, id), eid)
+			key := NewKey(field.ID, id)
+			h.plEntries[key] = append(h.plEntries[key], eid)
 		}
 	}
 	return nil
-}
-
-func (h *DefaultEntriesHolder) AppendEntryID(key Key, id EntryID) {
-	entries, hit := h.plEntries[key]
-	if !hit {
-		h.plEntries[key] = Entries{id}
-	}
-	entries = append(entries, id)
-	h.plEntries[key] = entries
 }
 
 func (h *DefaultEntriesHolder) getEntries(key Key) Entries {

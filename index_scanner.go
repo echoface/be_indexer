@@ -80,25 +80,35 @@ func (ec *EntriesCursor) GetCurEntryID() EntryID {
 	return NULLENTRY
 }
 
+func (ec *EntriesCursor) LinearSkip(id EntryID) EntryID {
+	maxRight := len(ec.entries) - 1
+	for ec.cursor <= maxRight && ec.entries[ec.cursor] <= id {
+		ec.cursor++
+	}
+	return ec.GetCurEntryID()
+}
+
+// Skip https://en.m.wikipedia.org/wiki/Exponential_search
+// most cases, the target id is far away of cursor position
 func (ec *EntriesCursor) Skip(id EntryID) EntryID {
 	if entry := ec.GetCurEntryID(); entry > id {
 		return entry
 	}
+	rightIdx := ec.cursor + 1
+	maxRight := len(ec.entries) - 1
 
-	rightIdx := ec.idSize
-	if j := ec.cursor + FastTestOffset; j < ec.idSize && ec.entries[j] > id {
-		rightIdx = j
+	for rightIdx <= maxRight && ec.entries[rightIdx] <= id {
+		ec.cursor = rightIdx
+		rightIdx = (rightIdx << 1) // 溢出? 64bit machine
 	}
-
+	if rightIdx > maxRight {
+		rightIdx = maxRight
+	}
+	if rightIdx-ec.cursor < LinearSkipDistance {
+		return ec.LinearSkip(id)
+	}
 	var mid int
-	for ec.cursor < rightIdx && ec.entries[ec.cursor] <= id {
-		if rightIdx-ec.cursor < LinearSkipDistance {
-			for ec.cursor < ec.idSize && ec.entries[ec.cursor] <= id {
-				ec.cursor++
-			}
-			return ec.GetCurEntryID()
-		}
-
+	for ec.cursor <= rightIdx && ec.entries[ec.cursor] <= id {
 		mid = (ec.cursor + rightIdx) >> 1
 		if ec.entries[mid] <= id {
 			ec.cursor = mid + 1
@@ -109,24 +119,36 @@ func (ec *EntriesCursor) Skip(id EntryID) EntryID {
 	return ec.GetCurEntryID()
 }
 
+func (ec *EntriesCursor) LinearSkipTo(id EntryID) EntryID {
+	maxRight := len(ec.entries) - 1
+	for ec.cursor <= maxRight && ec.entries[ec.cursor] < id {
+		ec.cursor++
+	}
+	return ec.GetCurEntryID()
+}
+
 func (ec *EntriesCursor) SkipTo(id EntryID) EntryID {
 	if entry := ec.GetCurEntryID(); entry >= id {
 		return entry
 	}
+	rightIdx := ec.cursor + 1
+	maxRight := len(ec.entries) - 1
 
-	rightIdx := ec.idSize
-	if j := ec.cursor + FastTestOffset; j < ec.idSize && ec.entries[j] >= id {
-		rightIdx = j
+	for rightIdx <= maxRight && ec.entries[rightIdx] < id {
+		ec.cursor = rightIdx
+		rightIdx = (rightIdx << 1) // 溢出? 64bit machine
+	}
+	if rightIdx > maxRight {
+		rightIdx = maxRight
+	}
+	if rightIdx-ec.cursor < LinearSkipDistance {
+		return ec.LinearSkipTo(id)
 	}
 
 	var mid int
-	for ec.cursor < rightIdx && ec.entries[ec.cursor] < id {
-
+	for ec.cursor <= rightIdx && ec.entries[ec.cursor] < id {
 		if rightIdx-ec.cursor < LinearSkipDistance {
-			for ec.cursor < ec.idSize && ec.entries[ec.cursor] < id {
-				ec.cursor++
-			}
-			return ec.GetCurEntryID()
+			return ec.LinearSkipTo(id)
 		}
 
 		mid = (ec.cursor + rightIdx) >> 1

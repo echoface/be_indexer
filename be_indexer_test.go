@@ -400,7 +400,7 @@ func TestBEIndex_Retrieve2(t *testing.T) {
 	LogLevel = ErrorLevel
 
 	convey.Convey("test index and simple bench for kGroup/Compacted indexer", t, func() {
-		docs, queries := BuildTestDocumentAndQueries(100000, 100, true)
+		docs, queries := BuildTestDocumentAndQueries(500000, 100, true)
 		b := NewIndexerBuilder()
 		cb := NewCompactIndexerBuilder()
 		for _, doc := range docs {

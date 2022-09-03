@@ -137,7 +137,7 @@ func (c *ACBEContainer) BuildBEContainer() (BEContainer, error) {
 	var err error
 	keys := make([][]rune, 0, len(c.incValues))
 	if len(c.incValues) > 0 {
-		for kw, _ := range c.incValues {
+		for kw := range c.incValues {
 			keys = append(keys, []rune(kw))
 		}
 		c.inc = &aho.Machine{}
@@ -148,7 +148,7 @@ func (c *ACBEContainer) BuildBEContainer() (BEContainer, error) {
 
 	if len(c.excValues) > 0 {
 		keys = keys[:0]
-		for kw, _ := range c.excValues {
+		for kw := range c.excValues {
 			keys = append(keys, []rune(kw))
 		}
 		c.exc = &aho.Machine{}

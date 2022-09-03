@@ -152,7 +152,7 @@ func QueryTest(index be_indexer.BEIndex) {
 	start := time.Now().UnixNano() / 1000000
 	cnt := 0
 	for _, ass := range assigns {
-		ids, _ := index.Retrieve(ass)
+		ids, _ := index.Retrieve(ass, be_indexer.WithStepDetail())
 		cnt += len(ids)
 	}
 	fmt.Println("avg result len:", float64(cnt)/float64(len(assigns)))

@@ -1,14 +1,15 @@
 package be_indexer
 
 import (
-	"github.com/smartystreets/goconvey/convey"
 	"testing"
+
+	"github.com/smartystreets/goconvey/convey"
 )
 
 func TestDocument_AddConjunction(t *testing.T) {
 	convey.Convey("test doc option", t, func() {
 		doc := NewDocument(12)
-		doc.AddConjunction(NewConjunction().In("age", NewInt32Values2(12, 15)))
+		doc.AddConjunction(NewConjunction().In("age", NewInt32Values(12, 15)))
 
 		convey.So(doc.ID, convey.ShouldEqual, 12)
 		convey.So(len(doc.Cons), convey.ShouldEqual, 1)
@@ -24,7 +25,7 @@ func TestDocument_Prepare(t *testing.T) {
 
 	convey.Convey("test doc prepare", t, func() {
 		doc := NewDocument(12)
-		doc.AddConjunction(NewConjunction().In("age", NewInt32Values2(12, 15)))
+		doc.AddConjunction(NewConjunction().In("age", NewInt32Values(12, 15)))
 
 		convey.So(doc.ID, convey.ShouldEqual, 12)
 		convey.So(len(doc.Cons), convey.ShouldEqual, 1)
@@ -35,25 +36,23 @@ func TestDocument_Prepare(t *testing.T) {
 
 func TestConjunction_AddBoolExpr(t *testing.T) {
 	convey.Convey("test expressions", t, func() {
-		conj := NewConjunction().NotIn("age", NewValues2(12, 14))
+		conj := NewConjunction().NotIn("age", NewIntValues(12, 14))
 		convey.So(len(conj.Expressions), convey.ShouldEqual, 1)
 		convey.So(conj.Expressions["age"].Incl, convey.ShouldBeFalse)
-		convey.So(len(conj.Expressions["age"].Value), convey.ShouldEqual, 2)
 
-		conj.In("tag", NewValues2("tag1"))
+		conj.In("tag", NewStrValues("tag1"))
 		convey.So(len(conj.Expressions), convey.ShouldEqual, 2)
 		convey.So(conj.Expressions["tag"].Incl, convey.ShouldBeTrue)
-		convey.So(len(conj.Expressions["tag"].Value), convey.ShouldEqual, 1)
 
 		convey.So(conj.CalcConjSize(), convey.ShouldEqual, 1)
 
-		conj.AddBoolExpr(NewBoolExpr("ip", true, NewValues2("localhost", "127.0.0.1")))
+		conj.AddBoolExpr(NewBoolExpr("ip", true, NewStrValues("localhost", "127.0.0.1")))
 		convey.So(len(conj.Expressions), convey.ShouldEqual, 3)
 
 		convey.So(conj.CalcConjSize(), convey.ShouldEqual, 2)
 
 		convey.So(func() {
-			conj.addExpression("age", true, NewValues2(1))
+			conj.addExpression("age", true, 1)
 		}, convey.ShouldPanic)
 
 	})
@@ -63,8 +62,8 @@ func TestDocument_String(t *testing.T) {
 	convey.Convey("test string", t, func() {
 		doc := NewDocument(100)
 		doc.AddConjunction(
-			NewConjunction().In("age", NewValues(1, 2, 3)),
-			NewConjunction().NotIn("tag", NewValues("a", "b")).Include("age", NewValues(18)),
+			NewConjunction().In("age", NewIntValues(1, 2, 3)),
+			NewConjunction().NotIn("tag", NewStrValues("a", "b")).Include("age", NewIntValues(18)),
 		)
 		t.Log(doc.String())
 	})

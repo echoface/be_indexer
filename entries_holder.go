@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"github.com/echoface/be_indexer/util"
 )
 
 type (
@@ -11,7 +13,7 @@ type (
 	// 目前的三种典型场景:
 	// 1. 内存KV 存储所有Field值对应的EntryID列表(PostingList)
 	// 2. AC自动机：用于将所有的values 构建生成AC自动机，对输入的语句找到匹配的PostingList
-	// 3. 1的一种扩展，引入网络存储，内部维护一个LRU/LFU cache减轻内存压力
+	// 3. 1的一种扩展，引入网络\磁盘存储，内部维护一个LRU/LFU cache减轻内存压力
 	EntriesHolder interface {
 		EnableDebug(debug bool)
 
@@ -19,15 +21,32 @@ type (
 
 		DumpEntries(buffer *strings.Builder)
 
+		// GetEntries retrieve all satisfied PostingList from holder
+		GetEntries(field *FieldDesc, assigns Values) (EntriesCursors, error)
+
+		// PrepareAppend holder tokenize/parse values into what its needed data
+		// then wait IndexerBuilder call CommitAppend to apply 'Data' into holder
+		// when all expression prepare success in a conjunction
+		PrepareAppend(field *FieldDesc, values *BoolValues) (Preparation, error)
+
+		// CommitAppend NOTE: if partial success for a conjunction will cause logic error
+		// so for a Holder implement should panic it if any errors happen
+		CommitAppend(preparation *Preparation, eid EntryID)
+
 		// CompileEntries finalize entries status for query, build or make sorted
 		// according to the paper, entries must be sorted
 		CompileEntries() error
+	}
 
-		GetEntries(field *FieldDesc, assigns Values) (EntriesCursors, error)
-		//GetEntries(field *FieldDesc, assigns Values) (FieldCursor, error)
+	// Preparation : a temp context use hold partital parsed data for a field,
+	// it will commit to holder when all field(in a Conjunction) be parsed, holder can
+	// save customized data into Preparation.Data then retrieve(use) it when CommitEntries called
+	Preparation struct {
+		entryID EntryID
+		field   *FieldDesc
+		holder  EntriesHolder
 
-		// AddFieldEID tokenize values and add it to holder container
-		AddFieldEID(field *FieldDesc, values Values, eid EntryID) error
+		Data interface{}
 	}
 
 	// DefaultEntriesHolder EntriesHolder implement base on hash map holder map<key, Entries>
@@ -39,7 +58,7 @@ type (
 	}
 )
 
-func NewDefaultEntriesHolder() EntriesHolder {
+func NewDefaultEntriesHolder() *DefaultEntriesHolder {
 	return &DefaultEntriesHolder{
 		plEntries: map[Key]Entries{},
 	}
@@ -75,36 +94,49 @@ func (h *DefaultEntriesHolder) CompileEntries() error {
 func (h *DefaultEntriesHolder) GetEntries(field *FieldDesc, assigns Values) (r EntriesCursors, e error) {
 	var ids []uint64
 
-	for _, vi := range assigns {
-		if ids, e = field.Parser.ParseAssign(vi); e != nil {
-			return nil, e
-		}
-		for _, id := range ids {
+	if ids, e = field.Parser.ParseAssign(assigns); e != nil {
+		return nil, e
+	}
+	for _, id := range ids {
 
-			key := NewKey(field.ID, id)
+		key := NewKey(field.ID, id)
 
-			if entries := h.getEntries(key); len(entries) > 0 {
-
-				r = append(r, NewEntriesCursor(newQKey(field.Field, vi), entries))
-			}
+		if entries := h.getEntries(key); len(entries) > 0 {
+			r = append(r, NewEntriesCursor(newQKey(field.Field, id), entries))
 		}
 	}
 	return r, nil
 }
 
-func (h *DefaultEntriesHolder) AddFieldEID(field *FieldDesc, values Values, eid EntryID) (err error) {
+func (h *DefaultEntriesHolder) PrepareAppend(field *FieldDesc, values *BoolValues) (r Preparation, e error) {
+	util.PanicIf(values.Operator != ValueOptEQ, "default container support EQ operator only")
+
 	var ids []uint64
 	// NOTE: ids can be replicated if expression contain cross condition
-	for _, value := range values {
-		if ids, err = field.Parser.ParseValue(value); err != nil {
-			return fmt.Errorf("field:%s parser value:%+v fail, err:%s", field.Field, value, err.Error())
-		}
-		for _, id := range ids {
-			key := NewKey(field.ID, id)
-			h.plEntries[key] = append(h.plEntries[key], eid)
-		}
+	if ids, e = field.Parser.ParseValue(values.Value); e != nil {
+		return r, fmt.Errorf("field:%s value:%+v parse fail, err:%s", field.Field, values, e.Error())
 	}
-	return nil
+	r.Data = ids
+	return r, nil
+}
+
+// CommitAppend NOTE: if partial success for a conjunction will cause logic error
+// so for a Holder implement should panic it if any errors happen
+func (h *DefaultEntriesHolder) CommitAppend(preparation *Preparation, eid EntryID) {
+	if preparation.Data == nil {
+		return
+	}
+
+	var ok bool
+	var ids []uint64
+	if ids, ok = preparation.Data.([]uint64); !ok {
+		panic(fmt.Errorf("bad preparation.Data type, oops..."))
+	}
+
+	for _, id := range ids {
+		key := NewKey(preparation.field.ID, id)
+		h.plEntries[key] = append(h.plEntries[key], eid)
+	}
 }
 
 func (h *DefaultEntriesHolder) getEntries(key Key) Entries {

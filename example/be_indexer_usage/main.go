@@ -29,19 +29,19 @@ func main() {
 	indexer := builder.BuildIndex()
 
 	result, e := indexer.Retrieve(map[be_indexer.BEField]be_indexer.Values{
-		"age": be_indexer.NewValues2(5),
+		"age": be_indexer.NewIntValues(5),
 	})
 	fmt.Println(e, result)
 
 	result, e = indexer.Retrieve(map[be_indexer.BEField]be_indexer.Values{
-		"ip": be_indexer.NewStrValues2("localhost"),
+		"ip": be_indexer.NewStrValues("localhost"),
 	})
 	fmt.Println(e, result)
 
 	result, e = indexer.Retrieve(map[be_indexer.BEField]be_indexer.Values{
-		"age":  be_indexer.NewIntValues2(1),
-		"city": be_indexer.NewStrValues2("sh"),
-		"tag":  be_indexer.NewValues2("tag1"),
+		"age":  be_indexer.NewIntValues(1),
+		"city": be_indexer.NewStrValues("sh"),
+		"tag":  be_indexer.NewStrValues("tag1"),
 	}, be_indexer.WithStepDetail(), be_indexer.WithDumpEntries())
 	fmt.Println(e, result)
 }

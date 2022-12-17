@@ -25,16 +25,16 @@ type MockTargeting struct {
 func (t *MockTargeting) ToConj() *be_indexer.Conjunction {
 	conj := be_indexer.NewConjunction()
 	if len(t.A) > 0 {
-		conj.In("A", be_indexer.NewIntValues(t.A...))
+		conj.In("A", t.A)
 	}
 	if len(t.B) > 0 {
-		conj.In("B", be_indexer.NewIntValues(t.B...))
+		conj.In("B", t.B)
 	}
 	if len(t.C) > 0 {
-		conj.In("C", be_indexer.NewIntValues(t.C...))
+		conj.In("C", t.C)
 	}
 	if len(t.D) > 0 {
-		conj.In("D", be_indexer.NewIntValues(t.D...))
+		conj.In("D", t.D)
 	}
 	return conj
 }
@@ -148,16 +148,16 @@ func main() {
 		Qs = append(Qs, q)
 		assign := be_indexer.Assignments{}
 		if len(q.A) > 0 {
-			assign["A"] = be_indexer.NewIntValues(q.A...)
+			assign["A"] = q.A
 		}
 		if len(q.B) > 0 {
-			assign["B"] = be_indexer.NewIntValues(q.B...)
+			assign["B"] = q.B
 		}
 		if len(q.C) > 0 {
-			assign["C"] = be_indexer.NewIntValues(q.C...)
+			assign["C"] = q.C
 		}
 		if len(q.D) > 0 {
-			assign["D"] = be_indexer.NewIntValues(q.D...)
+			assign["D"] = q.D
 		}
 		assigns = append(assigns, assign)
 	}

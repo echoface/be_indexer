@@ -3,8 +3,8 @@ package be_indexer
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"math/rand"
+	"os"
 	"sort"
 	"strings"
 	"testing"
@@ -17,7 +17,7 @@ import (
 func buildTestDoc() []*Document {
 
 	docs := make([]*Document, 0)
-	content, e := ioutil.ReadFile("./test_data/test_docs.json")
+	content, e := os.ReadFile("./test_data/test_docs.json")
 	util.PanicIfErr(e, "load test docs fail")
 
 	if e = json.Unmarshal(content, &docs); e != nil {
@@ -61,19 +61,19 @@ func TestBEIndex_Retrieve(t *testing.T) {
 	printIndexEntries(indexer)
 
 	result, e := indexer.Retrieve(map[BEField]Values{
-		"age": NewValues2(5),
+		"age": NewIntValues(5),
 	})
 	fmt.Println(e, result)
 
 	result, e = indexer.Retrieve(map[BEField]Values{
-		"ip": NewStrValues2("localhost"),
+		"ip": NewStrValues("localhost"),
 	})
 	fmt.Println(e, result)
 
 	result, e = indexer.Retrieve(map[BEField]Values{
-		"age":  NewIntValues2(1),
-		"city": NewStrValues2("sh"),
-		"tag":  NewValues2("tag1"),
+		"age":  NewIntValues(1),
+		"city": NewStrValues("sh"),
+		"tag":  NewStrValues("tag1"),
 	})
 	fmt.Println(e, result)
 }
@@ -100,16 +100,16 @@ type Q struct {
 func (q *Q) ToAssigns() Assignments {
 	assign := Assignments{}
 	if len(q.A) > 0 {
-		assign["A"] = NewIntValues(q.A...)
+		assign["A"] = q.A
 	}
 	if len(q.B) > 0 {
-		assign["B"] = NewIntValues(q.B...)
+		assign["B"] = q.B
 	}
 	if len(q.C) > 0 {
-		assign["C"] = NewIntValues(q.C...)
+		assign["C"] = q.C
 	}
 	if len(q.D) > 0 {
-		assign["D"] = NewIntValues(q.D...)
+		assign["D"] = q.D
 	}
 	return assign
 }
@@ -118,30 +118,30 @@ func (t *MockTargeting) ToConj() *Conjunction {
 	conj := NewConjunction()
 	if len(t.A) > 0 {
 		if t.NegA {
-			conj.NotIn("A", NewIntValues(t.A...))
+			conj.NotIn("A", t.A)
 		} else {
-			conj.In("A", NewIntValues(t.A...))
+			conj.In("A", t.A)
 		}
 	}
 	if len(t.B) > 0 {
 		if t.NegB {
-			conj.NotIn("B", NewIntValues(t.B...))
+			conj.NotIn("B", t.B)
 		} else {
-			conj.In("B", NewIntValues(t.B...))
+			conj.In("B", t.B)
 		}
 	}
 	if len(t.C) > 0 {
 		if t.NegC {
-			conj.NotIn("C", NewIntValues(t.C...))
+			conj.NotIn("C", t.C)
 		} else {
-			conj.In("C", NewIntValues(t.C...))
+			conj.In("C", t.C)
 		}
 	}
 	if len(t.D) > 0 {
 		if t.NegD {
-			conj.NotIn("D", NewIntValues(t.D...))
+			conj.NotIn("D", t.D)
 		} else {
-			conj.In("D", NewIntValues(t.D...))
+			conj.In("D", t.D)
 		}
 	}
 	return conj
@@ -541,8 +541,8 @@ func TestBEIndex_Retrieve4(t *testing.T) {
 
 	doc := NewDocument(12)
 	doc.AddConjunction(NewConjunction().
-		In("tag", NewInt32Values2(1)).
-		NotIn("age", NewInt32Values2(40, 50, 60, 70)))
+		In("tag", 1).
+		NotIn("age", NewInt32Values(40, 50, 60, 70)))
 
 	convey.Convey("test doc add retrieve basic", t, func() {
 		err := builder.AddDocument(doc)
@@ -552,27 +552,27 @@ func TestBEIndex_Retrieve4(t *testing.T) {
 
 		for _, x := range []int32{40, 50, 60, 70} {
 			result, e := indexer.Retrieve(Assignments{
-				"age": NewInt32Values2(x),
+				"age": x,
 			})
 			convey.So(e, convey.ShouldBeNil)
 			convey.So(len(result), convey.ShouldEqual, 0)
 		}
 		result, e := indexer.Retrieve(Assignments{
-			"age": NewInt32Values2(40, 50, 60, 70),
+			"age": NewInt32Values(40, 50, 60, 70),
 		})
 		convey.So(e, convey.ShouldBeNil)
 		convey.So(len(result), convey.ShouldEqual, 0)
 
 		result, e = indexer.Retrieve(Assignments{
-			"age": NewInt32Values2(25),
-			"tag": NewInt32Values2(1),
+			"age": NewInt32Values(25),
+			"tag": NewInt32Values(1),
 		})
 		convey.So(e, convey.ShouldBeNil)
 		convey.So(result, convey.ShouldResemble, DocIDList{12})
 
 		result, e = indexer.Retrieve(Assignments{
-			"age": NewIntValues2(40), // age not in 40 so should be nil result
-			"tag": NewInt32Values2(1),
+			"age": NewIntValues(40), // age not in 40 so should be nil result
+			"tag": NewInt32Values(1),
 		})
 		convey.So(e, convey.ShouldBeNil)
 		convey.So(len(result), convey.ShouldEqual, 0)
@@ -581,17 +581,17 @@ func TestBEIndex_Retrieve4(t *testing.T) {
 			result, e = indexer.Retrieve(Assignments{})
 
 			result, e = indexer.Retrieve(Assignments{
-				"age":             NewIntValues2(40),
-				"tag":             NewInt32Values2(1),
-				"not-found-field": NewInt32Values2(1, 2, 3),
+				"age":             NewIntValues(40),
+				"tag":             NewInt32Values(1),
+				"not-found-field": NewInt32Values(1, 2, 3),
 			})
 
 		}, convey.ShouldNotPanic)
 
 		customizedCollector := PickCollector()
 		e = indexer.RetrieveWithCollector(Assignments{
-			"age": NewInt32Values2(25),
-			"tag": NewInt32Values2(1),
+			"age": NewInt32Values(25),
+			"tag": NewInt32Values(1),
 		}, customizedCollector)
 		convey.So(e, convey.ShouldBeNil)
 		convey.So(customizedCollector.GetDocIDs(), convey.ShouldResemble, DocIDList{12})
@@ -605,30 +605,30 @@ func TestBEIndex_Retrieve5(t *testing.T) {
 	// 12: (tag IN 1 && age In 27,50) or (tag IN 12)
 	doc := NewDocument(12)
 	conj := NewConjunction().
-		In("tag", NewInt32Values2(1)).
-		In("age", NewInt32Values2(27, 50))
+		In("tag", NewInt32Values(1)).
+		In("age", NewInt32Values(27, 50))
 	conj2 := NewConjunction().
-		In("tag", NewInt32Values2(12))
+		In("tag", NewInt32Values(12))
 	doc.AddConjunction(conj, conj2)
 	_ = builder.AddDocument(doc)
 
 	// 13: (tag IN 1 && age Not 27) or (tag Not 60)
 	doc = NewDocument(13)
 	conj = NewConjunction().
-		In("tag", NewInt32Values2(1)).
-		NotIn("age", NewInt32Values2(27))
+		In("tag", NewInt32Values(1)).
+		NotIn("age", NewInt32Values(27))
 	conj2 = NewConjunction().
-		NotIn("age", NewInt32Values2(60))
+		NotIn("age", NewInt32Values(60))
 	doc.AddConjunction(conj, conj2)
 	_ = builder.AddDocument(doc)
 
 	// 14: (tag in 1,2 && tag in 12) or ("age In 60") or (sex In man)
 	doc = NewDocument(14)
 	conj = NewConjunction().
-		In("tag", NewInt32Values2(1, 2)).
-		In("age", NewInt32Values2(12))
+		In("tag", NewInt32Values(1, 2)).
+		In("age", NewInt32Values(12))
 	conj2 = NewConjunction().
-		In("age", NewInt32Values2(60))
+		In("age", NewInt32Values(60))
 	conj3 := NewConjunction().
 		In("sex", NewStrValues("man"))
 	doc.AddConjunction(conj, conj2, conj3)
@@ -672,7 +672,7 @@ func TestBEIndex_Retrieve5(t *testing.T) {
 }
 
 func TestBEIndex_Retrieve6(t *testing.T) {
-	LogLevel = ErrorLevel
+	LogLevel = DebugLevel
 	builder := NewIndexerBuilder()
 	builder.ConfigField("keyword", FieldOption{
 		Container: HolderNameACMatcher,
@@ -681,7 +681,7 @@ func TestBEIndex_Retrieve6(t *testing.T) {
 	// 12: (tag IN 1 && age In 27,50) or (tag IN 12)
 	doc := NewDocument(12)
 	conj := NewConjunction().
-		In("tag", NewInt32Values2(1)).
+		In("tag", NewInt32Values(1)).
 		In("keyword", NewStrValues("abc", "红包", "棋牌"))
 	doc.AddConjunction(conj)
 	_ = builder.AddDocument(doc)
@@ -689,14 +689,14 @@ func TestBEIndex_Retrieve6(t *testing.T) {
 	// 13: (tag IN 1 && age Not 27) or (tag Not 60)
 	doc = NewDocument(13)
 	conj = NewConjunction().
-		In("tag", NewInt32Values2(1)).NotIn("age", NewInt32Values2(27, 15, 18, 22, 28, 32))
+		In("tag", NewInt32Values(1)).NotIn("age", NewInt32Values(27, 15, 18, 22, 28, 32))
 	doc.AddConjunction(conj)
 	_ = builder.AddDocument(doc)
 
 	// 14: (tag in 1,2 && tag in 12) or ("age In 60") or (sex In man)
 	doc = NewDocument(14)
 	conj = NewConjunction().
-		In("tag", NewInt32Values2(1, 2)).
+		In("tag", NewInt32Values(1, 2)).
 		In("sex", NewStrValues("women"))
 	conj3 := NewConjunction().
 		NotIn("keyword", NewStrValues("红包", "拉拉", "解放")).
@@ -707,18 +707,63 @@ func TestBEIndex_Retrieve6(t *testing.T) {
 	convey.Convey("test ac matcher retrieve", t, func() {
 
 		indexer := builder.BuildIndex()
+		printIndexInfo(indexer)
+		printIndexEntries(indexer)
 
 		var err error
 		var ids DocIDList
 		ids, err = indexer.Retrieve(Assignments{
-			"sex":     []interface{}{"man"},
+			"sex":     []string{"man"},
 			"keyword": NewStrValues("解放军发红包", "abc英文歌"),
-			"age":     []interface{}{28, 2, 27},
-			"tag":     []interface{}{1, 2, 27},
-		})
+			"age":     []int{28, 2, 27},
+			"tag":     []int{1, 2, 27},
+		}, WithDumpEntries(), WithStepDetail())
 		fmt.Println(ids)
 		sort.Sort(ids)
 		convey.So(ids, convey.ShouldResemble, DocIDList{12})
 		convey.So(err, convey.ShouldBeNil)
 	})
+}
+
+func TestBEIndex_RetrievePartialConjunction(t *testing.T) {
+	LogLevel = DebugLevel
+
+	// 12: (tag IN 1 && age In 27,50) or (tag IN 12)
+	doc := NewDocument(12)
+	doc.AddConjunction(NewConjunction().
+		In("tag", NewInt32Values(1)).
+		In("keyword", NewStrValues("abc", "红包", "棋牌")))
+	doc.AddConjunction(NewConjunction().
+		In("tag", NewInt32Values(1)).
+		In("keyword", 12))
+
+	convey.Convey("不允许一个doc部分conjunction异常", t, func() {
+		builder := NewIndexerBuilder(WithPanicIfBadConjunction(true))
+		builder.ConfigField("keyword", FieldOption{
+			Container: HolderNameACMatcher,
+		})
+		convey.So(func() {
+			_ = builder.AddDocument(doc)
+			_ = builder.BuildIndex()
+		}, convey.ShouldPanic)
+	})
+
+	convey.Convey("部分Conjunction异常，不影响其他Conjunction匹配", t, func() {
+		builder := NewIndexerBuilder()
+		builder.ConfigField("keyword", FieldOption{
+			Container: HolderNameACMatcher,
+		})
+		_ = builder.AddDocument(doc)
+		indexer := builder.BuildIndex()
+		//printIndexInfo(indexer)
+		//printIndexEntries(indexer)
+		ids, err := indexer.Retrieve(Assignments{
+			"keyword": NewStrValues("解放军发红包", "abc英文歌"),
+			"age":     []int{28, 2, 27},
+			"tag":     []int{1, 2, 27},
+		}, WithDumpEntries(), WithStepDetail())
+		convey.So(err, convey.ShouldBeNil)
+		convey.So(ids, convey.ShouldResemble, DocIDList{12})
+	})
+
 }

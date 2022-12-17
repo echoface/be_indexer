@@ -7,8 +7,9 @@ type (
 )
 
 const (
-	HolderNameDefault   = "default"
-	HolderNameACMatcher = "ac_matcher"
+	HolderNameDefault      = "default"
+	HolderNameACMatcher    = "ac_matcher"
+	HolderNameDefaultExLgt = "default_ex_lgt"
 )
 
 var holderFactory = make(map[string]HolderBuilder)
@@ -17,7 +18,12 @@ func init() {
 	_ = RegisterEntriesHolder(HolderNameACMatcher, func() EntriesHolder {
 		return NewACEntriesHolder(ACHolderOption{QuerySep: " "})
 	})
-	_ = RegisterEntriesHolder(HolderNameDefault, NewDefaultEntriesHolder)
+	_ = RegisterEntriesHolder(HolderNameDefault, func() EntriesHolder {
+		return NewDefaultEntriesHolder()
+	})
+	_ = RegisterEntriesHolder(HolderNameDefaultExLgt, func() EntriesHolder {
+		return NewDefaultExtLtGtHolder()
+	})
 }
 
 func NewEntriesHolder(name string) EntriesHolder {

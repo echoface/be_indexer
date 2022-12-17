@@ -120,7 +120,7 @@ func (key Key) String() string {
 	return fmt.Sprintf("<%d,%d>", key.GetFieldID(), key.GetValueID())
 }
 
-//Len Entries sort API
+// Len Entries sort API
 func (s Entries) Len() int           { return len(s) }
 func (s Entries) Swap(i, j int)      { s[i], s[j] = s[j], s[i] }
 func (s Entries) Less(i, j int) bool { return s[i] < s[j] }

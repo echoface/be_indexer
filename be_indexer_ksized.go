@@ -80,8 +80,9 @@ func (c *EntriesContainer) DumpEntries(buf *strings.Builder) {
 // DumpInfo
 // default holder: {name:%s value_count:%d, max_entries:%d avg_entries:%d}
 // field holder:
-//      >field:%s {name: %s, value_count:%d max_entries:%d avg_entries:%d}
-//      >field:%s {name: %s, value_count:%d max_entries:%d avg_entries:%d}
+//
+//	>field:%s {name: %s, value_count:%d max_entries:%d avg_entries:%d}
+//	>field:%s {name: %s, value_count:%d max_entries:%d avg_entries:%d}
 func (c *EntriesContainer) DumpInfo(buf *strings.Builder) {
 	buf.WriteString("default holder:")
 	c.defaultHolder.DumpInfo(buf)
@@ -308,11 +309,14 @@ func (bi *SizeGroupedBEIndex) DumpEntries(sb *strings.Builder) {
 // >>> K: N
 // default holder: {name:%s value_count:%d, max_entries:%d avg_entries:%d}
 // field holder:
-//      >field:%s {name: %s, value_count:%d max_entries:%d avg_entries:%d}
+//
+//	>field:%s {name: %s, value_count:%d max_entries:%d avg_entries:%d}
+//
 // >>> K: N
 // default holder: {name:%s value_count:%d, max_entries:%d avg_entries:%d}
 // field holder:
-//      >field:%s {name: %s, value_count:%d max_entries:%d avg_entries:%d}
+//
+//	>field:%s {name: %s, value_count:%d max_entries:%d avg_entries:%d}
 func (bi *SizeGroupedBEIndex) DumpIndexInfo(sb *strings.Builder) {
 	sb.WriteString("\n+++++++ size grouped boolean indexing info +++++++++++\n")
 	sb.WriteString(fmt.Sprintf("wildcard info: count:%d\n", len(bi.wildcardEntries)))

@@ -75,24 +75,20 @@ func (c *DefaultBEContainer) AddExclude(value BEValue, id ConjunctionID) {
 func (c *DefaultBEContainer) Retrieve(values be_indexer.Values, inout *PostingList) error {
 	inout.Or(c.wc.Bitmap)
 
-	if len(values) == 0 {
+	if util.NilInterface(values) {
 		return nil
 	}
 
-	fieldIDs := make([]uint64, 0, len(values))
-	for _, vi := range values {
-		ids, err := c.meta.Parser.ParseAssign(vi)
-		if err != nil {
-			return err
-		}
-		fieldIDs = append(fieldIDs, ids...)
+	ids, err := c.meta.Parser.ParseAssign(values)
+	if err != nil {
+		return err
 	}
-	for _, id := range fieldIDs {
+	for _, id := range ids {
 		if incPl, ok := c.inc[BEValue(id)]; ok {
 			inout.Or(incPl.Bitmap)
 		}
 	}
-	for _, id := range fieldIDs {
+	for _, id := range ids {
 		if excPl, ok := c.exc[BEValue(id)]; ok {
 			inout.AndNot(excPl.Bitmap)
 		}
@@ -108,17 +104,17 @@ func (c *DefaultBEContainer) EncodeExpr(id ConjunctionID, expr *be_indexer.Boole
 	if expr == nil {
 		c.EncodeWildcard(id)
 	}
-	for _, vi := range expr.Value {
-		valueIDs, err := c.meta.Parser.ParseValue(vi)
-		if err != nil {
-			return err
-		}
-		for _, value := range valueIDs {
-			if expr.Incl {
-				c.AddInclude(BEValue(value), id)
-			} else {
-				c.AddExclude(BEValue(value), id)
-			}
+	util.PanicIf(expr.Operator != be_indexer.ValueOptEQ, "default container support EQ operator only")
+
+	valueIDs, err := c.meta.Parser.ParseValue(expr.Value)
+	if err != nil {
+		return err
+	}
+	for _, value := range valueIDs {
+		if expr.Incl {
+			c.AddInclude(BEValue(value), id)
+		} else {
+			c.AddExclude(BEValue(value), id)
 		}
 	}
 	return nil

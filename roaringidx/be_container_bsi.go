@@ -2,8 +2,8 @@ package roaringidx
 
 // BSIBEContainer a bit-slice indexing based index bitmap container
 type (
-//BSIBEContainer struct {
-//}
+// BSIBEContainer struct {
+// }
 )
 
 //

@@ -61,7 +61,7 @@ func DistinctInt(vs []int) (res []int) {
 	for _, v := range vs {
 		m[v] = struct{}{}
 	}
-	for v, _ := range m {
+	for v := range m {
 		res = append(res, v)
 	}
 	return res

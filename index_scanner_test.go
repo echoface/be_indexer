@@ -54,14 +54,6 @@ func TestEntriesCursor_SkipTo2(t *testing.T) {
 	})
 }
 
-func TestQKey_String(t *testing.T) {
-	vs := NewStrValues("红包", "跳蚤")
-	for _, v := range vs {
-		k := newQKey("age", v)
-		fmt.Println(k.String())
-	}
-}
-
 func TestEntriesCursor_DumpEntries(t *testing.T) {
 	cursor := NewEntriesCursor(newQKey("age", 18), nil)
 	cursor2 := NewEntriesCursor(newQKey("age", 25), nil)

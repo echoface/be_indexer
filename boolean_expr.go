@@ -3,17 +3,27 @@ package be_indexer
 import (
 	"encoding/json"
 	"fmt"
+
+	"github.com/echoface/be_indexer/util"
 )
 
 type (
 	BEField string
 
-	Values []interface{}
+	// value数值的描述符; 注意这里将其与最终的bool逻辑运算符区分开;
+	// 描述一个值: >5 代表了所有数值空间中[5, *)所有的值; 结合布尔描述
+	// 中的Incl/Excl 才构成一个布尔描述; 简而言之它用于描述存在"哪些值"
+	ValueOpt int
+
+	Values interface{}
 
 	// BoolValues expression a bool logic like: (in) [15,16,17], (not in) [shanghai,yz]
+	// 默认opt: ValueOptEQ
+	// 包含: [5, *)  的布尔描述等同于 "排除: (-*, 5)"
 	BoolValues struct {
-		Incl  bool   `json:"inc"`   // include: true exclude: false
-		Value Values `json:"value"` // values can be parser parse to id
+		Incl     bool     `json:"inc"`                // include: true exclude: false
+		Value    Values   `json:"value"`              // values can be parser parse to id
+		Operator ValueOpt `json:"operator,omitempty"` // value对应数值空间的描述符, 默认: EQ
 	}
 
 	// BooleanExpr expression a bool logic like: age (in) [15,16,17], city (not in) [shanghai,yz]
@@ -25,11 +35,19 @@ type (
 	Assignments map[BEField]Values
 )
 
+const (
+	// ValueOptEQ ...数值范围描述符
+	ValueOptEQ ValueOpt = 0
+	ValueOptGT ValueOpt = 1
+	ValueOptLT ValueOpt = 2
+)
+
 func (ass Assignments) Size() (size int) {
 	for _, v := range ass {
-		if len(v) > 0 {
-			size++
+		if util.NilInterface(v) {
+			continue
 		}
+		size++
 	}
 	return size
 }
@@ -49,88 +67,20 @@ func NewBoolExpr(field BEField, inc bool, v Values) *BooleanExpr {
 	return expr
 }
 
-// NewValues panic if invalid value
-func NewValues(o ...interface{}) (res Values) {
-	for _, value := range o {
-		res = append(res, value)
-	}
-	return res
+func NewIntValues(v int, o ...int) Values {
+	return append([]int{v}, o...)
 }
 
-func NewValues2(v interface{}, o ...interface{}) (res Values) {
-	res = append(res, v)
-	for _, value := range o {
-		res = append(res, value)
-	}
-	return
+func NewInt32Values(v int32, o ...int32) Values {
+	return append([]int32{v}, o...)
 }
 
-func NewIntValues(o ...int) (res []interface{}) {
-	res = make([]interface{}, len(o))
-	for idx, optV := range o {
-		res[idx] = optV
-	}
-	return
+func NewInt64Values(v int64, o ...int64) Values {
+	return append([]int64{v}, o...)
 }
 
-func NewIntValues2(v int, o ...int) (res []interface{}) {
-	res = make([]interface{}, len(o)+1)
-	res[0] = v
-	for idx, optV := range o {
-		res[idx+1] = optV
-	}
-	return
-}
-
-func NewInt32Values(o ...int32) (res []interface{}) {
-	res = make([]interface{}, len(o))
-	for idx, optV := range o {
-		res[idx] = optV
-	}
-	return
-}
-
-func NewInt32Values2(v int32, o ...int32) (res []interface{}) {
-	res = make([]interface{}, len(o)+1)
-	res[0] = v
-	for idx, optV := range o {
-		res[idx+1] = optV
-	}
-	return
-}
-
-func NewInt64Values(o ...int64) (res []interface{}) {
-	res = make([]interface{}, len(o))
-	for idx, optV := range o {
-		res[idx] = optV
-	}
-	return
-}
-
-func NewInt64Values2(v int64, o ...int64) (res []interface{}) {
-	res = make([]interface{}, len(o)+1)
-	res[0] = v
-	for idx, optV := range o {
-		res[idx+1] = optV
-	}
-	return
-}
-
-func NewStrValues(ss ...string) (res []interface{}) {
-	res = make([]interface{}, len(ss))
-	for idx, optV := range ss {
-		res[idx] = optV
-	}
-	return
-}
-
-func NewStrValues2(v string, ss ...string) (res []interface{}) {
-	res = make([]interface{}, len(ss)+1)
-	res[0] = v
-	for idx, optV := range ss {
-		res[idx+1] = optV
-	}
-	return
+func NewStrValues(v string, ss ...string) Values {
+	return append([]string{v}, ss...)
 }
 
 func (v *BoolValues) booleanToken() string {

@@ -47,8 +47,8 @@ func main() {
 	fmt.Println(sb.String())
 
 	res, _ := indexer.Retrieve(map[be_indexer.BEField]be_indexer.Values{
-		"age":  be_indexer.NewValues2(19),
-		"city": be_indexer.NewValues2("gz"),
+		"age":  19,
+		"city": "gz",
 	})
 	fmt.Println("result:", res)
 	if !res.Contain(1) {

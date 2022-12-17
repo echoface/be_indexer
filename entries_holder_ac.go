@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	aho "github.com/anknown/ahocorasick"
+	"github.com/echoface/be_indexer/util"
 )
 
 type (
@@ -59,33 +60,42 @@ func (h *ACEntriesHolder) DumpEntries(buffer *strings.Builder) {
 	}
 }
 
-func (h *ACEntriesHolder) AddFieldEID(field *FieldDesc, values Values, eid EntryID) error {
-	for _, value := range values {
-		switch v := value.(type) {
-		case string:
-			h.values[v] = append(h.values[v], eid)
-		case []byte:
-			h.values[string(v)] = append(h.values[string(v)], eid)
-		default:
-			return fmt.Errorf("field:%s need string value, but it's not:%+v", field.Field, value)
-		}
+// PrepareAppend holder tokenize/parse values into what its needed data
+// then wait IndexerBuilder call CommitAppend to apply 'Data' into holder
+// when all expression parse success in a conjunction
+func (h *ACEntriesHolder) PrepareAppend(field *FieldDesc, values *BoolValues) (r Preparation, e error) {
+	util.PanicIf(values.Operator != ValueOptEQ, "ac_matcher container support EQ operator only")
+
+	keys, err := util.ParseAcMatchDict(values.Value)
+	if err != nil {
+		return r, fmt.Errorf("ac holder need string(able) value, err:%v", err)
 	}
-	return nil
+	return Preparation{Data: keys}, nil
+}
+
+// NOTE: if partial success for a conjunction will cause logic error
+// so for a Holder implement should panic it if any errors happen
+func (h *ACEntriesHolder) CommitAppend(preparation *Preparation, eid EntryID) {
+	if preparation.Data == nil {
+		return
+	}
+	var ok bool
+	var keys []string
+	if keys, ok = preparation.Data.([]string); !ok {
+		panic(fmt.Errorf("invalid Preparation.Data type"))
+	}
+	for _, v := range keys {
+		h.values[v] = append(h.values[v], eid)
+	}
 }
 
 func (h *ACEntriesHolder) GetEntries(field *FieldDesc, assigns Values) (EntriesCursors, error) {
 	if len(h.values) == 0 {
 		return nil, nil
 	}
-	buf := make([]rune, 0, 256)
-	for _, assign := range assigns {
-		switch v := assign.(type) {
-		case string:
-			buf = append(buf, []rune(v)...)
-		default:
-			Logger.Errorf("field:%s query assign need string type, but:%+v", field.Field, assign)
-		}
-		buf = append(buf, []rune(h.QuerySep)...)
+	buf, err := util.BuildAcMatchContent(assigns, h.QuerySep)
+	if err != nil {
+		return nil, err
 	}
 	if len(buf) == 0 {
 		return nil, nil

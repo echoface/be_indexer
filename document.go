@@ -50,7 +50,7 @@ BASE:
 	return
 }
 
-//Len sort API
+// Len sort API
 func (s DocIDList) Len() int           { return len(s) }
 func (s DocIDList) Swap(i, j int)      { s[i], s[j] = s[j], s[i] }
 func (s DocIDList) Less(i, j int) bool { return s[i] < s[j] }

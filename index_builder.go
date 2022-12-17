@@ -14,10 +14,20 @@ type (
 		fieldsData map[BEField]*FieldDesc
 
 		idAllocator parser.IDAllocator
+
+		// 是否允许一个doc中部分Conjunction解析失败
+		panicIfBadConjunction bool
 	}
+	BuilderOpt func(builder *IndexerBuilder)
 )
 
-func NewIndexerBuilder() *IndexerBuilder {
+func WithPanicIfBadConjunction(panic bool) BuilderOpt {
+	return func(builder *IndexerBuilder) {
+		builder.panicIfBadConjunction = panic
+	}
+}
+
+func NewIndexerBuilder(opts ...BuilderOpt) *IndexerBuilder {
 	builder := &IndexerBuilder{
 		indexer:     NewSizeGroupedBEIndex(),
 		fieldsData:  map[BEField]*FieldDesc{},
@@ -26,6 +36,9 @@ func NewIndexerBuilder() *IndexerBuilder {
 	_, _ = builder.configureField(WildcardFieldName, FieldOption{
 		Container: HolderNameDefault,
 	})
+	for _, optFn := range opts {
+		optFn(builder)
+	}
 	return builder
 }
 
@@ -115,6 +128,7 @@ func (b *IndexerBuilder) buildDocEntries(doc *Document) error {
 	util.PanicIf(len(doc.Cons) == 0, "no conjunctions in this document")
 	util.PanicIf(len(doc.Cons) > 0xFF, "number of conjunction need less than 256")
 
+ConjLoop:
 	for idx, conj := range doc.Cons {
 
 		incSize := conj.CalcConjSize()
@@ -126,6 +140,8 @@ func (b *IndexerBuilder) buildDocEntries(doc *Document) error {
 
 		container := b.indexer.newContainer(incSize)
 
+		conjStatements := map[string]*Preparation{}
+
 		for field, expr := range conj.Expressions {
 
 			desc := b.createFieldData(field)
@@ -134,11 +150,21 @@ func (b *IndexerBuilder) buildDocEntries(doc *Document) error {
 
 			holder := container.newEntriesHolder(desc)
 
-			if err := holder.AddFieldEID(desc, expr.Value, entryID); err != nil {
-				Logger.Errorf("doc:%d field:%s AddFieldEID failed, values:%+v\n", doc.ID, field, expr.Value)
-				return err
-				// continue CONJLoop // break CONJLoop, conjunction as logic unit, just skip this conj if any error occur
+			if preparation, err := holder.PrepareAppend(desc, expr); err != nil {
+				Logger.Errorf("doc:%d holder.PrepareAppend field:%s fail:%v\n", doc.ID, field, err)
+				if !b.panicIfBadConjunction {
+					continue ConjLoop
+				}
+				panic(fmt.Errorf("doc:%d holder.PrepareAppend field:%s fail:%v", doc.ID, field, err))
+			} else {
+				preparation.field = desc
+				preparation.holder = holder
+				preparation.entryID = entryID
+				conjStatements[string(desc.Field)] = &preparation
 			}
+		}
+		for _, preparation := range conjStatements {
+			preparation.holder.CommitAppend(preparation, preparation.entryID)
 		}
 	}
 	return nil

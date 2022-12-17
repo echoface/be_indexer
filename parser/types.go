@@ -1,7 +1,6 @@
 package parser
 
 import (
-	"encoding/json"
 	"fmt"
 	"reflect"
 	"strconv"
@@ -20,23 +19,24 @@ type (
 
 func ParseIntegerNumber(v interface{}, f2i bool) (n int64, err error) {
 	vf := reflect.ValueOf(v)
-	switch tv := v.(type) {
-	case int, int8, int16, int32, int64:
+	switch vf.Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 		return vf.Int(), nil
-	case uint, uint8, uint16, uint32, uint64:
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
 		return int64(vf.Uint()), nil
-	case string:
-		return strconv.ParseInt(tv, 10, 64)
-	case float64, float32:
+	case reflect.String:
+		if num, err := strconv.ParseInt(vf.String(), 10, 64); err == nil {
+			return num, nil
+		}
+		if f2i {
+			if fv, err := strconv.ParseFloat(vf.String(), 64); err == nil {
+				return int64(fv), nil
+			}
+		}
+		return 0, fmt.Errorf("invalid number:%s", vf.String())
+	case reflect.Float64, reflect.Float32:
 		if f2i {
 			return int64(vf.Float()), nil
-		}
-	case json.Number:
-		if vi, e := tv.Int64(); e == nil {
-			return vi, nil
-		}
-		if vfloat, e := tv.Float64(); e == nil && f2i {
-			return int64(vfloat), nil
 		}
 	default:
 	}

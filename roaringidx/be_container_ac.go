@@ -2,6 +2,7 @@ package roaringidx
 
 import (
 	"fmt"
+	"strings"
 
 	aho "github.com/anknown/ahocorasick"
 	"github.com/echoface/be_indexer"
@@ -69,21 +70,42 @@ func (c *ACBEContainer) AddExcludeID(key string, id ConjunctionID) {
 	pl.Add(uint64(id))
 }
 
+func (c *ACBEContainer) buildPatternQueryContent(v be_indexer.Values) ([]rune, error) {
+	data := make([]rune, 0, 64)
+	switch tv := v.(type) {
+	case string:
+		data = []rune(tv)
+	case []string:
+		data = []rune(strings.Join(tv, c.querySep))
+	case []interface{}:
+		for idx, vi := range tv {
+			if str, ok := vi.(string); !ok {
+				return nil, fmt.Errorf("query assign:%+v not string type", v)
+			} else {
+				if idx == 0 {
+
+					data = append(data, []rune(str)...)
+				} else {
+					data = append(data, []rune(c.querySep)...)
+					data = append(data, []rune(str)...)
+				}
+			}
+		}
+	default:
+		return nil, fmt.Errorf("query assign:%+v not string type", v)
+	}
+	return data, nil
+}
+
 func (c *ACBEContainer) Retrieve(values be_indexer.Values, inout *PostingList) error {
 	inout.Or(c.wc.Bitmap)
 
-	if len(values) == 0 { // empty assign
+	if util.NilInterface(values) { // empty assign
 		return nil
 	}
-
-	data := make([]rune, 0, len(values)*4)
-	for _, vi := range values {
-		if str, ok := vi.(string); ok {
-			data = append(data, []rune(str)...)
-			data = append(data, []rune(c.querySep)...)
-			continue
-		}
-		return fmt.Errorf("query assign:%+v not string type", vi)
+	data, err := util.BuildAcMatchContent(values, c.querySep)
+	if err != nil {
+		return err
 	}
 
 	if c.inc != nil {
@@ -110,21 +132,21 @@ func (c *ACBEContainer) EncodeWildcard(id ConjunctionID) {
 }
 
 func (c *ACBEContainer) EncodeExpr(id ConjunctionID, expr *be_indexer.BooleanExpr) error {
-	if expr == nil {
+	if expr == nil || util.NilInterface(expr.Value) {
 		c.AddWildcard(id)
 		return nil
 	}
+	util.PanicIf(expr.Operator != be_indexer.ValueOptEQ, "ac_match support EQ operator only")
 
-	var ok bool
-	var kw string
-	for _, value := range expr.Value {
-		if kw, ok = value.(string); !ok {
-			return fmt.Errorf("not supported none string value")
-		}
+	keys, err := util.ParseAcMatchDict(expr.Value)
+	if err != nil {
+		return fmt.Errorf("ac container need string type values, err:%v", err)
+	}
+	for _, v := range keys {
 		if expr.Incl {
-			c.AddIncludeID(kw, id)
+			c.AddIncludeID(v, id)
 		} else {
-			c.AddExcludeID(kw, id)
+			c.AddExcludeID(v, id)
 		}
 	}
 	if !expr.Incl {

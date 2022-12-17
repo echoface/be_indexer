@@ -28,7 +28,7 @@ func createTestIndexer(data *benchmarkContext, docFn docBuilder) {
 	}
 
 	numbers := make([]int, 0, len(t))
-	for v, _ := range t {
+	for v := range t {
 		numbers = append(numbers, v)
 	}
 	t = nil //clear for free memory
@@ -48,14 +48,14 @@ func createTestIndexer(data *benchmarkContext, docFn docBuilder) {
 			start := rand.Intn(kwsCnt - wordsCnt)
 
 			field := fmt.Sprintf("ac_%d", rand.Intn(data.acFieldCnt))
-			values := be_indexer.NewStrValues(keywords[start : wordsCnt+start]...)
+			values := keywords[start : wordsCnt+start]
 			doc.AddConjunction(be_indexer.NewConjunction().AddExpression3(field, rn < 25, values))
 		} else { // number
 			wordsCnt := rand.Intn(99) + 1
 			start := rand.Intn(numCnt - wordsCnt)
 
 			field := fmt.Sprintf("number_%d", rand.Intn(data.numFieldCnt))
-			values := be_indexer.NewIntValues(numbers[start : wordsCnt+start]...)
+			values := numbers[start : wordsCnt+start]
 			doc.AddConjunction(be_indexer.NewConjunction().AddExpression3(field, rn > 75, values))
 		}
 
@@ -74,7 +74,7 @@ func createTestIndexer(data *benchmarkContext, docFn docBuilder) {
 			end := start + cnt
 
 			fieldName := fmt.Sprintf("number_%d", n)
-			q[be_indexer.BEField(fieldName)] = be_indexer.NewIntValues(numbers[start:end]...)
+			q[be_indexer.BEField(fieldName)] = numbers[start:end]
 		}
 		for k := 0; k < data.acFieldCnt; k++ {
 			cnt := rand.Intn(10)

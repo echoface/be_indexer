@@ -1,9 +1,13 @@
 package parser
 
 import (
+	"encoding/json"
 	"fmt"
+	"reflect"
 	"strconv"
 	"strings"
+
+	"github.com/echoface/be_indexer/util"
 )
 
 var ErrBadRangeValue = fmt.Errorf("NumberRangeParser need:'start:end:step'")
@@ -52,11 +56,32 @@ func NewRangeDesc(v string) *RangeDesc {
 
 // ParseAssign only single number supported, float will round into integer
 func (p *NumberRangeParser) ParseAssign(v interface{}) (res []uint64, err error) {
-	num, err := ParseIntegerNumber(v, true)
-	if err != nil {
-		return nil, err
+	if util.NilInterface(v) {
+		return res, err
 	}
-	return []uint64{uint64(num)}, nil
+
+	switch val := v.(type) {
+	case int8, int16, int32, int, int64, uint8, uint16, uint32, uint, uint64, float64, float32, json.Number:
+		var num int64
+		if num, err = ParseIntegerNumber(v, true); err != nil {
+			return nil, err
+		}
+		return []uint64{uint64(num)}, nil
+	default:
+		rt := reflect.TypeOf(val)
+		if rt.Kind() != reflect.Slice {
+			break
+		}
+		rv := reflect.ValueOf(val)
+		for i := 0; i < rv.Len(); i++ {
+			var num int64
+			if num, err = ParseIntegerNumber(rv.Index(i).Interface(), true); err != nil {
+				return nil, err
+			}
+			res = append(res, uint64(num))
+		}
+	}
+	return nil, fmt.Errorf("not suppoted type:%+v", v)
 }
 
 func (p *NumberRangeParser) ParseValue(v interface{}) (res []uint64, err error) {

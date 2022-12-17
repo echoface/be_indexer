@@ -188,8 +188,9 @@ RETRIEVE:
 // wildcard info: count: N
 // default holder: {name:%s value_count:%d, max_entries:%d avg_entries:%d}
 // field holder:
-//      >field:%s {name: %s, value_count:%d max_entries:%d avg_entries:%d}
-//      >field:%s {name: %s, value_count:%d max_entries:%d avg_entries:%d}
+//
+//	>field:%s {name: %s, value_count:%d max_entries:%d avg_entries:%d}
+//	>field:%s {name: %s, value_count:%d max_entries:%d avg_entries:%d}
 func (bi *CompactBEIndex) DumpIndexInfo(sb *strings.Builder) {
 	sb.WriteString("\n+++++++ compact boolean indexing info +++++++++++\n")
 	sb.WriteString(fmt.Sprintf("wildcard info: count:%d\n", len(bi.wildcardEntries)))

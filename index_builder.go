@@ -16,14 +16,23 @@ type (
 		idAllocator parser.IDAllocator
 
 		// 是否允许一个doc中部分Conjunction解析失败
-		panicIfBadConjunction bool
+		badConjBehavior BadConjBehavior
 	}
+
 	BuilderOpt func(builder *IndexerBuilder)
+
+	BadConjBehavior int
 )
 
-func WithPanicIfBadConjunction(panic bool) BuilderOpt {
+const (
+	ErrorBadConj = 0
+	SkipBadConj  = 1
+	PanicBadConj = 2
+)
+
+func WithBadConjBehavior(v BadConjBehavior) BuilderOpt {
 	return func(builder *IndexerBuilder) {
-		builder.panicIfBadConjunction = panic
+		builder.badConjBehavior = v
 	}
 }
 
@@ -151,9 +160,11 @@ ConjLoop:
 			holder := container.newEntriesHolder(desc)
 
 			if preparation, err := holder.PrepareAppend(desc, expr); err != nil {
-				Logger.Errorf("doc:%d holder.PrepareAppend field:%s fail:%v\n", doc.ID, field, err)
-				if !b.panicIfBadConjunction {
+				if b.badConjBehavior == SkipBadConj {
+					Logger.Errorf("doc:%d holder.PrepareAppend field:%s fail:%v\n", doc.ID, field, err)
 					continue ConjLoop
+				} else if b.badConjBehavior == ErrorBadConj {
+					return fmt.Errorf("doc:%d holder.PrepareAppend field:%s fail:%v", doc.ID, field, err)
 				}
 				panic(fmt.Errorf("doc:%d holder.PrepareAppend field:%s fail:%v", doc.ID, field, err))
 			} else {

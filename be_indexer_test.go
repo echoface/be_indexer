@@ -738,7 +738,7 @@ func TestBEIndex_RetrievePartialConjunction(t *testing.T) {
 		In("keyword", 12))
 
 	convey.Convey("不允许一个doc部分conjunction异常", t, func() {
-		builder := NewIndexerBuilder(WithPanicIfBadConjunction(true))
+		builder := NewIndexerBuilder(WithBadConjBehavior(PanicBadConj))
 		builder.ConfigField("keyword", FieldOption{
 			Container: HolderNameACMatcher,
 		})
@@ -749,7 +749,7 @@ func TestBEIndex_RetrievePartialConjunction(t *testing.T) {
 	})
 
 	convey.Convey("部分Conjunction异常，不影响其他Conjunction匹配", t, func() {
-		builder := NewIndexerBuilder()
+		builder := NewIndexerBuilder(WithBadConjBehavior(SkipBadConj))
 		builder.ConfigField("keyword", FieldOption{
 			Container: HolderNameACMatcher,
 		})

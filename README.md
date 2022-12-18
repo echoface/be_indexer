@@ -23,7 +23,7 @@
 - 支持容器扩展(eg:外部kv存储); 默认容器是hashmap,因抽用了8bit存储field，所以最大值：2^56
 - 支持模式匹配逻辑查询(基于AC自动机,用于上下文内容定向等等)
 
-在引入Aho-corasick模式匹配查找容器后，Indexer的构建可能失败，整个库中因为一些限制，不允许一些错误的出现，否则布尔逻辑可能失败，因此对不可恢复错误引入了panic，需要集成的应用自己recover对应的panic进行业务逻辑的处理，而对于AddDocument 等允许返回错误的借口，需要业务自行判断是否继续构建索引；注意这里可能出现逻辑错误:eg：`docID: {"age" in [16...100] && "badField" not in ["ValueCantParser"]}`可能出现部分逻辑表达已经添加进索引(`"age" in [16...100]`)，但另一部分`"badField" not in ["ValueCantParser"]`并没有构建成功而返回错误， 如果此时允许错误而继续构建索引数据，那么对于查询`{age: 20, badField:"被排除的值"}` 会得到满足的文档`docID`，而这是一个逻辑错误，因为`被排除的值` 是这个文档排除的表达式一部分，但是因为AddDocument中的错误而没有构建进索引数据中.
+在引入Aho-corasick模式匹配查找容器后，Indexer的构建可能失败，整个库中因为一些限制，不允许一些错误的出现，否则布尔逻辑可能失败，因此对不可恢复错误引入了panic，需要集成的应用自己recover对应的panic进行业务逻辑的处理，而对于AddDocument 等允许返回错误的借口，需要业务自行判断是否继续构建索引；目前当一个文档包含一个或者多个Conjunction时, 如果某个Conjunction 因提供的值不能被Parser/Holder 正确的解析成所需要的数据时,会跳过错误导致对应的文档不被索引到; 可以通过`WithBadConjBehavior` 指定具体的行为`ERR(default), Skip, Panic` 暴露此类问题或者检测对应的日志;
 
 ### usage:
 

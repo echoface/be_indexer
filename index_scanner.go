@@ -200,6 +200,15 @@ func (s FieldCursors) Dump() string {
 	return sb.String()
 }
 
+func (s FieldCursors) DumpJustCursors() string {
+	sb := &strings.Builder{}
+	for _, fc := range s {
+		fc.DumpCursorEntryID(sb)
+		sb.WriteString("\n")
+	}
+	return sb.String()
+}
+
 func NewFieldCursor(cursors ...*EntriesCursor) *FieldCursor {
 	scanner := &FieldCursor{
 		current:     nil,
@@ -270,6 +279,20 @@ func (fc *FieldCursor) DumpEntries(sb *strings.Builder) {
 		}
 		it.DumpEntries(sb)
 		sb.WriteString("\n")
+	}
+}
+
+func (fc *FieldCursor) DumpCursorEntryID(sb *strings.Builder) {
+	sb.WriteString("============== Field Cursor EID ==============\n")
+	for _, it := range fc.cursorGroup {
+		if it == fc.current {
+			sb.WriteString(">")
+		} else {
+			sb.WriteString(" ")
+		}
+		sb.WriteString(it.key.String())
+		curEIDStr := it.GetCurEntryID().DocString()
+		sb.WriteString(fmt.Sprintf(",idx:%02d,EID:%s\n", it.cursor, curEIDStr))
 	}
 }
 

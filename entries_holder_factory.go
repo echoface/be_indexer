@@ -7,9 +7,9 @@ type (
 )
 
 const (
-	HolderNameDefault      = "default"
-	HolderNameACMatcher    = "ac_matcher"
-	HolderNameDefaultExLgt = "default_ex_lgt"
+	HolderNameDefault     = "default"
+	HolderNameACMatcher   = "ac_matcher"
+	HolderNameExtendLgt = "number_with_lgt"
 )
 
 var holderFactory = make(map[string]HolderBuilder)
@@ -21,8 +21,8 @@ func init() {
 	_ = RegisterEntriesHolder(HolderNameDefault, func() EntriesHolder {
 		return NewDefaultEntriesHolder()
 	})
-	_ = RegisterEntriesHolder(HolderNameDefaultExLgt, func() EntriesHolder {
-		return NewDefaultExtLtGtHolder()
+	_ = RegisterEntriesHolder(HolderNameExtendLgt, func() EntriesHolder {
+		return NewDefaultExtLtGtHolder(true)
 	})
 }
 

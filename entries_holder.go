@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/echoface/be_indexer/parser"
 	"github.com/echoface/be_indexer/util"
 )
 
@@ -50,6 +51,8 @@ type (
 	}
 
 	// DefaultEntriesHolder EntriesHolder implement base on hash map holder map<key, Entries>
+	// 默认容器,目前支持表达式最大256个field; 支持多个field复用默认容器; 见:Key编码逻辑
+	// 如果需要打破这个限制,可以自己实现容器.
 	DefaultEntriesHolder struct {
 		debug     bool
 		maxLen    int64 // max length of Entries
@@ -71,9 +74,13 @@ func (h *DefaultEntriesHolder) EnableDebug(debug bool) {
 // DumpInfo
 // {name: %s, value_count:%d max_entries:%d avg_entries:%d}
 func (h *DefaultEntriesHolder) DumpInfo(buffer *strings.Builder) {
-	info := fmt.Sprintf("{name: %s, value_count:%d max_entries:%d avg_entries:%d}",
-		"default", len(h.plEntries), h.maxLen, h.avgLen)
-	buffer.WriteString(info)
+	infos := map[string]interface{} {
+		"name": "ExtendLgtHolder",
+		"kvCnt": len(h.plEntries),
+		"maxEntriesLen": h.maxLen,
+		"avgEntriesLen": h.avgLen,
+	}
+	buffer.WriteString(util.JSONPretty(infos))
 }
 
 func (h *DefaultEntriesHolder) DumpEntries(buffer *strings.Builder) {
@@ -84,6 +91,10 @@ func (h *DefaultEntriesHolder) DumpEntries(buffer *strings.Builder) {
 		buffer.WriteString(":")
 		buffer.WriteString(strings.Join(entries.DocString(), ","))
 	}
+}
+
+func (h *DefaultEntriesHolder) GetParser() parser.FieldValueParser {
+	return nil
 }
 
 func (h *DefaultEntriesHolder) CompileEntries() error {
@@ -132,8 +143,8 @@ func (h *DefaultEntriesHolder) CommitAppend(preparation *Preparation, eid EntryI
 	if ids, ok = preparation.Data.([]uint64); !ok {
 		panic(fmt.Errorf("bad preparation.Data type, oops..."))
 	}
-
-	for _, id := range ids {
+	values := util.DistinctInteger(ids)
+	for _, id := range values {
 		key := NewKey(preparation.field.ID, id)
 		h.plEntries[key] = append(h.plEntries[key], eid)
 	}

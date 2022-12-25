@@ -83,6 +83,22 @@ func NewStrValues(v string, ss ...string) Values {
 	return append([]string{v}, ss...)
 }
 
+func NewGTBoolValue(value int64) BoolValues {
+	return NewBoolValue(ValueOptGT, value, true)
+}
+
+func NewLTBoolValue(value int64) BoolValues {
+	return NewBoolValue(ValueOptLT, value, true)
+}
+
+func NewBoolValue(op ValueOpt, value Values, incl bool) BoolValues {
+	return BoolValues{
+		Operator: op,
+		Incl:     incl,
+		Value:    value,
+	}
+}
+
 func (v *BoolValues) booleanToken() string {
 	if v.Incl {
 		return "inc"

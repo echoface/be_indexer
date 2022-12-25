@@ -98,37 +98,61 @@ func NewConjunction() *Conjunction {
 
 // In any value in values is a **true** expression
 func (conj *Conjunction) In(field BEField, values Values) *Conjunction {
-	conj.addExpression(field, true, values)
+	conj.addExpression(field, NewBoolValue(ValueOptEQ, values, true))
 	return conj
 }
 
 // NotIn any value in values is a **false** expression
 func (conj *Conjunction) NotIn(field BEField, values Values) *Conjunction {
-	conj.addExpression(field, false, values)
+	conj.addExpression(field, NewBoolValue(ValueOptEQ, values, false))
 	return conj
 }
 
-func (conj *Conjunction) AddBoolExpr(expr *BooleanExpr) *Conjunction {
-	conj.addExpression(expr.Field, expr.Incl, expr.Value)
+func (conj *Conjunction) Include(field BEField, values Values) *Conjunction {
+	conj.addExpression(field, NewBoolValue(ValueOptEQ, values, true))
+	return conj
+}
+
+func (conj *Conjunction) Exclude(field BEField, values Values) *Conjunction {
+	conj.addExpression(field, NewBoolValue(ValueOptEQ, values, false))
+	return conj
+}
+
+func (conj *Conjunction) GreatThan(field BEField, value int64) *Conjunction {
+	conj.AddBoolExprs(&BooleanExpr{
+		Field:      field,
+		BoolValues: NewGTBoolValue(value),
+	})
+	return conj
+}
+
+func (conj *Conjunction) LessThan(field BEField, value int64) *Conjunction {
+	conj.AddBoolExprs(&BooleanExpr{
+		Field:      field,
+		BoolValues: NewLTBoolValue(value),
+	})
 	return conj
 }
 
 // AddBoolExprs append boolean expression,
 // don't allow same field added twice in one conjunction
-func (conj *Conjunction) AddBoolExprs(exprs ...*BooleanExpr) {
+func (conj *Conjunction) AddBoolExprs(exprs ...*BooleanExpr) *Conjunction {
 	for _, expr := range exprs {
-		conj.AddBoolExpr(expr)
+		conj.addExpression(expr.Field, expr.BoolValues)
 	}
+	return conj
 }
 
-func (conj *Conjunction) addExpression(field BEField, inc bool, values Values) {
+func (conj *Conjunction) AddExpression3(field string, include bool, values Values) *Conjunction {
+	conj.addExpression(BEField(field), NewBoolValue(ValueOptEQ, values, include))
+	return conj
+}
+
+func (conj *Conjunction) addExpression(field BEField, boolValues BoolValues) {
 	if _, ok := conj.Expressions[field]; ok {
 		panic(errors.New("conj don't allow one field show up twice"))
 	}
-	conj.Expressions[field] = &BoolValues{
-		Incl:  inc,
-		Value: values,
-	}
+	conj.Expressions[field] = &boolValues
 }
 
 func (conj *Conjunction) JSONString() string {
@@ -139,7 +163,7 @@ func (conj *Conjunction) JSONString() string {
 func (conj *Conjunction) String() string {
 	strBuilder := strings.Builder{}
 	strBuilder.WriteString("(")
-	cnt := len(conj.Expressions)
+	cnt := conj.ExpressionCount()
 	for field, expr := range conj.Expressions {
 		strBuilder.WriteString(fmt.Sprintf("%s %s", field, expr.String()))
 		cnt--
@@ -160,20 +184,6 @@ func (conj *Conjunction) CalcConjSize() (size int) {
 	return size
 }
 
-func (conj *Conjunction) AddExpression(expr *BooleanExpr) *Conjunction {
-	conj.addExpression(expr.Field, expr.Incl, expr.Value)
-	return conj
-}
-
-func (conj *Conjunction) Include(field BEField, values Values) *Conjunction {
-	return conj.AddExpression(NewBoolExpr(field, true, values))
-}
-
-func (conj *Conjunction) Exclude(field BEField, values Values) *Conjunction {
-	return conj.AddExpression(NewBoolExpr(field, false, values))
-}
-
-func (conj *Conjunction) AddExpression3(field string, include bool, values Values) *Conjunction {
-	expr := NewBoolExpr(BEField(field), include, values)
-	return conj.AddExpression(expr)
+func (conj *Conjunction) ExpressionCount() (size int) {
+	return len(conj.Expressions)
 }

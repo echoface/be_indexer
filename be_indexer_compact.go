@@ -72,9 +72,6 @@ func (bi *CompactBEIndex) initCursors(ctx *retrieveContext) (fCursors FieldCurso
 		return fCursors, nil
 	}
 
-	if ctx.dumpEntriesDetail {
-		Logger.Infof("matched entries:\n%s", fCursors.Dump())
-	}
 	return fCursors, nil
 }
 
@@ -105,8 +102,10 @@ func (bi *CompactBEIndex) RetrieveWithCollector(
 		return err
 	}
 
-	fieldCursors.Sort()
-	// sort.Sort(fieldCursors)
+	fieldCursors.Sort() // sort.Sort(fieldCursors)
+	if ctx.dumpEntriesDetail {
+		Logger.Infof("RetrieveWithCollector initial entries:\n%s", fieldCursors.Dump())
+	}
 
 RETRIEVE:
 	for {
@@ -117,14 +116,6 @@ RETRIEVE:
 		eid := fieldCursors[0].GetCurEntryID()
 		conjID := eid.GetConjID()
 
-		// k means: need k numbers of eid has same values when document satisfied,
-		// but for Z entries, it's a special case that need logic k=1 to exclude docs
-		// that boolean expression has `exclude` logic
-		k := conjID.Size()
-		if k == 0 {
-			k = 1
-		}
-
 		// remove those entries that have already reached end;
 		// the end-up cursor will in the end of slice after sorting
 		for len(fieldCursors) > 0 && fieldCursors[len(fieldCursors)-1].ReachEnd() {
@@ -132,16 +123,23 @@ RETRIEVE:
 		}
 
 		// k means: need k numbers of eid has same values when document satisfied,
+		// but for Z entries, it's a special case that need logic k=1 to exclude docs
+		// that boolean expression has `exclude` logic
+		k := conjID.Size()
+		stepK := k
+		LogInfoIf(ctx.dumpStepInfo, "start@step k:%d len(fieldCursors):%d", stepK, len(fieldCursors))
+		if k == 0 {
+			k = 1
+		}
+
+		// k means: need at least k groups of eid has same values when conjunction expr satisfied,
 		// so we can end up loop safely when k > sizeof(fieldCursors). this will boost up retrieve speed
 		if k > len(fieldCursors) {
-			if ctx.dumpStepInfo {
-				Logger.Infof("end, step k:%d, k > fieldCursors.len", k)
-			}
+			LogInfoIf(ctx.dumpStepInfo, "end@step need k:%d but only:%d matched", stepK, len(fieldCursors))
 			break RETRIEVE
 		}
 
-		// k <= plgsCount
-		// check whether eid  fieldCursors[k-1].GetCurEntryID equal
+		// k <= plgsCount check whether eid fieldCursors[k-1].GetCurEntryID equal
 		endEID := fieldCursors[k-1].GetCurEntryID()
 
 		nextID := NewEntryID(endEID.GetConjID(), false)
@@ -152,10 +150,8 @@ RETRIEVE:
 			if eid.IsInclude() {
 
 				ctx.collector.Add(conjID.DocID(), conjID)
+				LogInfoIf(ctx.dumpStepInfo, "add doc@step k:%d conj:%d", stepK, conjID.DocID())
 
-				if ctx.dumpStepInfo {
-					Logger.Infof("step k:%d add doc:%d conj:%d\n", k, conjID.DocID(), conjID)
-				}
 			} else { //exclude
 
 				for i := k; i < len(fieldCursors); i++ {
@@ -175,8 +171,10 @@ RETRIEVE:
 		// sort.Sort(fieldCursors) // slow 12% compare to fieldCursors.Sort()
 
 		if ctx.dumpStepInfo {
-			Logger.Infof("step result\n%+v", collector.GetDocIDs())
-			Logger.Infof("sorted entries\n%s", fieldCursors.Dump())
+			Logger.Infof("finish@step k:%d docs:%+v", stepK, collector.GetDocIDs())
+		}
+		if ctx.dumpEntriesDetail {
+			Logger.Infof("step:%d continue entries:\n%s", stepK, fieldCursors.DumpJustCursors())
 		}
 	}
 
@@ -195,7 +193,7 @@ func (bi *CompactBEIndex) DumpIndexInfo(sb *strings.Builder) {
 	sb.WriteString("\n+++++++ compact boolean indexing info +++++++++++\n")
 	sb.WriteString(fmt.Sprintf("wildcard info: count:%d\n", len(bi.wildcardEntries)))
 	bi.container.DumpInfo(sb)
-	sb.WriteString("\n++++++++++++++++++ end ++++++++++++++++++++++++\n")
+	sb.WriteString("\n++++++++++++++dump index info end ++++++++++++++++\n")
 }
 
 func (bi *CompactBEIndex) DumpEntries(sb *strings.Builder) {
@@ -206,5 +204,5 @@ func (bi *CompactBEIndex) DumpEntries(sb *strings.Builder) {
 	sb.WriteString(fmt.Sprintf("%v", bi.wildcardEntries.DocString()))
 	sb.WriteString("\n")
 	bi.container.DumpEntries(sb)
-	sb.WriteString("\n++++++++++++++++++ end ++++++++++++++++++++++++\n")
+	sb.WriteString("\n+++++++++++++ dump entries end ++++++++++++++++++++++\n")
 }

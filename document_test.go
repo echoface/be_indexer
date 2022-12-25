@@ -46,13 +46,13 @@ func TestConjunction_AddBoolExpr(t *testing.T) {
 
 		convey.So(conj.CalcConjSize(), convey.ShouldEqual, 1)
 
-		conj.AddBoolExpr(NewBoolExpr("ip", true, NewStrValues("localhost", "127.0.0.1")))
+		conj.AddBoolExprs(NewBoolExpr("ip", true, NewStrValues("localhost", "127.0.0.1")))
 		convey.So(len(conj.Expressions), convey.ShouldEqual, 3)
 
 		convey.So(conj.CalcConjSize(), convey.ShouldEqual, 2)
 
 		convey.So(func() {
-			conj.addExpression("age", true, 1)
+			conj.In("age", 1)
 		}, convey.ShouldPanic)
 
 	})

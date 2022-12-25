@@ -1,9 +1,12 @@
 package parser
 
 import (
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"strconv"
+
+	"github.com/echoface/be_indexer/util"
 )
 
 type (
@@ -41,4 +44,45 @@ func ParseIntegerNumber(v interface{}, f2i bool) (n int64, err error) {
 	default:
 	}
 	return 0, fmt.Errorf("not supprted number type:%+v", v)
+}
+
+func ParseIntergers(v interface{}, f2i bool) (res []int64, err error) {
+	if util.NilInterface(v) {
+		return res, nil
+	}
+	switch t := v.(type) {
+	case string, json.Number, int, int8, int16, int32,
+		int64, uint, uint8, uint16, uint32, uint64, float64, float32:
+		if num, err := ParseIntegerNumber(t, f2i); err == nil {
+			return append(res, num), nil
+		}
+	case []int8, []int16, []int32, []int, []int64, []uint8, []uint16,
+		[]uint32, []uint, []uint64, []float32, []float64, []json.Number, []string:
+		rv := reflect.ValueOf(t)
+
+		res = make([]int64, 0, rv.Len())
+		var num int64
+		for i := 0; i < rv.Len(); i++ {
+			vi := rv.Index(i).Interface()
+			if num, err = ParseIntegerNumber(vi, f2i); err != nil {
+				return nil, err
+			}
+			res = append(res, num)
+		}
+		return res, nil
+	case []interface{}:
+		res = make([]int64, 0, len(t))
+		for _, iv := range t {
+			var num int64
+			if num, err = ParseIntegerNumber(iv, f2i); err != nil {
+				return nil, fmt.Errorf("value:%v not a number value", iv)
+			}
+			res = append(res, num)
+		}
+		return res, nil
+	default:
+		break
+	}
+	valueType := reflect.TypeOf(v)
+	return nil, fmt.Errorf("value type [%s] not support", valueType.String())
 }

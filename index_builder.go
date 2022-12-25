@@ -51,7 +51,7 @@ func NewIndexerBuilder(opts ...BuilderOpt) *IndexerBuilder {
 	return builder
 }
 
-func NewCompactIndexerBuilder() *IndexerBuilder {
+func NewCompactIndexerBuilder(opts ...BuilderOpt) *IndexerBuilder {
 	builder := &IndexerBuilder{
 		indexer:     NewCompactedBEIndex(),
 		fieldsData:  map[BEField]*FieldDesc{},
@@ -60,6 +60,9 @@ func NewCompactIndexerBuilder() *IndexerBuilder {
 	_, _ = builder.configureField(WildcardFieldName, FieldOption{
 		Container: HolderNameDefault,
 	})
+	for _, optFn := range opts {
+		optFn(builder)
+	}
 	return builder
 }
 
@@ -68,12 +71,17 @@ func (b *IndexerBuilder) ConfigField(field BEField, settings FieldOption) {
 	util.PanicIfErr(err, "config field:%s with option fail:%+v", field, settings)
 }
 
-func (b *IndexerBuilder) AddDocument(doc *Document) error {
-	util.PanicIf(doc == nil, "nil document not be allowed")
-	if err := b.validDocument(doc); err != nil {
-		return err
+func (b *IndexerBuilder) AddDocument(docs ...*Document) error {
+	for _, doc := range docs {
+		util.PanicIf(doc == nil, "nil document not be allowed")
+		if err := b.validDocument(doc); err != nil {
+			return err
+		}
+		if err := b.buildDocEntries(doc); err != nil {
+			return err
+		}
 	}
-	return b.buildDocEntries(doc)
+	return nil
 }
 
 func (b *IndexerBuilder) BuildIndex() BEIndex {

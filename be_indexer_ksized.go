@@ -72,7 +72,7 @@ func (c *EntriesContainer) newEntriesHolder(desc *FieldDesc) EntriesHolder {
 func (c *EntriesContainer) DumpEntries(buf *strings.Builder) {
 	c.defaultHolder.DumpEntries(buf)
 	for field, holder := range c.fieldHolder {
-		buf.WriteString(fmt.Sprintf("field:%s entries:\n", field))
+		buf.WriteString(fmt.Sprintf("\nfield:%s holder:\n", field))
 		holder.DumpEntries(buf)
 	}
 }
@@ -180,17 +180,13 @@ func (bi *SizeGroupedBEIndex) initCursors(ctx *retrieveContext, k int) (fCursors
 			Logger.Debugf("<%s,%v> nothing matched from entries holder\n", desc.Field, values)
 		}
 	}
-
-	if ctx.dumpEntriesDetail {
-		Logger.Infof("matched entries:\n%s", fCursors.Dump())
-	}
-
 	return fCursors, nil
 }
 
 // retrieveK retrieve matched result from k size index data
 func (bi *SizeGroupedBEIndex) retrieveK(ctx *retrieveContext, fieldCursors FieldCursors, k int) {
 	if len(fieldCursors) < k {
+		LogInfoIf(ctx.dumpStepInfo, "end@step:%d need k:%d but only:%d matched", k, len(fieldCursors))
 		return
 	}
 
@@ -214,9 +210,7 @@ func (bi *SizeGroupedBEIndex) retrieveK(ctx *retrieveContext, fieldCursors Field
 			if eid.IsInclude() {
 
 				ctx.collector.Add(conjID.DocID(), conjID)
-				if ctx.dumpStepInfo {
-					Logger.Infof("step k:%d add doc:%d conj:%d\n", k, conjID.DocID(), conjID)
-				}
+				LogInfoIf(ctx.dumpStepInfo, "add doc@step:%d doc:%d", k, conjID.DocID())
 			} else { //exclude
 
 				for i := k; i < fieldCursors.Len(); i++ {
@@ -232,11 +226,10 @@ func (bi *SizeGroupedBEIndex) retrieveK(ctx *retrieveContext, fieldCursors Field
 			fieldCursors[i].SkipTo(nextID)
 		}
 
-		// sort.Sort(fieldCursors)
-		fieldCursors.Sort()
+		fieldCursors.Sort() // sort.Sort(fieldCursors)
 
 		if ctx.dumpStepInfo {
-			Logger.Infof("sorted entries\n%s", fieldCursors.Dump())
+			Logger.Infof("step:%d continue entries\n%s", k, fieldCursors.DumpJustCursors())
 		}
 	}
 }
@@ -267,22 +260,18 @@ func (bi *SizeGroupedBEIndex) RetrieveWithCollector(
 
 	var fCursors FieldCursors
 	for k := util.MinInt(queries.Size(), bi.maxK()); k >= 0; k-- {
-		if ctx.dumpStepInfo {
-			Logger.Infof("start retrieve k:%d", k)
-		}
 		if fCursors, err = bi.initCursors(&ctx, k); err != nil {
 			return err
+		}
+		LogInfoIf(ctx.dumpStepInfo, "start@step:%d len(fcursors):%d", k, len(fCursors))
+		if ctx.dumpEntriesDetail {
+			Logger.Infof("RetrieveWithCollector k:%d initial entries:\n%s", k, fCursors.Dump())
 		}
 
 		tempK := k
 		if tempK == 0 {
 			tempK = 1
 		}
-
-		if len(fCursors) < tempK {
-			continue
-		}
-
 		bi.retrieveK(&ctx, fCursors, tempK)
 	}
 	return nil
@@ -300,23 +289,9 @@ func (bi *SizeGroupedBEIndex) DumpEntries(sb *strings.Builder) {
 		container.DumpEntries(sb)
 		sb.WriteString("\n")
 	}
-	sb.WriteString("+++++++++++++++++++++++ end ++++++++++++++++++++++++++\n")
+	sb.WriteString("+++++++++++++size grouped index entries end +++++++++++++++++\n")
 }
 
-// DumpIndexInfo summary info about this indexer
-// +++++++ compact boolean indexing info +++++++++++
-// wildcard info: count: N
-// >>> K: N
-// default holder: {name:%s value_count:%d, max_entries:%d avg_entries:%d}
-// field holder:
-//
-//	>field:%s {name: %s, value_count:%d max_entries:%d avg_entries:%d}
-//
-// >>> K: N
-// default holder: {name:%s value_count:%d, max_entries:%d avg_entries:%d}
-// field holder:
-//
-//	>field:%s {name: %s, value_count:%d max_entries:%d avg_entries:%d}
 func (bi *SizeGroupedBEIndex) DumpIndexInfo(sb *strings.Builder) {
 	sb.WriteString("\n+++++++ size grouped boolean indexing info +++++++++++\n")
 	sb.WriteString(fmt.Sprintf("wildcard info: count:%d\n", len(bi.wildcardEntries)))
@@ -325,5 +300,5 @@ func (bi *SizeGroupedBEIndex) DumpIndexInfo(sb *strings.Builder) {
 		c.DumpInfo(sb)
 		sb.WriteString("\n")
 	}
-	sb.WriteString("+++++++++++++++++++++++ end ++++++++++++++++++++++++++\n")
+	sb.WriteString("++++++++++++ size grouped index info end ++++++++++++++++++\n")
 }

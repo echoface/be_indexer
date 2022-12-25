@@ -767,3 +767,53 @@ func TestBEIndex_RetrievePartialConjunction(t *testing.T) {
 	})
 
 }
+
+func TestBEIndex_WithExtendLGT(t *testing.T) {
+	LogLevel = DebugLevel
+
+	// 12:
+	// (sex is man && age > 18)
+	// or
+	// (sex is female && age < 20)
+	doc := NewDocument(12)
+	doc.AddConjunction(
+		NewConjunction().In("sex", "man").GreatThan("age", 18),
+		NewConjunction().In("sex", "female").LessThan("age", 20),
+	)
+
+	doc2 := NewDocument(13)
+	doc2.AddConjunction(
+		NewConjunction().NotIn("sex", NewStrValues("man", "female")).LessThan("age", 25),
+	)
+
+	builder := NewCompactIndexerBuilder(WithBadConjBehavior(SkipBadConj))
+	builder.ConfigField("age", FieldOption{Container: HolderNameExtendLgt})
+	_ = builder.AddDocument(doc, doc2)
+	indexer := builder.BuildIndex()
+	printIndexEntries(indexer)
+
+	type Case struct {
+		age    []int
+		sex    string
+		expect DocIDList
+	}
+	cases := []*Case{
+		//{age: []int{20}, sex: "man", expect: DocIDList{12}},
+		//{age: []int{20}, sex: "female", expect: DocIDList{}},
+		{age: []int{20}, sex: "other", expect: DocIDList{13}},
+		//{age: []int{25}, sex: "other", expect: DocIDList{}},
+	}
+	convey.Convey("run cases", t, func() {
+		for _, cs := range cases {
+			ids, err := indexer.Retrieve(Assignments{
+				"age": cs.age,
+				"sex": cs.sex,
+			}, WithDumpEntries(), WithStepDetail())
+			fmt.Println("cs:", cs, ", result:", ids)
+			convey.So(err, convey.ShouldBeNil)
+			if len(ids) > 0 || len(cs.expect) > 0 {
+				convey.So(ids, convey.ShouldResemble, cs.expect)
+			}
+		}
+	})
+}

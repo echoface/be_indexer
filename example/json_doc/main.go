@@ -10,6 +10,7 @@ import (
 
 	"github.com/echoface/be_indexer"
 	"github.com/echoface/be_indexer/parser"
+	"github.com/echoface/be_indexer/util"
 )
 
 func main() {
@@ -24,21 +25,19 @@ func main() {
 			return nil
 		}
 		content, e := ioutil.ReadFile(path)
-		if e != nil {
-			fmt.Println("read file fail:", content)
-			return nil
-		}
+		util.PanicIfErr(e, "open file:%s fail", path)
+
 		doc := &be_indexer.Document{}
-		if e = json.Unmarshal(content, &doc); e != nil {
-			fmt.Println("decode document fail:", e.Error())
-			return e
-		}
+		e = json.Unmarshal(content, &doc)
+		util.PanicIfErr(e, "decode document:%s fail, content:%s", path, string(content))
+
 		docs = append(docs, doc)
 		return nil
 	})
 	for _, doc := range docs {
 		fmt.Println("add document:", doc.ID)
-		_ = builder.AddDocument(doc)
+		err := builder.AddDocument(doc)
+		util.PanicIfErr(err, "should not fail")
 	}
 
 	indexer := builder.BuildIndex()

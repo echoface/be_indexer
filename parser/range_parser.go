@@ -85,16 +85,43 @@ func (p *NumberRangeParser) ParseAssign(v interface{}) (res []uint64, err error)
 }
 
 func (p *NumberRangeParser) ParseValue(v interface{}) (res []uint64, err error) {
-	content, ok := v.(string)
-	if !ok {
+	switch value := v.(type) {
+	case string:
+		opt := NewRangeDesc(value)
+		if opt == nil {
+			return nil, ErrBadRangeValue
+		}
+		for s := opt.start; s <= opt.end; s += opt.step {
+			res = append(res, uint64(s))
+		}
+		return res, nil
+	case []string:
+		for _, s := range value {
+			opt := NewRangeDesc(s)
+			if opt == nil {
+				return nil, ErrBadRangeValue
+			}
+			for s := opt.start; s <= opt.end; s += opt.step {
+				res = append(res, uint64(s))
+			}
+		}
+	case []interface{}:
+		for _, si := range value {
+			sv, ok := si.(string)
+			if !ok {
+				return nil, ErrBadRangeValue
+			}
+			var desc *RangeDesc
+			if desc = NewRangeDesc(sv); desc == nil {
+				return nil, ErrBadRangeValue
+			}
+
+			for s := desc.start; s <= desc.end; s += desc.step {
+				res = append(res, uint64(s))
+			}
+		}
+	default:
 		return nil, ErrBadRangeValue
-	}
-	opt := NewRangeDesc(content)
-	if opt == nil {
-		return nil, ErrBadRangeValue
-	}
-	for s := opt.start; s <= opt.end; s += opt.step {
-		res = append(res, uint64(s))
 	}
 	return res, nil
 }

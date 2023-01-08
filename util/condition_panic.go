@@ -17,5 +17,6 @@ func PanicIfErr(err error, format string, v ...interface{}) {
 	if err == nil {
 		return
 	}
-	panic(fmt.Errorf(format, v...))
+	errStr := fmt.Sprintf("err:%v", err)
+	panic(fmt.Errorf(errStr+format, v...))
 }

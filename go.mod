@@ -16,4 +16,5 @@ require (
 	github.com/jtolds/gls v4.20.0+incompatible // indirect
 	github.com/mschoch/smat v0.2.0 // indirect
 	github.com/smartystreets/assertions v0.0.0-20180927180507-b2de0cb4f26d // indirect
+	google.golang.org/protobuf v1.28.1 // indirect
 )

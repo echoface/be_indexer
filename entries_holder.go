@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/echoface/be_indexer/parser"
 	"github.com/echoface/be_indexer/util"
 )
@@ -25,29 +26,38 @@ type (
 		// GetEntries retrieve all satisfied PostingList from holder
 		GetEntries(field *FieldDesc, assigns Values) (EntriesCursors, error)
 
-		// PrepareAppend holder tokenize/parse values into what its needed data
+		// IndexingBETx holder tokenize/parse values into what its needed data
 		// then wait IndexerBuilder call CommitAppend to apply 'Data' into holder
 		// when all expression prepare success in a conjunction
-		PrepareAppend(field *FieldDesc, values *BoolValues) (Preparation, error)
+		IndexingBETx(field *FieldDesc, bv *BoolValues) (TxData, error)
 
-		// CommitAppend NOTE: if partial success for a conjunction will cause logic error
-		// so for a Holder implement should panic it if any errors happen
-		CommitAppend(preparation *Preparation, eid EntryID)
+		// CommitIndexingBETx NOTE: builder will panic when error return,
+		// because partial success for a conjunction will cause logic error
+		CommitIndexingBETx(tx IndexingBETx) error
+
+		// DecodeTxData decode data; used for building progress cache
+		DecodeTxData(data []byte) (TxData, error)
 
 		// CompileEntries finalize entries status for query, build or make sorted
 		// according to the paper, entries must be sorted
 		CompileEntries() error
 	}
 
-	// Preparation : a temp context use hold partital parsed data for a field,
-	// it will commit to holder when all field(in a Conjunction) be parsed, holder can
-	// save customized data into Preparation.Data then retrieve(use) it when CommitEntries called
-	Preparation struct {
-		entryID EntryID
-		field   *FieldDesc
-		holder  EntriesHolder
+	TxData interface {
+		// Cache for some case, cache TxData is redudant
+		// for small txdata and tokenization is fast enough
+		CanCache() bool
 
-		Data interface{}
+		// Encode, searialize TxData for cacheing
+		Encode() ([]byte, error)
+	}
+
+	IndexingBETx struct {
+		field  *FieldDesc
+		holder EntriesHolder
+
+		eid  EntryID
+		data TxData
 	}
 
 	// DefaultEntriesHolder EntriesHolder implement base on hash map holder map<key, Entries>
@@ -59,12 +69,38 @@ type (
 		avgLen    int64 // avg length of Entries
 		plEntries map[Key]Entries
 	}
+
+	defaultHolderTxData struct {
+		ids []uint64
+	}
 )
 
 func NewDefaultEntriesHolder() *DefaultEntriesHolder {
 	return &DefaultEntriesHolder{
 		plEntries: map[Key]Entries{},
 	}
+}
+
+func (txd *defaultHolderTxData) CanCache() bool {
+	return len(txd.ids) > 256
+}
+
+func (txd *defaultHolderTxData) Encode() ([]byte, error) {
+	bits := roaring64.New()
+	bits.AddMany(txd.ids)
+	return bits.ToBytes()
+}
+
+// DecodeTxData decode data; used for building progress cache
+func (h *DefaultEntriesHolder) DecodeTxData(data []byte) (TxData, error) {
+	if len(data) == 0 {
+		return &defaultHolderTxData{ids: nil}, nil
+	}
+	bits := roaring64.New()
+	if err := bits.UnmarshalBinary(data); err != nil {
+		return nil, err
+	}
+	return &defaultHolderTxData{ids: bits.ToArray()}, nil
 }
 
 func (h *DefaultEntriesHolder) EnableDebug(debug bool) {
@@ -74,9 +110,9 @@ func (h *DefaultEntriesHolder) EnableDebug(debug bool) {
 // DumpInfo
 // {name: %s, value_count:%d max_entries:%d avg_entries:%d}
 func (h *DefaultEntriesHolder) DumpInfo(buffer *strings.Builder) {
-	infos := map[string]interface{} {
-		"name": "ExtendLgtHolder",
-		"kvCnt": len(h.plEntries),
+	infos := map[string]interface{}{
+		"name":          "ExtendLgtHolder",
+		"kvCnt":         len(h.plEntries),
 		"maxEntriesLen": h.maxLen,
 		"avgEntriesLen": h.avgLen,
 	}
@@ -119,35 +155,33 @@ func (h *DefaultEntriesHolder) GetEntries(field *FieldDesc, assigns Values) (r E
 	return r, nil
 }
 
-func (h *DefaultEntriesHolder) PrepareAppend(field *FieldDesc, values *BoolValues) (r Preparation, e error) {
-	util.PanicIf(values.Operator != ValueOptEQ, "default container support EQ operator only")
+func (h *DefaultEntriesHolder) IndexingBETx(field *FieldDesc, bv *BoolValues) (TxData, error) {
+	util.PanicIf(bv.Operator != ValueOptEQ, "default container support EQ operator only")
 
-	var ids []uint64
 	// NOTE: ids can be replicated if expression contain cross condition
-	if ids, e = field.Parser.ParseValue(values.Value); e != nil {
-		return r, fmt.Errorf("field:%s value:%+v parse fail, err:%s", field.Field, values, e.Error())
+	ids, e := field.Parser.ParseValue(bv.Value)
+	if e != nil {
+		return nil, fmt.Errorf("field:%s value:%+v parse fail, err:%s", field.Field, bv, e.Error())
 	}
-	r.Data = ids
-	return r, nil
+	return &defaultHolderTxData{ids: ids}, nil
 }
 
-// CommitAppend NOTE: if partial success for a conjunction will cause logic error
-// so for a Holder implement should panic it if any errors happen
-func (h *DefaultEntriesHolder) CommitAppend(preparation *Preparation, eid EntryID) {
-	if preparation.Data == nil {
-		return
+func (h *DefaultEntriesHolder) CommitIndexingBETx(tx IndexingBETx) error {
+	if tx.data == nil {
+		return nil
 	}
 
 	var ok bool
-	var ids []uint64
-	if ids, ok = preparation.Data.([]uint64); !ok {
+	var data *defaultHolderTxData
+	if data, ok = tx.data.(*defaultHolderTxData); !ok {
 		panic(fmt.Errorf("bad preparation.Data type, oops..."))
 	}
-	values := util.DistinctInteger(ids)
+	values := util.DistinctInteger(data.ids)
 	for _, id := range values {
-		key := NewKey(preparation.field.ID, id)
-		h.plEntries[key] = append(h.plEntries[key], eid)
+		key := NewKey(tx.field.ID, id)
+		h.plEntries[key] = append(h.plEntries[key], tx.eid)
 	}
+	return nil
 }
 
 func (h *DefaultEntriesHolder) getEntries(key Key) Entries {

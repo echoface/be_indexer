@@ -1,6 +1,7 @@
 package be_indexer
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -26,6 +27,10 @@ type (
 		values  map[string]Entries
 		machine *aho.Machine // matcher     *cedar.Matcher
 	}
+
+	AcHolderTxData struct {
+		Keys []string `json:"keys,omitempty"`
+	}
 )
 
 // NewACEntriesHolder it will default drop the builder after compile ac-machine,
@@ -36,6 +41,23 @@ func NewACEntriesHolder(option ACHolderOption) *ACEntriesHolder {
 		machine:        new(aho.Machine), // matcher: cedar.NewMatcher(), deprecated for bug reason
 	}
 	return holder
+}
+
+func (txd *AcHolderTxData) CanCache() bool {
+	return false
+}
+
+func (txd *AcHolderTxData) Encode() ([]byte, error) {
+	return json.Marshal(txd.Keys)
+}
+
+func (h *ACEntriesHolder) DecodeTxData(data []byte) (TxData, error) {
+	if len(data) == 0 {
+		return &AcHolderTxData{Keys: nil}, nil
+	}
+	txData := &AcHolderTxData{Keys: []string{}}
+	err := json.Unmarshal(data, &txData.Keys)
+	return txData, err
 }
 
 func (h *ACEntriesHolder) EnableDebug(debug bool) {
@@ -60,33 +82,29 @@ func (h *ACEntriesHolder) DumpEntries(buffer *strings.Builder) {
 	}
 }
 
-// PrepareAppend holder tokenize/parse values into what its needed data
-// then wait IndexerBuilder call CommitAppend to apply 'Data' into holder
-// when all expression parse success in a conjunction
-func (h *ACEntriesHolder) PrepareAppend(field *FieldDesc, values *BoolValues) (r Preparation, e error) {
-	util.PanicIf(values.Operator != ValueOptEQ, "ac_matcher container support EQ operator only")
+func (h *ACEntriesHolder) IndexingBETx(field *FieldDesc, bv *BoolValues) (TxData, error) {
+	util.PanicIf(bv.Operator != ValueOptEQ, "ac_matcher container support EQ operator only")
 
-	keys, err := util.ParseAcMatchDict(values.Value)
+	keys, err := util.ParseAcMatchDict(bv.Value)
 	if err != nil {
-		return r, fmt.Errorf("ac holder need string(able) value, err:%v", err)
+		return nil, fmt.Errorf("ac holder need string(able) value, err:%v", err)
 	}
-	return Preparation{Data: keys}, nil
+	return &AcHolderTxData{Keys: keys}, nil
 }
 
-// NOTE: if partial success for a conjunction will cause logic error
-// so for a Holder implement should panic it if any errors happen
-func (h *ACEntriesHolder) CommitAppend(preparation *Preparation, eid EntryID) {
-	if preparation.Data == nil {
-		return
+func (h *ACEntriesHolder) CommitIndexingBETx(tx IndexingBETx) error {
+	if tx.data == nil {
+		return nil
 	}
 	var ok bool
-	var keys []string
-	if keys, ok = preparation.Data.([]string); !ok {
-		panic(fmt.Errorf("invalid Preparation.Data type"))
+	var data *AcHolderTxData
+	if data, ok = tx.data.(*AcHolderTxData); !ok {
+		return fmt.Errorf("invalid Tx.Data type")
 	}
-	for _, v := range keys {
-		h.values[v] = append(h.values[v], eid)
+	for _, v := range data.Keys {
+		h.values[v] = append(h.values[v], tx.eid)
 	}
+	return nil
 }
 
 func (h *ACEntriesHolder) GetEntries(field *FieldDesc, assigns Values) (EntriesCursors, error) {

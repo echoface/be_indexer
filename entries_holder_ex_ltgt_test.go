@@ -18,19 +18,25 @@ func TestLGTHolder(t *testing.T) {
 		}
 		for i := 0; i < 10; i++ {
 			v := NewBoolValue(ValueOptEQ, []int{10, i%3 + 5}, true)
-			data, e := holder.PrepareAppend(field, &v)
+			data, e := holder.IndexingBETx(field, &v)
 			convey.So(e, convey.ShouldBeNil)
-			holder.CommitAppend(&data, NewEntryID(ConjID(i+100), true))
+			tx := IndexingBETx{holder: holder, field: field, data: data, eid: NewEntryID(ConjID(i+100), true)}
+			e = holder.CommitIndexingBETx(tx)
+			convey.So(e, convey.ShouldBeNil)
 
 			v = NewGTBoolValue(int64(i%3 + 5))
-			data, e = holder.PrepareAppend(field, &v)
+			data, e = holder.IndexingBETx(field, &v)
 			convey.So(e, convey.ShouldBeNil)
-			holder.CommitAppend(&data, NewEntryID(ConjID(i+50), true))
+			tx = IndexingBETx{holder: holder, field: field, data: data, eid: NewEntryID(ConjID(i+50), true)}
+			e = holder.CommitIndexingBETx(tx)
+			convey.So(e, convey.ShouldBeNil)
 
 			v = NewLTBoolValue(int64(i%3 + 5))
-			data, e = holder.PrepareAppend(field, &v)
+			data, e = holder.IndexingBETx(field, &v)
 			convey.So(e, convey.ShouldBeNil)
-			holder.CommitAppend(&data, NewEntryID(ConjID(i+10), true))
+			tx = IndexingBETx{holder: holder, field: field, data: data, eid: NewEntryID(ConjID(i+10), true)}
+			e = holder.CommitIndexingBETx(tx)
+			convey.So(e, convey.ShouldBeNil)
 		}
 		convey.So(holder.CompileEntries(), convey.ShouldBeNil)
 

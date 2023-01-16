@@ -1,6 +1,7 @@
 package be_indexer
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -48,10 +49,10 @@ type (
 		entries  Entries
 	}
 
-	prepareData struct {
-		operator ValueOpt
-		lgtValue int64
-		valueIDs []int64
+	LtGtTxData struct {
+		Operator ValueOpt `json:"operator"`
+		LgtValue int64    `json:"lgt_value,omitempty"`
+		EqValues []int64  `json:"eq_values,omitempty"`
 	}
 
 	ValueEntries []*LgtEntries
@@ -69,6 +70,20 @@ func NewDefaultExtLtGtHolder(f2i bool) *ExtendLgtHolder {
 		_gtmap:    map[int64]*LgtEntries{},
 		EnableF2I: f2i,
 	}
+}
+
+func (txd *LtGtTxData) CanCache() bool {
+	return len(txd.EqValues) > 256
+}
+
+func (txd *LtGtTxData) Encode() ([]byte, error) {
+	return json.Marshal(txd)
+}
+
+func (h *ExtendLgtHolder) DecodeTxData(data []byte) (TxData, error) {
+	var txd LtGtTxData
+	err := json.Unmarshal(data, &txd)
+	return &txd, err
 }
 
 func (h *ExtendLgtHolder) EnableDebug(debug bool) {
@@ -175,7 +190,7 @@ func (h *ExtendLgtHolder) GetEntries(field *FieldDesc, assigns Values) (r Entrie
 	return r, nil
 }
 
-func (h *ExtendLgtHolder) PrepareAppend(field *FieldDesc, values *BoolValues) (r Preparation, e error) {
+func (h *ExtendLgtHolder) IndexingBETx(field *FieldDesc, values *BoolValues) (r TxData, e error) {
 	// util.PanicIf(values.Operator != ValueOptEQ, "default container support EQ operator only")
 
 	switch values.Operator {
@@ -184,63 +199,56 @@ func (h *ExtendLgtHolder) PrepareAppend(field *FieldDesc, values *BoolValues) (r
 		if ids, e = parser.ParseIntergers(values.Value, h.EnableF2I); e != nil {
 			return r, fmt.Errorf("field:%s value:%+v parse fail, err:%v", field.Field, values, e)
 		}
-		r.Data = &prepareData{
-			valueIDs: ids,
-			operator: ValueOptEQ,
-		}
+		return &LtGtTxData{EqValues: ids, Operator: ValueOptEQ}, nil
 	case ValueOptLT, ValueOptGT:
 		var number int64
 		if number, e = parser.ParseIntegerNumber(values.Value, h.EnableF2I); e != nil {
 			return r, fmt.Errorf("lt/gt operator need interger, parse:%v err:%v", values.Value, e)
 		}
-		r.Data = &prepareData{
-			lgtValue: number,
-			operator: values.Operator,
-		}
+		return &LtGtTxData{LgtValue: number, Operator: values.Operator}, nil
 	default:
-		return
+		break
 	}
-	return r, nil
+	return nil, fmt.Errorf("unsupport Boolean Operator")
 }
 
-// CommitAppend NOTE: if partial success for a conjunction will cause logic error
-// so for a Holder implement should panic it if any errors happen
-func (h *ExtendLgtHolder) CommitAppend(preparation *Preparation, eid EntryID) {
-	if preparation.Data == nil {
-		return
+func (h *ExtendLgtHolder) CommitIndexingBETx(tx IndexingBETx) error {
+	if tx.data == nil {
+		return nil
 	}
-	data := preparation.Data.(*prepareData)
-	switch data.operator {
+	data := tx.data.(*LtGtTxData)
+	switch data.Operator {
 	case ValueOptEQ: // NOTE: ids can be replicated if expression contain cross condition
-		values := util.DistinctInteger(data.valueIDs)
+		values := util.DistinctInteger(data.EqValues)
 		for _, id := range values {
-			h.plEntries[id] = append(h.plEntries[id], eid)
+			h.plEntries[id] = append(h.plEntries[id], tx.eid)
 		}
 	case ValueOptGT:
 		var ok bool
 		var valueEntries *LgtEntries
-		if valueEntries, ok = h._gtmap[data.lgtValue]; !ok || valueEntries == nil {
+		if valueEntries, ok = h._gtmap[data.LgtValue]; !ok || valueEntries == nil {
 			valueEntries = &LgtEntries{
-				lgtValue: data.lgtValue,
+				lgtValue: data.LgtValue,
 				entries:  Entries{},
 			}
-			h._gtmap[data.lgtValue] = valueEntries
+			h._gtmap[data.LgtValue] = valueEntries
 		}
-		valueEntries.entries = append(valueEntries.entries, eid)
+		valueEntries.entries = append(valueEntries.entries, tx.eid)
 	case ValueOptLT:
 		var ok bool
 		var valueEntries *LgtEntries
-		if valueEntries, ok = h._ltmap[data.lgtValue]; !ok || valueEntries == nil {
+		if valueEntries, ok = h._ltmap[data.LgtValue]; !ok || valueEntries == nil {
 			valueEntries = &LgtEntries{
-				lgtValue: data.lgtValue,
+				lgtValue: data.LgtValue,
 				entries:  Entries{},
 			}
-			h._ltmap[data.lgtValue] = valueEntries
+			h._ltmap[data.LgtValue] = valueEntries
 		}
-		valueEntries.entries = append(valueEntries.entries, eid)
+		valueEntries.entries = append(valueEntries.entries, tx.eid)
 	default:
-		panic(fmt.Errorf("what happened?"))
+		return fmt.Errorf("what happened?")
 	}
+	return nil
 }
 
 func (h *ExtendLgtHolder) getEntries(key int64) Entries {

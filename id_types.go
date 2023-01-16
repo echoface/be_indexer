@@ -67,6 +67,10 @@ func (id ConjID) DocID() DocID {
 	return docID
 }
 
+func (id ConjID) String() string {
+	return fmt.Sprintf("<%d,%d,%d>", id.DocID(), id.Index(), id.Size())
+}
+
 // NewEntryID encode entry id
 // |--          		         ConjID(60bit)                  --|-- empty(3bit) --|--incl/excl(1bit) --|
 // |--[ size(8bit) | index(8bit) | negSign(1bit) | docID(43bit)]--|-- empty(3bit) --|--incl/excl(1bit) --|

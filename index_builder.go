@@ -3,8 +3,10 @@ package be_indexer
 import (
 	"fmt"
 
+	"github.com/echoface/be_indexer/codegen/cache"
 	"github.com/echoface/be_indexer/parser"
 	"github.com/echoface/be_indexer/util"
+	"google.golang.org/protobuf/proto"
 )
 
 type (
@@ -17,6 +19,8 @@ type (
 
 		// 是否允许一个doc中部分Conjunction解析失败
 		badConjBehavior BadConjBehavior
+
+		builderCache CacheProvider
 	}
 
 	BuilderOpt func(builder *IndexerBuilder)
@@ -33,6 +37,12 @@ const (
 func WithBadConjBehavior(v BadConjBehavior) BuilderOpt {
 	return func(builder *IndexerBuilder) {
 		builder.badConjBehavior = v
+	}
+}
+
+func WithCacheProvider(provider CacheProvider) BuilderOpt {
+	return func(builder *IndexerBuilder) {
+		builder.builderCache = provider
 	}
 }
 
@@ -155,36 +165,118 @@ ConjLoop:
 			b.indexer.addWildcardEID(NewEntryID(conjID, true))
 		}
 
-		container := b.indexer.newContainer(incSize)
+		conjIndexingTxs := []*IndexingBETx{}
+		if conjIndexingTxs = b.tryUseIndexingTxCache(conjID); conjIndexingTxs == nil {
 
-		conjStatements := map[string]*Preparation{}
+			var err error
+			var needCache bool
 
-		for field, expr := range conj.Expressions {
-
-			desc := b.createFieldData(field)
-
-			entryID := NewEntryID(conjID, expr.Incl)
-
-			holder := container.newEntriesHolder(desc)
-
-			if preparation, err := holder.PrepareAppend(desc, expr); err != nil {
-				if b.badConjBehavior == SkipBadConj {
-					Logger.Errorf("doc:%d holder.PrepareAppend field:%s fail:%v\n", doc.ID, field, err)
+			if conjIndexingTxs, needCache, err = b.indexingConjunction(conj, conjID); err != nil {
+				switch b.badConjBehavior {
+				case SkipBadConj:
+					Logger.Errorf("indexing conj:%s fail:%v", conjID.String(), err)
 					continue ConjLoop
-				} else if b.badConjBehavior == ErrorBadConj {
-					return fmt.Errorf("doc:%d holder.PrepareAppend field:%s fail:%v", doc.ID, field, err)
+				case ErrorBadConj:
+					return fmt.Errorf("indexing conj:%s fail:%v", conjID.String(), err)
+				default:
 				}
-				panic(fmt.Errorf("doc:%d holder.PrepareAppend field:%s fail:%v", doc.ID, field, err))
-			} else {
-				preparation.field = desc
-				preparation.holder = holder
-				preparation.entryID = entryID
-				conjStatements[string(desc.Field)] = &preparation
+				util.PanicIf(true, "indexing conj:%s fail:%v", conjID.String(), err)
+			}
+
+			if needCache {
+				b.tryCacheIndexingTx(conjID, conjIndexingTxs)
 			}
 		}
-		for _, preparation := range conjStatements {
-			preparation.holder.CommitAppend(preparation, preparation.entryID)
+
+		for _, tx := range conjIndexingTxs {
+			err := tx.holder.CommitIndexingBETx(*tx)
+			util.PanicIfErr(err, "commit indexing data failed")
 		}
 	}
 	return nil
+}
+
+// indexingConjunction return (txs []*IndexingBETx, needCache bool, err error)
+func (b *IndexerBuilder) indexingConjunction(conj *Conjunction, conjID ConjID) ([]*IndexingBETx, bool, error) {
+	incSize := conjID.Size()
+	conjIndexingTXs := []*IndexingBETx{}
+
+	container := b.indexer.newContainer(incSize)
+	var needCacheCnt int
+
+	for field, expr := range conj.Expressions {
+
+		desc := b.createFieldData(field)
+		holder := container.newEntriesHolder(desc)
+
+		var err error
+		var txData TxData
+		if txData, err = holder.IndexingBETx(desc, expr); err != nil {
+			return nil, false, fmt.Errorf("indexing field:%s fail:%v", field, err)
+		}
+		entryID := NewEntryID(conjID, expr.Incl)
+		if txData.CanCache() {
+			needCacheCnt++
+		}
+		tx := &IndexingBETx{field: desc, holder: holder, eid: entryID, data: txData}
+		conjIndexingTXs = append(conjIndexingTXs, tx)
+	}
+	return conjIndexingTXs, needCacheCnt > 0, nil
+}
+
+func (b *IndexerBuilder) tryUseIndexingTxCache(conjID ConjID) (cachedIndexingTx []*IndexingBETx) {
+	if b.builderCache == nil {
+		return nil
+	}
+
+	txCache := &cache.IndexingTxCache{}
+	if data, ok := b.builderCache.Get(conjID); !ok {
+		return nil
+	} else if err := proto.Unmarshal(data, txCache); err != nil {
+		return nil
+	}
+
+	container := b.indexer.newContainer(conjID.Size())
+
+	for field, fieldData := range txCache.FieldData {
+		desc := b.createFieldData(BEField(field))
+		holder := container.newEntriesHolder(desc)
+
+		var err error
+		var txData TxData
+		if txData, err = holder.DecodeTxData(fieldData.Data); err != nil {
+			Logger.Errorf("doc:%d field:%s indexing field:%s fail:%v", conjID.DocID(), field, err)
+			return nil
+		}
+
+		eid := EntryID(fieldData.Eid)
+		tx := &IndexingBETx{field: desc, holder: holder, eid: eid, data: txData}
+		cachedIndexingTx = append(cachedIndexingTx, tx)
+	}
+	return cachedIndexingTx
+}
+
+func (b *IndexerBuilder) tryCacheIndexingTx(conjID ConjID, txs []*IndexingBETx) {
+	if b.builderCache == nil {
+		return
+	}
+	txCache := &cache.IndexingTxCache{
+		ConjunctionId: uint64(conjID),
+		FieldData:     map[string]*cache.FieldCache{},
+	}
+	var err error
+	for _, tx := range txs {
+		var content []byte
+		if content, err = tx.data.Encode(); err != nil {
+			return
+		}
+
+		txCache.FieldData[string(tx.field.Field)] = &cache.FieldCache{
+			Eid:  uint64(tx.eid),
+			Data: content,
+		}
+	}
+	if data, err := proto.Marshal(txCache); err == nil {
+		b.builderCache.Set(conjID, data)
+	}
 }

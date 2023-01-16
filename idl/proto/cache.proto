@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+package cache;
+option go_package = "./cache";
+
+message FieldCache {
+  uint64 eid = 1;
+  bytes data = 2;
+}
+
+message IndexingTxCache {
+  uint64 conjunction_id = 1;
+  map<string, FieldCache> field_data = 2;
+}

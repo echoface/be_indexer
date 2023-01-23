@@ -42,9 +42,11 @@ func TestParseCache(t *testing.T) {
 		convey.So(b.AddDocument(doc), convey.ShouldBeNil)
 		_ = b.BuildIndex()
 
+
 		doc2 := NewDocument(13)
 		doc2.AddConjunction(NewConjunction().In("age", values))
 
+		b.Reset()
 		convey.So(b.AddDocument(doc, doc2), convey.ShouldBeNil)
 		_ = b.BuildIndex()
 	})

@@ -130,6 +130,147 @@ func (x *IndexingTxCache) GetFieldData() map[string]*FieldCache {
 	return nil
 }
 
+type StrListValues struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Values []string `protobuf:"bytes,1,rep,name=values,proto3" json:"values,omitempty"`
+}
+
+func (x *StrListValues) Reset() {
+	*x = StrListValues{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_cache_proto_msgTypes[2]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *StrListValues) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StrListValues) ProtoMessage() {}
+
+func (x *StrListValues) ProtoReflect() protoreflect.Message {
+	mi := &file_cache_proto_msgTypes[2]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StrListValues.ProtoReflect.Descriptor instead.
+func (*StrListValues) Descriptor() ([]byte, []int) {
+	return file_cache_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *StrListValues) GetValues() []string {
+	if x != nil {
+		return x.Values
+	}
+	return nil
+}
+
+type Int64ListValues struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Values []int64 `protobuf:"varint,1,rep,packed,name=values,proto3" json:"values,omitempty"`
+}
+
+func (x *Int64ListValues) Reset() {
+	*x = Int64ListValues{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_cache_proto_msgTypes[3]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *Int64ListValues) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Int64ListValues) ProtoMessage() {}
+
+func (x *Int64ListValues) ProtoReflect() protoreflect.Message {
+	mi := &file_cache_proto_msgTypes[3]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Int64ListValues.ProtoReflect.Descriptor instead.
+func (*Int64ListValues) Descriptor() ([]byte, []int) {
+	return file_cache_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *Int64ListValues) GetValues() []int64 {
+	if x != nil {
+		return x.Values
+	}
+	return nil
+}
+
+type Uint64ListValues struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Values []uint64 `protobuf:"varint,1,rep,packed,name=values,proto3" json:"values,omitempty"`
+}
+
+func (x *Uint64ListValues) Reset() {
+	*x = Uint64ListValues{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_cache_proto_msgTypes[4]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *Uint64ListValues) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Uint64ListValues) ProtoMessage() {}
+
+func (x *Uint64ListValues) ProtoReflect() protoreflect.Message {
+	mi := &file_cache_proto_msgTypes[4]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Uint64ListValues.ProtoReflect.Descriptor instead.
+func (*Uint64ListValues) Descriptor() ([]byte, []int) {
+	return file_cache_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *Uint64ListValues) GetValues() []uint64 {
+	if x != nil {
+		return x.Values
+	}
+	return nil
+}
+
 var File_cache_proto protoreflect.FileDescriptor
 
 var file_cache_proto_rawDesc = []byte{
@@ -150,7 +291,15 @@ var file_cache_proto_rawDesc = []byte{
 	0x65, 0x79, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x03, 0x6b, 0x65, 0x79, 0x12, 0x27, 0x0a,
 	0x05, 0x76, 0x61, 0x6c, 0x75, 0x65, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x11, 0x2e, 0x63,
 	0x61, 0x63, 0x68, 0x65, 0x2e, 0x46, 0x69, 0x65, 0x6c, 0x64, 0x43, 0x61, 0x63, 0x68, 0x65, 0x52,
-	0x05, 0x76, 0x61, 0x6c, 0x75, 0x65, 0x3a, 0x02, 0x38, 0x01, 0x42, 0x09, 0x5a, 0x07, 0x2e, 0x2f,
+	0x05, 0x76, 0x61, 0x6c, 0x75, 0x65, 0x3a, 0x02, 0x38, 0x01, 0x22, 0x27, 0x0a, 0x0d, 0x53, 0x74,
+	0x72, 0x4c, 0x69, 0x73, 0x74, 0x56, 0x61, 0x6c, 0x75, 0x65, 0x73, 0x12, 0x16, 0x0a, 0x06, 0x76,
+	0x61, 0x6c, 0x75, 0x65, 0x73, 0x18, 0x01, 0x20, 0x03, 0x28, 0x09, 0x52, 0x06, 0x76, 0x61, 0x6c,
+	0x75, 0x65, 0x73, 0x22, 0x29, 0x0a, 0x0f, 0x49, 0x6e, 0x74, 0x36, 0x34, 0x4c, 0x69, 0x73, 0x74,
+	0x56, 0x61, 0x6c, 0x75, 0x65, 0x73, 0x12, 0x16, 0x0a, 0x06, 0x76, 0x61, 0x6c, 0x75, 0x65, 0x73,
+	0x18, 0x01, 0x20, 0x03, 0x28, 0x03, 0x52, 0x06, 0x76, 0x61, 0x6c, 0x75, 0x65, 0x73, 0x22, 0x2a,
+	0x0a, 0x10, 0x55, 0x69, 0x6e, 0x74, 0x36, 0x34, 0x4c, 0x69, 0x73, 0x74, 0x56, 0x61, 0x6c, 0x75,
+	0x65, 0x73, 0x12, 0x16, 0x0a, 0x06, 0x76, 0x61, 0x6c, 0x75, 0x65, 0x73, 0x18, 0x01, 0x20, 0x03,
+	0x28, 0x04, 0x52, 0x06, 0x76, 0x61, 0x6c, 0x75, 0x65, 0x73, 0x42, 0x09, 0x5a, 0x07, 0x2e, 0x2f,
 	0x63, 0x61, 0x63, 0x68, 0x65, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
 }
 
@@ -166,14 +315,17 @@ func file_cache_proto_rawDescGZIP() []byte {
 	return file_cache_proto_rawDescData
 }
 
-var file_cache_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
+var file_cache_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_cache_proto_goTypes = []interface{}{
-	(*FieldCache)(nil),      // 0: cache.FieldCache
-	(*IndexingTxCache)(nil), // 1: cache.IndexingTxCache
-	nil,                     // 2: cache.IndexingTxCache.FieldDataEntry
+	(*FieldCache)(nil),       // 0: cache.FieldCache
+	(*IndexingTxCache)(nil),  // 1: cache.IndexingTxCache
+	(*StrListValues)(nil),    // 2: cache.StrListValues
+	(*Int64ListValues)(nil),  // 3: cache.Int64ListValues
+	(*Uint64ListValues)(nil), // 4: cache.Uint64ListValues
+	nil,                      // 5: cache.IndexingTxCache.FieldDataEntry
 }
 var file_cache_proto_depIdxs = []int32{
-	2, // 0: cache.IndexingTxCache.field_data:type_name -> cache.IndexingTxCache.FieldDataEntry
+	5, // 0: cache.IndexingTxCache.field_data:type_name -> cache.IndexingTxCache.FieldDataEntry
 	0, // 1: cache.IndexingTxCache.FieldDataEntry.value:type_name -> cache.FieldCache
 	2, // [2:2] is the sub-list for method output_type
 	2, // [2:2] is the sub-list for method input_type
@@ -212,6 +364,42 @@ func file_cache_proto_init() {
 				return nil
 			}
 		}
+		file_cache_proto_msgTypes[2].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*StrListValues); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_cache_proto_msgTypes[3].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*Int64ListValues); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_cache_proto_msgTypes[4].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*Uint64ListValues); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -219,7 +407,7 @@ func file_cache_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_cache_proto_rawDesc,
 			NumEnums:      0,
-			NumMessages:   3,
+			NumMessages:   6,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

@@ -12,3 +12,13 @@ message IndexingTxCache {
   uint64 conjunction_id = 1;
   map<string, FieldCache> field_data = 2;
 }
+
+message StrListValues {
+    repeated string values = 1;
+}
+message Int64ListValues {
+    repeated int64 values = 1;
+}
+message Uint64ListValues {
+    repeated uint64 values = 1;
+}

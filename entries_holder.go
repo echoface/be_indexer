@@ -5,9 +5,10 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/RoaringBitmap/roaring/roaring64"
+	"github.com/echoface/be_indexer/codegen/cache"
 	"github.com/echoface/be_indexer/parser"
 	"github.com/echoface/be_indexer/util"
+	"google.golang.org/protobuf/proto"
 )
 
 type (
@@ -44,9 +45,9 @@ type (
 	}
 
 	TxData interface {
-		// Cache for some case, cache TxData is redudant
-		// for small txdata and tokenization is fast enough
-		CanCache() bool
+		// BetterToCache: if txData big enaough, perfer to cache it; builder will
+		// detect all expressions in a conjunction and decide wheather cache it or not
+		BetterToCache() bool
 
 		// Encode, searialize TxData for cacheing
 		Encode() ([]byte, error)
@@ -70,9 +71,11 @@ type (
 		plEntries map[Key]Entries
 	}
 
-	defaultHolderTxData struct {
-		ids []uint64
-	}
+	Uint64TxData cache.Uint64ListValues
+)
+
+var (
+	BetterToCacheMaxItemsCount = 512
 )
 
 func NewDefaultEntriesHolder() *DefaultEntriesHolder {
@@ -81,26 +84,23 @@ func NewDefaultEntriesHolder() *DefaultEntriesHolder {
 	}
 }
 
-func (txd *defaultHolderTxData) CanCache() bool {
-	return len(txd.ids) > 256
+func (txd *Uint64TxData) BetterToCache() bool {
+	return len(txd.Values) > BetterToCacheMaxItemsCount
 }
 
-func (txd *defaultHolderTxData) Encode() ([]byte, error) {
-	bits := roaring64.New()
-	bits.AddMany(txd.ids)
-	return bits.ToBytes()
+func (txd *Uint64TxData) Encode() ([]byte, error) {
+	protoMsg := (*cache.Uint64ListValues)(txd)
+	return proto.Marshal(protoMsg)
 }
 
 // DecodeTxData decode data; used for building progress cache
 func (h *DefaultEntriesHolder) DecodeTxData(data []byte) (TxData, error) {
 	if len(data) == 0 {
-		return &defaultHolderTxData{ids: nil}, nil
+		return &Uint64TxData{Values: nil}, nil
 	}
-	bits := roaring64.New()
-	if err := bits.UnmarshalBinary(data); err != nil {
-		return nil, err
-	}
-	return &defaultHolderTxData{ids: bits.ToArray()}, nil
+	txData := &Uint64TxData{}
+	err := proto.Unmarshal(data, (*cache.Uint64ListValues)(txData))
+	return txData, err
 }
 
 func (h *DefaultEntriesHolder) EnableDebug(debug bool) {
@@ -163,7 +163,7 @@ func (h *DefaultEntriesHolder) IndexingBETx(field *FieldDesc, bv *BoolValues) (T
 	if e != nil {
 		return nil, fmt.Errorf("field:%s value:%+v parse fail, err:%s", field.Field, bv, e.Error())
 	}
-	return &defaultHolderTxData{ids: ids}, nil
+	return &Uint64TxData{Values: ids}, nil
 }
 
 func (h *DefaultEntriesHolder) CommitIndexingBETx(tx IndexingBETx) error {
@@ -172,11 +172,11 @@ func (h *DefaultEntriesHolder) CommitIndexingBETx(tx IndexingBETx) error {
 	}
 
 	var ok bool
-	var data *defaultHolderTxData
-	if data, ok = tx.data.(*defaultHolderTxData); !ok {
+	var data *Uint64TxData
+	if data, ok = tx.data.(*Uint64TxData); !ok {
 		panic(fmt.Errorf("bad preparation.Data type, oops..."))
 	}
-	values := util.DistinctInteger(data.ids)
+	values := util.DistinctInteger(data.Values)
 	for _, id := range values {
 		key := NewKey(tx.field.ID, id)
 		h.plEntries[key] = append(h.plEntries[key], tx.eid)

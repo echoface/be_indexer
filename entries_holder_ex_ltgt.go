@@ -72,8 +72,8 @@ func NewDefaultExtLtGtHolder(f2i bool) *ExtendLgtHolder {
 	}
 }
 
-func (txd *LtGtTxData) CanCache() bool {
-	return len(txd.EqValues) > 256
+func (txd *LtGtTxData) BetterToCache() bool {
+	return len(txd.EqValues) > BetterToCacheMaxItemsCount
 }
 
 func (txd *LtGtTxData) Encode() ([]byte, error) {

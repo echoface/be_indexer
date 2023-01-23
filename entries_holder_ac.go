@@ -7,7 +7,9 @@ import (
 	"strings"
 
 	aho "github.com/anknown/ahocorasick"
+	"github.com/echoface/be_indexer/codegen/cache"
 	"github.com/echoface/be_indexer/util"
+	"google.golang.org/protobuf/proto"
 )
 
 type (
@@ -28,9 +30,7 @@ type (
 		machine *aho.Machine // matcher     *cedar.Matcher
 	}
 
-	AcHolderTxData struct {
-		Keys []string `json:"keys,omitempty"`
-	}
+	AcHolderTxData cache.StrListValues
 )
 
 // NewACEntriesHolder it will default drop the builder after compile ac-machine,
@@ -43,20 +43,20 @@ func NewACEntriesHolder(option ACHolderOption) *ACEntriesHolder {
 	return holder
 }
 
-func (txd *AcHolderTxData) CanCache() bool {
-	return false
+func (txd *AcHolderTxData) BetterToCache() bool {
+	return len(txd.Values) > BetterToCacheMaxItemsCount
 }
 
 func (txd *AcHolderTxData) Encode() ([]byte, error) {
-	return json.Marshal(txd.Keys)
+	return json.Marshal(txd.Values)
 }
 
 func (h *ACEntriesHolder) DecodeTxData(data []byte) (TxData, error) {
 	if len(data) == 0 {
-		return &AcHolderTxData{Keys: nil}, nil
+		return &AcHolderTxData{Values: nil}, nil
 	}
-	txData := &AcHolderTxData{Keys: []string{}}
-	err := json.Unmarshal(data, &txData.Keys)
+	txData := &AcHolderTxData{Values: []string{}}
+	err := proto.Unmarshal(data, (*cache.StrListValues)(txData))
 	return txData, err
 }
 
@@ -89,7 +89,7 @@ func (h *ACEntriesHolder) IndexingBETx(field *FieldDesc, bv *BoolValues) (TxData
 	if err != nil {
 		return nil, fmt.Errorf("ac holder need string(able) value, err:%v", err)
 	}
-	return &AcHolderTxData{Keys: keys}, nil
+	return &AcHolderTxData{Values: keys}, nil
 }
 
 func (h *ACEntriesHolder) CommitIndexingBETx(tx IndexingBETx) error {
@@ -101,7 +101,7 @@ func (h *ACEntriesHolder) CommitIndexingBETx(tx IndexingBETx) error {
 	if data, ok = tx.data.(*AcHolderTxData); !ok {
 		return fmt.Errorf("invalid Tx.Data type")
 	}
-	for _, v := range data.Keys {
+	for _, v := range data.Values {
 		h.values[v] = append(h.values[v], tx.eid)
 	}
 	return nil

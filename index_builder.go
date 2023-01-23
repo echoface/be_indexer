@@ -74,9 +74,14 @@ func NewIndexerBuilder(opts ...BuilderOpt) *IndexerBuilder {
 	builder.initIndexer()
 	return builder
 }
+
 func NewCompactIndexerBuilder(opts ...BuilderOpt) *IndexerBuilder {
 	opts = append(opts, WithIndexerType(IndexerTypeCompact))
 	return NewIndexerBuilder(opts...)
+}
+
+func (b *IndexerBuilder) Reset() {
+	b.initIndexer()
 }
 
 func (b *IndexerBuilder) initIndexer() {

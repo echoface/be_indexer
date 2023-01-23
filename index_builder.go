@@ -11,20 +11,24 @@ import (
 
 type (
 	IndexerBuilder struct {
+		BuilderOption
+
 		indexer BEIndex
 
 		fieldsData map[BEField]*FieldDesc
 
 		idAllocator parser.IDAllocator
+	}
 
-		// 是否允许一个doc中部分Conjunction解析失败
-		badConjBehavior BadConjBehavior
-
-		builderCache CacheProvider
+	BuilderOption struct {
+		indexerType     IndexerType
+		builderCache    CacheProvider
+		badConjBehavior BadConjBehavior // 是否允许一个doc中部分Conjunction解析失败
 	}
 
 	BuilderOpt func(builder *IndexerBuilder)
 
+	IndexerType     int
 	BadConjBehavior int
 )
 
@@ -32,6 +36,9 @@ const (
 	ErrorBadConj = 0
 	SkipBadConj  = 1
 	PanicBadConj = 2
+
+	IndexerTypeDefault = IndexerType(0)
+	IndexerTypeCompact = IndexerType(1)
 )
 
 func WithBadConjBehavior(v BadConjBehavior) BuilderOpt {
@@ -43,6 +50,12 @@ func WithBadConjBehavior(v BadConjBehavior) BuilderOpt {
 func WithCacheProvider(provider CacheProvider) BuilderOpt {
 	return func(builder *IndexerBuilder) {
 		builder.builderCache = provider
+	}
+}
+
+func WithIndexerType(t IndexerType) BuilderOpt {
+	return func(builder *IndexerBuilder) {
+		builder.indexerType = t
 	}
 }
 
@@ -58,22 +71,23 @@ func NewIndexerBuilder(opts ...BuilderOpt) *IndexerBuilder {
 	for _, optFn := range opts {
 		optFn(builder)
 	}
+	builder.initIndexer()
 	return builder
 }
-
 func NewCompactIndexerBuilder(opts ...BuilderOpt) *IndexerBuilder {
-	builder := &IndexerBuilder{
-		indexer:     NewCompactedBEIndex(),
-		fieldsData:  map[BEField]*FieldDesc{},
-		idAllocator: parser.NewIDAllocatorImpl(),
+	opts = append(opts, WithIndexerType(IndexerTypeCompact))
+	return NewIndexerBuilder(opts...)
+}
+
+func (b *IndexerBuilder) initIndexer() {
+	switch b.indexerType {
+	case IndexerTypeDefault:
+		b.indexer = NewSizeGroupedBEIndex()
+	case IndexerTypeCompact:
+		b.indexer = NewCompactedBEIndex()
+	default:
+		util.PanicIf(true, "type:%d not supported", b.indexerType)
 	}
-	_, _ = builder.configureField(WildcardFieldName, FieldOption{
-		Container: HolderNameDefault,
-	})
-	for _, optFn := range opts {
-		optFn(builder)
-	}
-	return builder
 }
 
 func (b *IndexerBuilder) ConfigField(field BEField, settings FieldOption) {
@@ -215,7 +229,7 @@ func (b *IndexerBuilder) indexingConjunction(conj *Conjunction, conjID ConjID) (
 			return nil, false, fmt.Errorf("indexing field:%s fail:%v", field, err)
 		}
 		entryID := NewEntryID(conjID, expr.Incl)
-		if txData.CanCache() {
+		if txData.BetterToCache() {
 			needCacheCnt++
 		}
 		tx := &IndexingBETx{field: desc, holder: holder, eid: entryID, data: txData}
@@ -268,6 +282,7 @@ func (b *IndexerBuilder) tryCacheIndexingTx(conjID ConjID, txs []*IndexingBETx) 
 	for _, tx := range txs {
 		var content []byte
 		if content, err = tx.data.Encode(); err != nil {
+			LogErr("field:%s TxData encode fail:%v", tx.field, err)
 			return
 		}
 

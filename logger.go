@@ -51,6 +51,18 @@ func LogIfErr(err error, format string, v ...interface{}) {
 	Logger.Errorf("Error:%s", err.Error())
 }
 
+func LogErr(format string, v ...interface{}) {
+	Logger.Errorf(format, v...)
+}
+
+func LogInfo(format string, v ...interface{}) {
+	Logger.Infof(format, v...)
+}
+
+func LogDebug(format string, v ...interface{}) {
+	Logger.Debugf(format, v...)
+}
+
 func (l *DefaultLogger) Debugf(format string, v ...interface{}) {
 	if LogLevel > DebugLevel {
 		return

@@ -17,10 +17,10 @@ func TestEntriesCursor_SkipTo(t *testing.T) {
 	scg := FieldCursor{
 		current: nil,
 		cursorGroup: EntriesCursors{
-			NewEntriesCursor(newQKey("", nil), []EntryID{17, 32, 37}),
-			NewEntriesCursor(newQKey("", nil), []EntryID{17, 33}),
-			NewEntriesCursor(newQKey("", nil), []EntryID{19, 60}),
-			NewEntriesCursor(newQKey("", nil), []EntryID{53, 54}),
+			NewEntriesCursor(NewQKey("", nil), []EntryID{17, 32, 37}),
+			NewEntriesCursor(NewQKey("", nil), []EntryID{17, 33}),
+			NewEntriesCursor(NewQKey("", nil), []EntryID{19, 60}),
+			NewEntriesCursor(NewQKey("", nil), []EntryID{53, 54}),
 		},
 	}
 	scg.current = scg.cursorGroup[0]
@@ -38,8 +38,8 @@ func TestEntriesCursor_SkipTo2(t *testing.T) {
 	scg := FieldCursor{
 		current: nil,
 		cursorGroup: EntriesCursors{
-			NewEntriesCursor(newQKey("age", 0), []EntryID{28}),
-			NewEntriesCursor(newQKey("age", 10), []EntryID{28, 29}),
+			NewEntriesCursor(NewQKey("age", 0), []EntryID{28}),
+			NewEntriesCursor(NewQKey("age", 10), []EntryID{28, 29}),
 		},
 	}
 	scg.current = scg.cursorGroup[0]
@@ -55,8 +55,8 @@ func TestEntriesCursor_SkipTo2(t *testing.T) {
 }
 
 func TestEntriesCursor_DumpEntries(t *testing.T) {
-	cursor := NewEntriesCursor(newQKey("age", 18), nil)
-	cursor2 := NewEntriesCursor(newQKey("age", 25), nil)
+	cursor := NewEntriesCursor(NewQKey("age", 18), nil)
+	cursor2 := NewEntriesCursor(NewQKey("age", 25), nil)
 	testIDCnt := 20
 	for i := 0; i < testIDCnt-1; i++ {
 		conjID := NewConjID(DocID(i), rand.Intn(3), 3)

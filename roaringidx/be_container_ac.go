@@ -2,6 +2,7 @@ package roaringidx
 
 import (
 	"fmt"
+	"github.com/echoface/be_indexer/holder/ahoholder"
 	"strings"
 
 	aho "github.com/anknown/ahocorasick"
@@ -103,7 +104,7 @@ func (c *ACBEContainer) Retrieve(values be_indexer.Values, inout *PostingList) e
 	if util.NilInterface(values) { // empty assign
 		return nil
 	}
-	data, err := util.BuildAcMatchContent(values, c.querySep)
+	data, err := ahoholder.BuildAcMatchContent(values, c.querySep)
 	if err != nil {
 		return err
 	}
@@ -138,7 +139,7 @@ func (c *ACBEContainer) EncodeExpr(id ConjunctionID, expr *be_indexer.BooleanExp
 	}
 	util.PanicIf(expr.Operator != be_indexer.ValueOptEQ, "ac_match support EQ operator only")
 
-	keys, err := util.ParseAcMatchDict(expr.Value)
+	keys, err := ahoholder.ParseAcMatchDict(expr.Value)
 	if err != nil {
 		return fmt.Errorf("ac container need string type values, err:%v", err)
 	}

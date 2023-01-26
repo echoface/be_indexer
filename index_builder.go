@@ -20,6 +20,16 @@ type (
 		idAllocator parser.IDAllocator
 	}
 
+	// CacheProvider a interface
+	CacheProvider interface {
+		// Reset expire all existing cache data
+		Reset()
+
+		Get(conjID ConjID) ([]byte, bool)
+
+		Set(conjID ConjID, data []byte)
+	}
+
 	BuilderOption struct {
 		indexerType     IndexerType
 		builderCache    CacheProvider
@@ -61,13 +71,10 @@ func WithIndexerType(t IndexerType) BuilderOpt {
 
 func NewIndexerBuilder(opts ...BuilderOpt) *IndexerBuilder {
 	builder := &IndexerBuilder{
-		indexer:     NewSizeGroupedBEIndex(),
+		indexer:     NewKGroupsBEIndex(),
 		fieldsData:  map[BEField]*FieldDesc{},
 		idAllocator: parser.NewIDAllocatorImpl(),
 	}
-	_, _ = builder.configureField(WildcardFieldName, FieldOption{
-		Container: HolderNameDefault,
-	})
 	for _, optFn := range opts {
 		optFn(builder)
 	}
@@ -82,12 +89,15 @@ func NewCompactIndexerBuilder(opts ...BuilderOpt) *IndexerBuilder {
 
 func (b *IndexerBuilder) Reset() {
 	b.initIndexer()
+	if b.builderCache != nil {
+		b.builderCache.Reset()
+	}
 }
 
 func (b *IndexerBuilder) initIndexer() {
 	switch b.indexerType {
 	case IndexerTypeDefault:
-		b.indexer = NewSizeGroupedBEIndex()
+		b.indexer = NewKGroupsBEIndex()
 	case IndexerTypeCompact:
 		b.indexer = NewCompactedBEIndex()
 	default:
@@ -127,10 +137,6 @@ func (b *IndexerBuilder) configureField(field BEField, option FieldOption) (*Fie
 	if _, ok := b.fieldsData[field]; ok {
 		return nil, fmt.Errorf("can't configure field:%s twice", field)
 	}
-	if option.Parser == nil {
-		option.Parser = parser.NewCommonParserWithAllocator(b.idAllocator)
-		Logger.Infof("not configure Parser for field:%s, use default", field)
-	}
 	if len(option.Container) == 0 {
 		option.Container = HolderNameDefault
 		Logger.Infof("not configure container for field:%s, use default", field)
@@ -138,9 +144,9 @@ func (b *IndexerBuilder) configureField(field BEField, option FieldOption) (*Fie
 
 	fieldID := uint64(len(b.fieldsData))
 	desc := &FieldDesc{
-		FieldOption: option,
-		Field:       field,
 		ID:          fieldID,
+		Field:       field,
+		FieldOption: option,
 	}
 	b.fieldsData[field] = desc
 	Logger.Infof("configure field:%s, fieldID:%d\n", field, desc.ID)
@@ -218,7 +224,7 @@ ConjLoop:
 // indexingConjunction return (txs []*IndexingBETx, needCache bool, err error)
 func (b *IndexerBuilder) indexingConjunction(conj *Conjunction, conjID ConjID) ([]*IndexingBETx, bool, error) {
 	incSize := conjID.Size()
-	conjIndexingTXs := []*IndexingBETx{}
+	conjIndexingTXs := make([]*IndexingBETx, 0, len(conj.Expressions))
 
 	container := b.indexer.newContainer(incSize)
 	var needCacheCnt int
@@ -226,7 +232,7 @@ func (b *IndexerBuilder) indexingConjunction(conj *Conjunction, conjID ConjID) (
 	for field, expr := range conj.Expressions {
 
 		desc := b.createFieldData(field)
-		holder := container.newEntriesHolder(desc)
+		holder := container.CreateHolder(desc)
 
 		var err error
 		var txData TxData
@@ -237,7 +243,7 @@ func (b *IndexerBuilder) indexingConjunction(conj *Conjunction, conjID ConjID) (
 		if txData.BetterToCache() {
 			needCacheCnt++
 		}
-		tx := &IndexingBETx{field: desc, holder: holder, eid: entryID, data: txData}
+		tx := &IndexingBETx{field: desc, holder: holder, EID: entryID, Data: txData}
 		conjIndexingTXs = append(conjIndexingTXs, tx)
 	}
 	return conjIndexingTXs, needCacheCnt > 0, nil
@@ -259,7 +265,7 @@ func (b *IndexerBuilder) tryUseIndexingTxCache(conjID ConjID) (cachedIndexingTx 
 
 	for field, fieldData := range txCache.FieldData {
 		desc := b.createFieldData(BEField(field))
-		holder := container.newEntriesHolder(desc)
+		holder := container.CreateHolder(desc)
 
 		var err error
 		var txData TxData
@@ -269,7 +275,7 @@ func (b *IndexerBuilder) tryUseIndexingTxCache(conjID ConjID) (cachedIndexingTx 
 		}
 
 		eid := EntryID(fieldData.Eid)
-		tx := &IndexingBETx{field: desc, holder: holder, eid: eid, data: txData}
+		tx := &IndexingBETx{field: desc, holder: holder, EID: eid, Data: txData}
 		cachedIndexingTx = append(cachedIndexingTx, tx)
 	}
 	return cachedIndexingTx
@@ -286,13 +292,13 @@ func (b *IndexerBuilder) tryCacheIndexingTx(conjID ConjID, txs []*IndexingBETx) 
 	var err error
 	for _, tx := range txs {
 		var content []byte
-		if content, err = tx.data.Encode(); err != nil {
+		if content, err = tx.Data.Encode(); err != nil {
 			LogErr("field:%s TxData encode fail:%v", tx.field, err)
 			return
 		}
 
 		txCache.FieldData[string(tx.field.Field)] = &cache.FieldCache{
-			Eid:  uint64(tx.eid),
+			Eid:  uint64(tx.EID),
 			Data: content,
 		}
 	}

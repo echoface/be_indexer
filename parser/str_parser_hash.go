@@ -15,6 +15,10 @@ func NewStrHashParser() FieldValueParser {
 	return &StrHashParser{}
 }
 
+func (p *StrHashParser) Name() string {
+	return "number_range"
+}
+
 func (p *StrHashParser) ParseAssign(v interface{}) ([]uint64, error) {
 	if util.NilInterface(v) {
 		return nil, nil

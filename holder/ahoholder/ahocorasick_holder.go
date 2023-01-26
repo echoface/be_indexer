@@ -1,4 +1,4 @@
-package be_indexer
+package ahoholder
 
 import (
 	"encoding/json"
@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	aho "github.com/anknown/ahocorasick"
+	. "github.com/echoface/be_indexer"
 	"github.com/echoface/be_indexer/codegen/cache"
 	"github.com/echoface/be_indexer/util"
 	"google.golang.org/protobuf/proto"
@@ -15,7 +16,7 @@ import (
 type (
 	ACHolderOption struct {
 		// QuerySep 查询时，当存在多个值时，使用什么分隔符拼接多个查询字段来组成查询语句, 默认使用whitespace
-		// 这是因为在语义上'空'更符合逻辑表达的正确性, 但这也会导致一些问题需要注意：
+		// 这是因为在语义上'空'更符合逻辑表达的正确性, 但这也会导致输入的句子如果本身有空格的情况，可能导致拼接之后误匹配问题
 		QuerySep string
 	}
 
@@ -32,6 +33,12 @@ type (
 
 	AcHolderTxData cache.StrListValues
 )
+
+func init() {
+	RegisterEntriesHolder(HolderNameACMatcher, func() EntriesHolder {
+		return NewACEntriesHolder(ACHolderOption{QuerySep: " "})
+	})
+}
 
 // NewACEntriesHolder it will default drop the builder after compile ac-machine,
 func NewACEntriesHolder(option ACHolderOption) *ACEntriesHolder {
@@ -82,10 +89,10 @@ func (h *ACEntriesHolder) DumpEntries(buffer *strings.Builder) {
 	}
 }
 
-func (h *ACEntriesHolder) IndexingBETx(field *FieldDesc, bv *BoolValues) (TxData, error) {
+func (h *ACEntriesHolder) IndexingBETx(_ *FieldDesc, bv *BoolValues) (TxData, error) {
 	util.PanicIf(bv.Operator != ValueOptEQ, "ac_matcher container support EQ operator only")
 
-	keys, err := util.ParseAcMatchDict(bv.Value)
+	keys, err := ParseAcMatchDict(bv.Value)
 	if err != nil {
 		return nil, fmt.Errorf("ac holder need string(able) value, err:%v", err)
 	}
@@ -93,16 +100,16 @@ func (h *ACEntriesHolder) IndexingBETx(field *FieldDesc, bv *BoolValues) (TxData
 }
 
 func (h *ACEntriesHolder) CommitIndexingBETx(tx IndexingBETx) error {
-	if tx.data == nil {
+	if tx.Data == nil {
 		return nil
 	}
 	var ok bool
 	var data *AcHolderTxData
-	if data, ok = tx.data.(*AcHolderTxData); !ok {
+	if data, ok = tx.Data.(*AcHolderTxData); !ok {
 		return fmt.Errorf("invalid Tx.Data type")
 	}
 	for _, v := range data.Values {
-		h.values[v] = append(h.values[v], tx.eid)
+		h.values[v] = append(h.values[v], tx.EID)
 	}
 	return nil
 }
@@ -111,7 +118,7 @@ func (h *ACEntriesHolder) GetEntries(field *FieldDesc, assigns Values) (EntriesC
 	if len(h.values) == 0 {
 		return nil, nil
 	}
-	buf, err := util.BuildAcMatchContent(assigns, h.QuerySep)
+	buf, err := BuildAcMatchContent(assigns, h.QuerySep)
 	if err != nil {
 		return nil, err
 	}
@@ -125,7 +132,7 @@ func (h *ACEntriesHolder) GetEntries(field *FieldDesc, assigns Values) (EntriesC
 	for _, term := range terms {
 		key := string(term.Word)
 		if pl, ok := h.values[key]; ok && len(pl) > 0 {
-			cursors = append(cursors, NewEntriesCursor(newQKey(field.Field, key), pl))
+			cursors = append(cursors, NewEntriesCursor(NewQKey(field.Field, key), pl))
 		}
 	}
 	return cursors, nil

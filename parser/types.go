@@ -12,6 +12,8 @@ import (
 type (
 	// FieldValueParser turn value into a unique id
 	FieldValueParser interface {
+		Name() string
+
 		// ParseAssign parse query assign value into id-encoded ids
 		ParseAssign(v interface{}) ([]uint64, error)
 

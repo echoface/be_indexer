@@ -30,3 +30,7 @@ func CastIntegers[F Integer, T Integer](from []F) []T {
 func CastInteger[F Integer, T Integer](from F) T {
 	return T(from)
 }
+
+func Ptr[T Integer](v T) *T {
+	return &v
+}

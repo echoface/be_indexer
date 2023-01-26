@@ -54,6 +54,14 @@ func NewRangeDesc(v string) *RangeDesc {
 	return &opt
 }
 
+func (rgd *RangeDesc) Values() (start, end, stepLen int64) {
+	return rgd.start, rgd.end, rgd.start
+}
+
+func (p *NumberRangeParser) Name() string {
+	return "number_range"
+}
+
 // ParseAssign only single number supported, float will round into integer
 func (p *NumberRangeParser) ParseAssign(v interface{}) (res []uint64, err error) {
 	if util.NilInterface(v) {

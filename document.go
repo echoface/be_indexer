@@ -134,6 +134,14 @@ func (conj *Conjunction) LessThan(field BEField, value int64) *Conjunction {
 	return conj
 }
 
+func (conj *Conjunction) Between(field BEField, l, h int64) *Conjunction {
+	conj.AddBoolExprs(&BooleanExpr{
+		Field:      field,
+		BoolValues: NewBoolValue(ValueOptBetween, []int64{l, h}, true),
+	})
+	return conj
+}
+
 // AddBoolExprs append boolean expression,
 // don't allow same field added twice in one conjunction
 func (conj *Conjunction) AddBoolExprs(exprs ...*BooleanExpr) *Conjunction {

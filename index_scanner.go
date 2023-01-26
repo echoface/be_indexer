@@ -47,7 +47,7 @@ type (
 	FieldCursors []*FieldCursor
 )
 
-func newQKey(field BEField, v interface{}) QKey {
+func NewQKey(field BEField, v interface{}) QKey {
 	key := QKey{field: field, value: v}
 	return key
 }

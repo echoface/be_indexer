@@ -11,7 +11,7 @@ import (
 func TestPostingList_Skip(t *testing.T) {
 	convey.Convey("skip test", t, func() {
 		entries := []EntryID{1, 2, 3, 10, 10, 10, 11, 12, 15, 15, 22, 111, 111}
-		sc := NewEntriesCursor(newQKey("age", 2), entries)
+		sc := NewEntriesCursor(NewQKey("age", 2), entries)
 		convey.So(sc.Skip(0), convey.ShouldEqual, 1)
 
 		convey.So(sc.Skip(1), convey.ShouldEqual, 2)
@@ -28,7 +28,7 @@ func TestPostingList_Skip(t *testing.T) {
 
 	convey.Convey("skip to test", t, func() {
 		entries := []EntryID{1, 2, 3, 10, 10, 10, 11, 12, 15, 15, 22, 111, 111}
-		scanner := NewEntriesCursor(newQKey("age", 2), entries)
+		scanner := NewEntriesCursor(NewQKey("age", 2), entries)
 		convey.So(scanner.SkipTo(0), convey.ShouldEqual, 1)
 		convey.So(scanner.SkipTo(1), convey.ShouldEqual, 1)
 		convey.So(scanner.SkipTo(3), convey.ShouldEqual, 3)
@@ -55,12 +55,6 @@ func TestEntries_Less(t *testing.T) {
 		fmt.Println(ent)
 		convey.So(ent, convey.ShouldResemble, Entries{1, 1, 2, 3, 4, 8, 9, 10, 10})
 	})
-}
-
-func TestEntries_Key(t *testing.T) {
-	f := NewKey(MaxBEFieldID, MaxBEValueID)
-	fmt.Printf("%x\n", f.GetFieldID())
-	fmt.Printf("%x\n", f.GetValueID())
 }
 
 func TestNewConjID(t *testing.T) {

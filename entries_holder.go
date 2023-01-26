@@ -45,11 +45,11 @@ type (
 	}
 
 	TxData interface {
-		// BetterToCache: if txData big enaough, perfer to cache it; builder will
-		// detect all expressions in a conjunction and decide wheather cache it or not
+		// BetterToCache if txData big enough, prefer to cache it; builder will
+		// detect all expressions in a conjunction and decide whether cache it or not
 		BetterToCache() bool
 
-		// Encode, searialize TxData for cacheing
+		// Encode serialize TxData for caching
 		Encode() ([]byte, error)
 	}
 
@@ -57,10 +57,14 @@ type (
 		field  *FieldDesc
 		holder EntriesHolder
 
-		eid  EntryID
-		data TxData
+		EID  EntryID
+		Data TxData
 	}
 
+	Term struct {
+		FieldID uint64
+		IDValue uint64
+	}
 	// DefaultEntriesHolder EntriesHolder implement base on hash map holder map<key, Entries>
 	// 默认容器,目前支持表达式最大256个field; 支持多个field复用默认容器; 见:Key编码逻辑
 	// 如果需要打破这个限制,可以自己实现容器.
@@ -68,7 +72,10 @@ type (
 		debug     bool
 		maxLen    int64 // max length of Entries
 		avgLen    int64 // avg length of Entries
-		plEntries map[Key]Entries
+		plEntries map[Term]Entries
+
+		Parser      parser.FieldValueParser
+		FieldParser map[BEField]parser.FieldValueParser
 	}
 
 	Uint64TxData cache.Uint64ListValues
@@ -78,9 +85,18 @@ var (
 	BetterToCacheMaxItemsCount = 512
 )
 
+func NewTerm(fid, idValue uint64) Term {
+	return Term{FieldID: fid, IDValue: idValue}
+}
+func (tm Term) String() string {
+	return fmt.Sprintf("<%d,%d>", tm.FieldID, tm.IDValue)
+}
+
 func NewDefaultEntriesHolder() *DefaultEntriesHolder {
 	return &DefaultEntriesHolder{
-		plEntries: map[Key]Entries{},
+		plEntries:   map[Term]Entries{},
+		Parser:      parser.NewCommonParser(),
+		FieldParser: map[BEField]parser.FieldValueParser{},
 	}
 }
 
@@ -110,13 +126,16 @@ func (h *DefaultEntriesHolder) EnableDebug(debug bool) {
 // DumpInfo
 // {name: %s, value_count:%d max_entries:%d avg_entries:%d}
 func (h *DefaultEntriesHolder) DumpInfo(buffer *strings.Builder) {
-	infos := map[string]interface{}{
-		"name":          "ExtendLgtHolder",
-		"kvCnt":         len(h.plEntries),
+	summary := map[string]interface{}{
+		"name":          HolderNameDefault,
+		"termCnt":       len(h.plEntries),
 		"maxEntriesLen": h.maxLen,
 		"avgEntriesLen": h.avgLen,
 	}
-	buffer.WriteString(util.JSONPretty(infos))
+	for field, idGen := range h.FieldParser {
+		summary[fmt.Sprintf("field#%s#parser", field)] = idGen.Name()
+	}
+	buffer.WriteString(util.JSONPretty(summary))
 }
 
 func (h *DefaultEntriesHolder) DumpEntries(buffer *strings.Builder) {
@@ -129,8 +148,11 @@ func (h *DefaultEntriesHolder) DumpEntries(buffer *strings.Builder) {
 	}
 }
 
-func (h *DefaultEntriesHolder) GetParser() parser.FieldValueParser {
-	return nil
+func (h *DefaultEntriesHolder) GetParser(field BEField) parser.FieldValueParser {
+	if p, ok := h.FieldParser[field]; ok {
+		return p
+	}
+	return h.Parser
 }
 
 func (h *DefaultEntriesHolder) CompileEntries() error {
@@ -140,16 +162,13 @@ func (h *DefaultEntriesHolder) CompileEntries() error {
 
 func (h *DefaultEntriesHolder) GetEntries(field *FieldDesc, assigns Values) (r EntriesCursors, e error) {
 	var ids []uint64
-
-	if ids, e = field.Parser.ParseAssign(assigns); e != nil {
+	if ids, e = h.GetParser(field.Field).ParseAssign(assigns); e != nil {
 		return nil, e
 	}
 	for _, id := range ids {
-
-		key := NewKey(field.ID, id)
-
-		if entries := h.getEntries(key); len(entries) > 0 {
-			r = append(r, NewEntriesCursor(newQKey(field.Field, id), entries))
+		key := NewTerm(field.ID, id)
+		if entries, hit := h.plEntries[key]; hit && len(entries) > 0 {
+			r = append(r, NewEntriesCursor(NewQKey(field.Field, id), entries))
 		}
 	}
 	return r, nil
@@ -159,7 +178,7 @@ func (h *DefaultEntriesHolder) IndexingBETx(field *FieldDesc, bv *BoolValues) (T
 	util.PanicIf(bv.Operator != ValueOptEQ, "default container support EQ operator only")
 
 	// NOTE: ids can be replicated if expression contain cross condition
-	ids, e := field.Parser.ParseValue(bv.Value)
+	ids, e := h.GetParser(field.Field).ParseValue(bv.Value)
 	if e != nil {
 		return nil, fmt.Errorf("field:%s value:%+v parse fail, err:%s", field.Field, bv, e.Error())
 	}
@@ -167,26 +186,18 @@ func (h *DefaultEntriesHolder) IndexingBETx(field *FieldDesc, bv *BoolValues) (T
 }
 
 func (h *DefaultEntriesHolder) CommitIndexingBETx(tx IndexingBETx) error {
-	if tx.data == nil {
+	if tx.Data == nil {
 		return nil
 	}
 
 	var ok bool
-	var data *Uint64TxData
-	if data, ok = tx.data.(*Uint64TxData); !ok {
-		panic(fmt.Errorf("bad preparation.Data type, oops..."))
-	}
+	data, ok := tx.Data.(*Uint64TxData)
+	util.PanicIf(!ok, "bad TxData need *Uint64TxData, oops")
+
 	values := util.DistinctInteger(data.Values)
 	for _, id := range values {
-		key := NewKey(tx.field.ID, id)
-		h.plEntries[key] = append(h.plEntries[key], tx.eid)
-	}
-	return nil
-}
-
-func (h *DefaultEntriesHolder) getEntries(key Key) Entries {
-	if entries, hit := h.plEntries[key]; hit {
-		return entries
+		key := NewTerm(tx.field.ID, id)
+		h.plEntries[key] = append(h.plEntries[key], tx.EID)
 	}
 	return nil
 }

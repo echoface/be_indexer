@@ -26,6 +26,10 @@ func NewNumberParser2(f2i bool) *NumberParser {
 	}
 }
 
+func (p *NumberParser) Name() string {
+	return "number"
+}
+
 func (p *NumberParser) ParseAssign(v interface{}) (values []uint64, e error) {
 	if util.NilInterface(v) {
 		return values, nil

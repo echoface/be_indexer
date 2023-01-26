@@ -1,7 +1,5 @@
 package be_indexer
 
-import "fmt"
-
 type (
 	HolderBuilder func() EntriesHolder
 )
@@ -9,20 +7,14 @@ type (
 const (
 	HolderNameDefault     = "default"
 	HolderNameACMatcher   = "ac_matcher"
-	HolderNameExtendLgt = "number_with_lgt"
+	HolderNameExtendRange = "ext_range"
 )
 
 var holderFactory = make(map[string]HolderBuilder)
 
 func init() {
-	_ = RegisterEntriesHolder(HolderNameACMatcher, func() EntriesHolder {
-		return NewACEntriesHolder(ACHolderOption{QuerySep: " "})
-	})
-	_ = RegisterEntriesHolder(HolderNameDefault, func() EntriesHolder {
+	RegisterEntriesHolder(HolderNameDefault, func() EntriesHolder {
 		return NewDefaultEntriesHolder()
-	})
-	_ = RegisterEntriesHolder(HolderNameExtendLgt, func() EntriesHolder {
-		return NewDefaultExtLtGtHolder(true)
 	})
 }
 
@@ -38,10 +30,9 @@ func HasHolderBuilder(name string) bool {
 	return ok
 }
 
-func RegisterEntriesHolder(name string, builder HolderBuilder) error {
-	if _, ok := holderFactory[name]; ok {
-		return fmt.Errorf("holder name:%s has already registered", name)
+func RegisterEntriesHolder(name string, builder HolderBuilder) {
+	if HasHolderBuilder(name) {
+		LogInfo("holder name:%s already registered", name)
 	}
 	holderFactory[name] = builder
-	return nil
 }

@@ -25,7 +25,7 @@ func NewCompactedBEIndex() *CompactBEIndex {
 	return index
 }
 
-// newPostingEntriesIfNeeded(k int)
+// newContainer(k int)
 func (bi *CompactBEIndex) newContainer(_ int) *EntriesContainer {
 	return bi.container
 }

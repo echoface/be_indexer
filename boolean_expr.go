@@ -10,7 +10,7 @@ import (
 type (
 	BEField string
 
-	// value数值的描述符; 注意这里将其与最终的bool逻辑运算符区分开;
+	// ValueOpt value数值的描述符; 注意这里将其与最终的bool逻辑运算符区分开;
 	// 描述一个值: >5 代表了所有数值空间中[5, *)所有的值; 结合布尔描述
 	// 中的Incl/Excl 才构成一个布尔描述; 简而言之它用于描述存在"哪些值"
 	ValueOpt int
@@ -37,9 +37,10 @@ type (
 
 const (
 	// ValueOptEQ ...数值范围描述符
-	ValueOptEQ ValueOpt = 0
-	ValueOptGT ValueOpt = 1
-	ValueOptLT ValueOpt = 2
+	ValueOptEQ      ValueOpt = 0
+	ValueOptGT      ValueOpt = 1
+	ValueOptLT      ValueOpt = 2
+	ValueOptBetween ValueOpt = 3
 )
 
 func (ass Assignments) Size() (size int) {

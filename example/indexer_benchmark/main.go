@@ -112,18 +112,27 @@ func (ctx *benchmarkContext) RunRoaringBench() {
 }
 
 func (ctx *benchmarkContext) RunKGroupIndexBench() {
+	be_indexer.RegisterEntriesHolder(be_indexer.HolderNameDefault, func() be_indexer.EntriesHolder {
+		holder := be_indexer.NewDefaultEntriesHolder()
+		holder.FieldParser = map[be_indexer.BEField]parser.FieldValueParser{}
+		numberParser := parser.NewNumberParser()
+		for i := 0; i < ctx.numFieldCnt; i++ {
+			fieldName := fmt.Sprintf("number_%d", i)
+			holder.FieldParser[be_indexer.BEField(fieldName)] = numberParser
+		}
+		return holder
+	})
 	builder := be_indexer.NewIndexerBuilder()
 	for i := 0; i < ctx.numFieldCnt; i++ {
 		fieldName := fmt.Sprintf("number_%d", i)
 		builder.ConfigField(be_indexer.BEField(fieldName), be_indexer.FieldOption{
-			Parser:    parser.NewNumberParser(),
-			Container: "default",
+			Container: be_indexer.HolderNameDefault,
 		})
 	}
 	for i := 0; i < ctx.acFieldCnt; i++ {
 		fieldName := fmt.Sprintf("ac_%d", i)
 		builder.ConfigField(be_indexer.BEField(fieldName), be_indexer.FieldOption{
-			Container: "ac_matcher",
+			Container: be_indexer.HolderNameACMatcher,
 		})
 	}
 	var err error
@@ -151,19 +160,29 @@ func (ctx *benchmarkContext) RunKGroupIndexBench() {
 }
 
 func (ctx *benchmarkContext) RunCompactIndexBench() {
+	be_indexer.RegisterEntriesHolder(be_indexer.HolderNameDefault, func() be_indexer.EntriesHolder {
+		holder := be_indexer.NewDefaultEntriesHolder()
+		holder.FieldParser = map[be_indexer.BEField]parser.FieldValueParser{}
+		numberParser := parser.NewNumberParser()
+		for i := 0; i < ctx.numFieldCnt; i++ {
+			fieldName := fmt.Sprintf("number_%d", i)
+			holder.FieldParser[be_indexer.BEField(fieldName)] = numberParser
+		}
+		return holder
+	})
+
 	builder := be_indexer.NewCompactIndexerBuilder()
 
 	for i := 0; i < ctx.numFieldCnt; i++ {
 		fieldName := fmt.Sprintf("number_%d", i)
 		builder.ConfigField(be_indexer.BEField(fieldName), be_indexer.FieldOption{
-			Parser:    parser.NewNumberParser(),
-			Container: "default",
+			Container: be_indexer.HolderNameDefault,
 		})
 	}
 	for i := 0; i < ctx.acFieldCnt; i++ {
 		fieldName := fmt.Sprintf("ac_%d", i)
 		builder.ConfigField(be_indexer.BEField(fieldName), be_indexer.FieldOption{
-			Container: "ac_matcher",
+			Container: be_indexer.HolderNameACMatcher,
 		})
 	}
 	var err error
@@ -178,7 +197,7 @@ func (ctx *benchmarkContext) RunCompactIndexBench() {
 
 	ctx.enableCPUProfile()
 
-	fmt.Println("start bench kgroup indexer retrieve...")
+	fmt.Println("start bench compact indexer retrieve...")
 	tn := time.Now()
 	for _, assigns := range ctx.queries {
 		if _, err = indexer.Retrieve(assigns); err != nil {

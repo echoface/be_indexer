@@ -1,10 +1,9 @@
 package be_indexer
 
 import (
+	"fmt"
 	"strings"
 	"sync"
-
-	"github.com/echoface/be_indexer/parser"
 )
 
 const (
@@ -12,13 +11,11 @@ const (
 )
 
 var (
-	wildcardQKey = newQKey(WildcardFieldName, 0)
+	wildcardQKey = NewQKey(WildcardFieldName, 0)
 )
 
 type (
 	FieldOption struct {
-		Parser parser.FieldValueParser // will create a default parser if parser is nil
-
 		Container string // specify Entries holder for all tokenized value Entries
 	}
 
@@ -136,4 +133,22 @@ func newRetrieveCtx(ass Assignments, opts ...IndexOpt) retrieveContext {
 		fn(&ctx)
 	}
 	return ctx
+}
+
+func PrintIndexInfo(index BEIndex) {
+	if index == nil {
+		fmt.Println("nil indexer")
+	}
+	sb := &strings.Builder{}
+	index.DumpIndexInfo(sb)
+	fmt.Println(sb.String())
+}
+
+func PrintIndexEntries(index BEIndex) {
+	if index == nil {
+		fmt.Println("nil indexer")
+	}
+	sb := &strings.Builder{}
+	index.DumpEntries(sb)
+	fmt.Println(sb.String())
 }

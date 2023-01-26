@@ -17,7 +17,7 @@ type (
 		fieldHolder map[BEField]EntriesHolder // special field holder
 	}
 
-	SizeGroupedBEIndex struct {
+	KGroupsBEIndex struct {
 		indexBase
 		kSizeContainers []*EntriesContainer
 	}
@@ -25,7 +25,7 @@ type (
 
 func newFieldEntriesContainer() *EntriesContainer {
 	return &EntriesContainer{
-		defaultHolder: NewDefaultEntriesHolder(),
+		defaultHolder: NewEntriesHolder(HolderNameDefault),
 		fieldHolder:   map[BEField]EntriesHolder{},
 	}
 }
@@ -53,17 +53,25 @@ func (c *EntriesContainer) getFieldHolder(desc *FieldDesc) EntriesHolder {
 	return nil
 }
 
-func (c *EntriesContainer) newEntriesHolder(desc *FieldDesc) EntriesHolder {
+func (c *EntriesContainer) GetHolder(desc *FieldDesc) EntriesHolder {
 	if desc.Container == HolderNameDefault {
 		return c.defaultHolder
 	}
-
 	if holder, ok := c.fieldHolder[desc.Field]; ok {
 		return holder
 	}
-	holder := NewEntriesHolder(desc.Container)
-	util.PanicIf(holder == nil, "field:%s, container:%s not found, register before using", desc.Field, desc.Container)
+	return nil
+}
 
+func (c *EntriesContainer) CreateHolder(desc *FieldDesc) EntriesHolder {
+	holder := c.GetHolder(desc)
+	if holder != nil { // already has holder for field
+		return holder
+	}
+	hasBuilder := HasHolderBuilder(desc.Container)
+	util.PanicIf(!hasBuilder, "field:%s container:%s not found, plz register it", desc.Field, desc.Container)
+
+	holder = NewEntriesHolder(desc.Container)
 	c.fieldHolder[desc.Field] = holder
 
 	return holder
@@ -84,7 +92,7 @@ func (c *EntriesContainer) DumpEntries(buf *strings.Builder) {
 //	>field:%s {name: %s, value_count:%d max_entries:%d avg_entries:%d}
 //	>field:%s {name: %s, value_count:%d max_entries:%d avg_entries:%d}
 func (c *EntriesContainer) DumpInfo(buf *strings.Builder) {
-	buf.WriteString("default holder:")
+	buf.WriteString("holder information:")
 	c.defaultHolder.DumpInfo(buf)
 	for field, holder := range c.fieldHolder {
 		buf.WriteString(fmt.Sprintf("  >field:%s ", field))
@@ -93,8 +101,8 @@ func (c *EntriesContainer) DumpInfo(buf *strings.Builder) {
 	}
 }
 
-func NewSizeGroupedBEIndex() BEIndex {
-	index := &SizeGroupedBEIndex{
+func NewKGroupsBEIndex() BEIndex {
+	index := &KGroupsBEIndex{
 		indexBase: indexBase{
 			fieldsData: make(map[BEField]*FieldDesc),
 		},
@@ -103,12 +111,12 @@ func NewSizeGroupedBEIndex() BEIndex {
 	return index
 }
 
-func (bi *SizeGroupedBEIndex) maxK() int {
+func (bi *KGroupsBEIndex) maxK() int {
 	return len(bi.kSizeContainers) - 1
 }
 
-// newEntriesContainerIfNeeded(k int) *EntriesContainer get a container if created, otherwise create one
-func (bi *SizeGroupedBEIndex) newContainer(k int) *EntriesContainer {
+// newContainer(k int) *EntriesContainer get a container if created, otherwise create one
+func (bi *KGroupsBEIndex) newContainer(k int) *EntriesContainer {
 	for k >= len(bi.kSizeContainers) {
 		container := newFieldEntriesContainer()
 		bi.kSizeContainers = append(bi.kSizeContainers, container)
@@ -116,7 +124,7 @@ func (bi *SizeGroupedBEIndex) newContainer(k int) *EntriesContainer {
 	return bi.kSizeContainers[k]
 }
 
-func (bi *SizeGroupedBEIndex) compileIndexer() (err error) {
+func (bi *KGroupsBEIndex) compileIndexer() (err error) {
 	for _, sizeEntries := range bi.kSizeContainers {
 		if err = sizeEntries.compileEntries(); err != nil {
 			return err
@@ -128,14 +136,14 @@ func (bi *SizeGroupedBEIndex) compileIndexer() (err error) {
 	return nil
 }
 
-func (bi *SizeGroupedBEIndex) getKSizeEntries(k int) *EntriesContainer {
+func (bi *KGroupsBEIndex) getKSizeEntries(k int) *EntriesContainer {
 	if k >= len(bi.kSizeContainers) {
 		panic(fmt.Errorf("k:[%d] out of range", k))
 	}
 	return bi.kSizeContainers[k]
 }
 
-func (bi *SizeGroupedBEIndex) initCursors(ctx *retrieveContext, k int) (fCursors FieldCursors, err error) {
+func (bi *KGroupsBEIndex) initCursors(ctx *retrieveContext, k int) (fCursors FieldCursors, err error) {
 
 	fCursors = make(FieldCursors, 0, len(bi.fieldsData))
 
@@ -172,9 +180,7 @@ func (bi *SizeGroupedBEIndex) initCursors(ctx *retrieveContext, k int) (fCursors
 		}
 
 		if len(entriesList) > 0 {
-			fieldCursor := NewFieldCursor(entriesList...)
-			fCursors = append(fCursors, fieldCursor)
-
+			fCursors = append(fCursors, NewFieldCursor(entriesList...))
 			Logger.Debugf("<%s,%v> fetch %d posting list\n", desc.Field, values, len(entriesList))
 		} else {
 			Logger.Debugf("<%s,%v> nothing matched from entries holder\n", desc.Field, values)
@@ -184,9 +190,9 @@ func (bi *SizeGroupedBEIndex) initCursors(ctx *retrieveContext, k int) (fCursors
 }
 
 // retrieveK retrieve matched result from k size index data
-func (bi *SizeGroupedBEIndex) retrieveK(ctx *retrieveContext, fieldCursors FieldCursors, k int) {
+func (bi *KGroupsBEIndex) retrieveK(ctx *retrieveContext, fieldCursors FieldCursors, k int) {
 	if len(fieldCursors) < k {
-		LogInfoIf(ctx.dumpStepInfo, "end@step:%d need k:%d but only:%d matched", k, len(fieldCursors))
+		LogInfoIf(ctx.dumpStepInfo, "end@step:%d need k:%d but only:%d matched", k, k, len(fieldCursors))
 		return
 	}
 
@@ -234,7 +240,7 @@ func (bi *SizeGroupedBEIndex) retrieveK(ctx *retrieveContext, fieldCursors Field
 	}
 }
 
-func (bi *SizeGroupedBEIndex) Retrieve(
+func (bi *KGroupsBEIndex) Retrieve(
 	queries Assignments, opts ...IndexOpt) (result DocIDList, err error) {
 
 	collector := PickCollector()
@@ -250,7 +256,7 @@ func (bi *SizeGroupedBEIndex) Retrieve(
 	return result, nil
 }
 
-func (bi *SizeGroupedBEIndex) RetrieveWithCollector(
+func (bi *KGroupsBEIndex) RetrieveWithCollector(
 	queries Assignments, collector ResultCollector, opts ...IndexOpt) (err error) {
 
 	ctx := newRetrieveCtx(queries, opts...)
@@ -277,7 +283,7 @@ func (bi *SizeGroupedBEIndex) RetrieveWithCollector(
 	return nil
 }
 
-func (bi *SizeGroupedBEIndex) DumpEntries(sb *strings.Builder) {
+func (bi *KGroupsBEIndex) DumpEntries(sb *strings.Builder) {
 	sb.WriteString("\n+++++++ size grouped boolean indexing entries +++++++++++ \n")
 	sb.WriteString(fmt.Sprintf(">>Z:\n"))
 	sb.WriteString(wildcardQKey.String())
@@ -292,7 +298,7 @@ func (bi *SizeGroupedBEIndex) DumpEntries(sb *strings.Builder) {
 	sb.WriteString("+++++++++++++size grouped index entries end +++++++++++++++++\n")
 }
 
-func (bi *SizeGroupedBEIndex) DumpIndexInfo(sb *strings.Builder) {
+func (bi *KGroupsBEIndex) DumpIndexInfo(sb *strings.Builder) {
 	sb.WriteString("\n+++++++ size grouped boolean indexing info +++++++++++\n")
 	sb.WriteString(fmt.Sprintf("wildcard info: count:%d\n", len(bi.wildcardEntries)))
 	for k, c := range bi.kSizeContainers {

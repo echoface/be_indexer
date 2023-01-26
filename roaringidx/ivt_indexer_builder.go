@@ -28,7 +28,7 @@ func NewIndexerBuilder() *IvtBEIndexerBuilder {
 		panicOnError:     false,
 		containerBuilder: map[be_indexer.BEField]BEContainerBuilder{},
 		docMaxConjSize:   1,
-		defaultParser:    parser.NewCommonStrParser(),
+		defaultParser:    parser.NewCommonParser(),
 	}
 	return builder
 }

@@ -2,10 +2,9 @@
 
 ## Boolean expression index
 
-
-算法描述来源于论文：[Boolean expression indexing](https://theory.stanford.edu/~sergei/papers/vldb09-indexing.pdf),
-代码中附带了一份pdf[doc/vldb09-indexing.pdf](doc/vldb09-indexing.pdf).索引数据构建后的示意图见:
-[boolean indexing arch](doc/vldb09_indexing.md),本库的作用是为了使用统一且规范的方式解决下面这种问题:
+算法描述来源于论文:[Boolean expression indexing](https://theory.stanford.edu/~sergei/papers/vldb09-indexing.pdf),
+代码中附带了一份[vldb09-indexing.pdf](static/doc/vldb09-indexing.pdf). 索引数据构建后的示意图见:
+[boolean indexing arch](static/doc/vldb09_indexing.md), 本库的作用是为了使用统一且规范的方式解决下面这种问题:
 
 ```bash
 # 对于一系列规则(布尔规则)描述数据; 对于一个输入.判断哪些规则满足条件的库
@@ -37,16 +36,12 @@ vip:  true|fals
 进行整理改进之后的版本, 因为存在对信息存在编码和压缩，所以存在一些限制，使用时注意规避;
 
 - 文档ID最大值限制为:`[-2^43, 2^43]`
-  - YES: 支持负值
-- 每个文档最多拥有256个Conjunction
-  - 自定义Container不受此限制, 见Default容器的实现
-- 每个DNF最大支持组合条件(field)个数256
-  - 自定义Container不受此限制, 见Default容器的实现
 - 支持自定义Tokenizer，见parser的定义
-- 支持容器扩展(eg:外部kv存储); 默认容器实现使用go内置map(hashmap)存储
+- 支持容器扩展(eg:外部kv存储); 默认容器实现使用内置map(hashmap)存储
 - 内置支持模式匹配容器:(基于AC自动机,常用于上下文内容检索等)
-- 内置数值容器:支持>,<,in/not运算符,用于支持无限集合范围布尔表达
-  - 简而言之支持: **score > 20** 这样的布尔表达,常用于不方便业务转化具体枚举值的数值范围
+- 内置数值容器:支持>,<,in/not,between运算符,用于支持无限集合范围布尔表达
+  - 简而言之支持: **score > 20   x between l and r** 这样的布尔表达,
+  - 常用于不方便业务转化具体枚举值的数值范围
 
 在引入Aho-corasick模式匹配查找容器后，Index构建可能失败，因此对不可恢复错误引入了panic，
 需要集成的应用自己recover对应的panic进行业务逻辑的处理，而对于AddDocument等返回error的API，
@@ -180,10 +175,9 @@ func main() {
 }
 ```
 
-
 ## Copyright and License
 
-Copyright (C) 2018, by HuanGong [gonghuan.dev@gmail.com](mailto:gonghuan.dev@gmail.com).
+Copyright (C) 2018, by [gonghuan.dev](mailto:gonghuan.dev@gmail.com).
 
 Under the MIT License.
 

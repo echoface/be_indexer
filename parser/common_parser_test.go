@@ -7,7 +7,7 @@ import (
 )
 
 func TestCommonStrParser_ParseValue(t *testing.T) {
-	parser := NewCommonStrParser()
+	parser := NewCommonParser()
 
 	convey.Convey("test common parser", t, func() {
 		r, e := parser.ParseValue([]int{1, 2, 3})

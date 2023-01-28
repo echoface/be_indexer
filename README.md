@@ -52,15 +52,10 @@ Conjunction因提供的值不能被Parser/Holder 正确的解析成所需要的�
 
 ### usage:
 
+详细使用例子查看：[be_indexer usage example](./example/be_indexer_usage/main.go)
+
+
 ```go
-package main
-
-import (
-	"fmt"
-
-	"github.com/echoface/be_indexer"
-)
-
 func buildTestDoc() []*be_indexer.Document {
 	return []*be_indexer.Document{}
 }
@@ -73,7 +68,7 @@ func main() {
 	// builder := be_indexer.NewCompactIndexerBuilder()
 
 	// optional special a holder/container for field
-	// dever can also register customized container: see: entries_holder_factory.go
+	// can also register customized container: see: entries_holder_factory.go
 	builder.ConfigField("keyword", be_indexer.FieldOption{
 		Container: be_indexer.HolderNameACMatcher,
 	})
@@ -99,9 +94,9 @@ func main() {
 ```
 
 
-## roaring bitmap based boolean expression index(roaringidx)
+## roaringidx roaring-bitmap based boolean expression indexing
 
-![design](./doc/indexer_design.png):
+![roaring boolean indexing design](./static/doc/indexer_design.png):
 
 基于roaring bitmap的布尔索引实现，区别于Boolean expression indexing论文的实现，
 利用bitmap在集合运算方面的优势实现的DNF Match逻辑，目前支持普通的倒排以及基于
@@ -116,63 +111,37 @@ NOTE：
 - 使用前需要为业务中出现的每个字段提前完成配置
 
 ### usage
+
+详细使用例子查看：[roaringidx usage example](./example/roaringidx_usage/example_usage.go)
 ```go
-package main
 
-import (
-	"fmt"
+  builder := roaringidx.NewIndexerBuilder()
+  _ = builder.ConfigureField("package", roaringidx.FieldSetting{
+    Container: roaringidx.ContainerNameDefault,
+    Parser:    parser.NewStrHashParser(),
+  })
 
-	"github.com/echoface/be_indexer"
-	"github.com/echoface/be_indexer/parser"
-	"github.com/echoface/be_indexer/roaringidx"
-	"github.com/echoface/be_indexer/util"
-)
+  doc1 := be_indexer.NewDocument(1)
+  doc1.AddConjunction(be_indexer.NewConjunction().
+    Include("age", be_indexer.NewIntValues(10, 20, 100)).
+    Exclude("package", be_indexer.NewStrValues("com.echoface.not")))
+  
+  builder.AddDocuments(doc1)
 
-func main() {
+  indexer, err := builder.BuildIndexer()
+  util.PanicIfErr(err, "should not err here")
 
-	builder := roaringidx.NewIndexerBuilder()
-
-	builder.ConfigureField("ad_id", roaringidx.FieldSetting{
-		Container: roaringidx.ContainerNameDefault,
-		Parser:    parser.ParserNameNumber,
-	})
-	builder.ConfigureField("package", roaringidx.FieldSetting{
-		Container: roaringidx.ContainerNameDefault,
-		Parser:    parser.ParserNameStrHash,
-	})
-	builder.ConfigureField("keywords", roaringidx.FieldSetting{
-		Container: roaringidx.ContainerNameAcMatch,
-		Parser:    parser.ParserNameCommon,
-	})
-
-	doc1 := be_indexer.NewDocument(1)
-	doc1.AddConjunction(be_indexer.NewConjunction().
-		Include("ad_id", be_indexer.NewIntValues(100, 101, 108)).
-		Exclude("package", be_indexer.NewStrValues("com.echoface.not")))
-	doc1.AddConjunction(be_indexer.NewConjunction().
-		Include("package", be_indexer.NewStrValues("com.echoface.in")))
-
-	doc3 := be_indexer.NewDocument(20)
-	doc3.AddConjunctions(be_indexer.NewConjunction())
-
-	doc4 := be_indexer.NewDocument(50)
-	doc4.AddConjunction(be_indexer.NewConjunction().
-		Exclude("ad_id", be_indexer.NewIntValues(100, 108)).
-		Include("package", be_indexer.NewStrValues("com.echoface.be")))
-
-	builder.AddDocuments(doc1, doc3, doc4)
-
-	indexer, err := builder.BuildIndexer()
-	util.PanicIfErr(err, "should not err here")
-
-	scanner := roaringidx.NewScanner(indexer)
-	conjIDs, err := scanner.Retrieve(map[be_indexer.BEField]be_indexer.Values{
-		"ad_id":   []interface{}{100, 102},
-		"package": []interface{}{"com.echoface.be", "com.echoface.not"},
-	})
-	fmt.Println(roaringidx.FormatBitMapResult(conjIDs))
-	scanner.Reset()
+  scanner := roaringidx.NewScanner(indexer)
+  docs, err := scanner.Retrieve(map[be_indexer.BEField]be_indexer.Values{
+	  "age": []int64{12, 20},
+	  "package": []interface{}{"com.echoface.be", "com.echoface.not"},
+  })
+  util.PanicIfErr(err, "retrieve fail, err:%v", err)
+  fmt.Println("docs:", docs)
+  fmt.Println("raw result:", roaringidx.FormatBitMapResult(scanner.GetRawResult().ToArray()))
+  scanner.Reset()
 }
+
 ```
 
 ## Copyright and License

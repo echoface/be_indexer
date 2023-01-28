@@ -96,14 +96,14 @@ func main() {
 
 ## roaringidx roaring-bitmap based boolean expression indexing
 
-![roaring boolean indexing design](./static/doc/indexer_design.png):
+design detail see: [roaring boolean indexing design](./static/doc/roaringidx_detail.md):
 
 基于roaring bitmap的布尔索引实现，区别于Boolean expression indexing论文的实现，
-利用bitmap在集合运算方面的优势实现的DNF Match逻辑，目前支持普通的倒排以及基于
+利用bitmap在集合运算方面的优势实现的DNF索引逻辑，目前支持普通的倒排以及基于
 AhoCorasick的字符串模式匹配逻辑实现。从benchmark 结果来看，在fields数量较多的
-场景下性能相对于Boolean expression index的实现性能相对来说要差一些，但是其可理
-解性要好一点。 借助roaring bitmap的实现，在文档数规模大、特征数较小的场景下可以
-节省大量的内存。aho corasick 选型上也选取了使用double array trie的实现，索引上内存有所压缩。
+场景下性能相对于Boolean expression index的实现性能相对来说要差一些，但roaringidx其可理解性
+要好一点。 同时借助roaring bitmap的实现，在文档数规模大、特征数较小的场景下可以节省大量的内存。
+模式匹配的索引数据存储也使用了基于double array tree的aho-corasick方案。
 
 NOTE：
 - 文档ID范围[-2^56, 2^56]

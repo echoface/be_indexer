@@ -1,7 +1,7 @@
-indexing_json_doc
-ac_cedar_test
-grouped_indexer
-be_indexer_usage
-compacted_indexer
-indexing_json_doc
-indexer_benchmark
+ac_cedar_test/ac_cedar_test
+kgroups_indexer/kgroups_indexer
+be_indexer_usage/be_indexer_usage
+compacted_indexer/compacted_indexer
+indexer_benchmark/indexer_benchmark
+indexing_json_doc/indexing_json_doc
+roaringidx_usage/roaringidx_usage

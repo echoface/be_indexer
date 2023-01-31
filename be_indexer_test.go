@@ -3,13 +3,16 @@ package be_indexer
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/echoface/be_indexer/codegen/cache"
 	"math/rand"
 	"os"
 	"sort"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/echoface/be_indexer/parser"
+
+	"github.com/echoface/be_indexer/codegen/cache"
 
 	"github.com/echoface/be_indexer/util"
 	"github.com/smartystreets/goconvey/convey"
@@ -728,4 +731,46 @@ func TestBEIndex_RetrievePartialConjunction(t *testing.T) {
 		convey.So(ids, convey.ShouldResemble, DocIDList{12})
 	})
 
+}
+
+func TestBEIndexer_Retrieve_Geohash(t *testing.T) {
+	convey.Convey("geohash targeting", t, func() {
+		RegisterEntriesHolder(HolderNameDefault, func() EntriesHolder {
+			holder := NewDefaultEntriesHolder()
+			holder.FieldParser = map[BEField]parser.FieldValueParser{
+				"tag": parser.NewNumberParser(),
+				"geo": &parser.GeoHashParser{
+					Precision:           7,
+					MinCompressionLevel: 6,
+				},
+			}
+			return holder
+		})
+
+		conj := NewConjunction().
+			NotIn("tag", []int64{1, 2, 3, 4, 5}).
+			In("geo", "31.21275902:121.53779984:1000")
+		b := NewCompactIndexerBuilder()
+		doc := NewDocument(1)
+		doc.AddConjunction(conj)
+		err := b.AddDocument(doc)
+		convey.So(err, convey.ShouldBeNil)
+		index := b.BuildIndex()
+
+		PrintIndexInfo(index)
+		PrintIndexEntries(index)
+
+		results, err := index.Retrieve(map[BEField]Values{
+			"tag": 1000,
+			"geo": [2]float64{31.21275902, 121.53779984},
+		})
+		fmt.Println(results, err)
+		convey.So(results.Len(), convey.ShouldEqual, 1)
+
+		results, err = index.Retrieve(map[BEField]Values{
+			"tag": 1000,
+			"geo": [2]float64{30.21275902, 121.53779984},
+		})
+		convey.So(results.Len(), convey.ShouldEqual, 0)
+	})
 }

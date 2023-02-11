@@ -13,6 +13,11 @@ const (
 var holderFactory = make(map[string]HolderBuilder)
 
 func init() {
+	InitHolderDefaults()
+}
+
+func InitHolderDefaults() {
+	holderFactory = make(map[string]HolderBuilder)
 	RegisterEntriesHolder(HolderNameDefault, func() EntriesHolder {
 		return NewDefaultEntriesHolder()
 	})
@@ -32,7 +37,7 @@ func HasHolderBuilder(name string) bool {
 
 func RegisterEntriesHolder(name string, builder HolderBuilder) {
 	if HasHolderBuilder(name) {
-		LogInfo("holder name:%s already registered", name)
+		LogInfo("holder name:%s already registered, override!!!", name)
 	}
 	holderFactory[name] = builder
 }

@@ -5,3 +5,4 @@ compacted_indexer/compacted_indexer
 indexer_benchmark/indexer_benchmark
 indexing_json_doc/indexing_json_doc
 roaringidx_usage/roaringidx_usage
+geohash_exmaple/geohash_exmaple

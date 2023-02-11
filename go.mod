@@ -5,7 +5,7 @@ go 1.18
 require (
 	github.com/RoaringBitmap/roaring v0.9.4
 	github.com/anknown/ahocorasick v0.0.0-20190904063843-d75dbd5169c0
-	github.com/echoface/proximityhash v0.0.0-20230129144145-e282a3eb9fe1
+	github.com/echoface/proximityhash v0.0.0-20230211105152-91366992edfe
 	github.com/iohub/ahocorasick v0.0.0-20190713143823-b7bfd8ad9e27
 	github.com/mmcloughlin/geohash v0.10.0
 	github.com/smartystreets/goconvey v1.7.2

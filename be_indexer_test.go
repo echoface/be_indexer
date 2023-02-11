@@ -739,10 +739,7 @@ func TestBEIndexer_Retrieve_Geohash(t *testing.T) {
 			holder := NewDefaultEntriesHolder()
 			holder.FieldParser = map[BEField]parser.FieldValueParser{
 				"tag": parser.NewNumberParser(),
-				"geo": &parser.GeoHashParser{
-					Precision:           7,
-					MinCompressionLevel: 6,
-				},
+				"geo": parser.NewGeoHashParser(nil),
 			}
 			return holder
 		})
@@ -763,14 +760,14 @@ func TestBEIndexer_Retrieve_Geohash(t *testing.T) {
 		results, err := index.Retrieve(map[BEField]Values{
 			"tag": 1000,
 			"geo": [2]float64{31.21275902, 121.53779984},
-		})
+		}, WithStepDetail(), WithDumpEntries())
 		fmt.Println(results, err)
 		convey.So(results.Len(), convey.ShouldEqual, 1)
 
 		results, err = index.Retrieve(map[BEField]Values{
 			"tag": 1000,
 			"geo": [2]float64{30.21275902, 121.53779984},
-		})
+		}, WithStepDetail(), WithDumpEntries())
 		convey.So(results.Len(), convey.ShouldEqual, 0)
 	})
 }

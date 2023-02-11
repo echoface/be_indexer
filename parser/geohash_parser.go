@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/echoface/be_indexer/util"
-
 	"github.com/echoface/proximityhash"
 	"github.com/mmcloughlin/geohash"
 )
@@ -23,24 +22,52 @@ import (
 //	6	            ±0.61
 //	7	            ±0.076
 //	8	            ±0.019
-type GeoHashParser struct {
-	Precision           uint
-	MinCompressionLevel uint
+type (
+	GeoHashParser struct {
+		GeoOption
+	}
+	GeoOption struct {
+		Precision               int
+		CompressPrecisionMin    int
+		CompressPrecisionCutoff int
+	}
+)
+
+var DefaultGeoHashOption = GeoOption{
+	Precision:               6,
+	CompressPrecisionMin:    3,
+	CompressPrecisionCutoff: 6,
 }
 
-func (p *GeoHashParser) init() {
+func NewGeoHashParser(option *GeoOption) *GeoHashParser {
+	if option == nil {
+		option = &DefaultGeoHashOption
+	}
+	p := &GeoHashParser{
+		GeoOption: *option,
+	}
+	p.GeoOption.InitDefault()
+	return p
+}
+
+func (p *GeoOption) InitDefault() {
 	if p.Precision == 0 {
 		p.Precision = 6
 	}
-	if p.MinCompressionLevel == 0 {
-		p.MinCompressionLevel = 4
+	if p.CompressPrecisionMin == 0 {
+		p.CompressPrecisionMin = 4
 	}
+	if p.CompressPrecisionCutoff == 0 {
+		p.CompressPrecisionCutoff = 6
+	}
+	p.CompressPrecisionCutoff = util.MinInt(p.CompressPrecisionCutoff, p.Precision)
 }
 
 func (p *GeoHashParser) Name() string {
 	return "geohash"
 }
 
+// lat:lon:radius
 func parseLatLonRadius(s string) (lat, lon, r float64, err error) {
 	ss := strings.Split(s, ":")
 	if len(ss) != 3 {
@@ -63,8 +90,8 @@ func (p *GeoHashParser) genGeoHashID(v string) ([]uint64, error) {
 	if err != nil {
 		return nil, err
 	}
-	codes := proximityhash.CreateGeohash(lat, lon, r, p.Precision)
-	codes = proximityhash.CompressGeoHash(codes, int(p.MinCompressionLevel))
+	codes := proximityhash.CreateGeohash(lat, lon, r, uint(p.Precision))
+	codes = proximityhash.CompressGeoHash(codes, p.CompressPrecisionMin, p.CompressPrecisionCutoff)
 
 	results := make([]uint64, len(codes))
 	for idx, code := range codes {
@@ -77,7 +104,7 @@ func (p *GeoHashParser) genGeoHashID(v string) ([]uint64, error) {
 func (p *GeoHashParser) genQueryAssignGeoHashIDs(lat, lon float64) []uint64 {
 	geohashCode := geohash.Encode(lat, lon)
 	results := make([]uint64, 0, p.Precision)
-	for i := p.MinCompressionLevel; i < p.Precision; i++ {
+	for i := p.CompressPrecisionMin; i <= p.Precision; i++ {
 		geohashID, _ := geohash.ConvertStringToInt(geohashCode[:i])
 		results = append(results, geohashID)
 	}

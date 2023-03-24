@@ -13,7 +13,7 @@
 dataset:
 item1:  {city in [city1, city2] && isVIP is true}
 item2:  {age > 18 && city not in [city1, city2] && isVIP is true}  #(eg: aldult video)
-.... 0-亿级别如此的数据; 当然更多数据建议使用工程分片实现更快的检索
+.... 百万级如此的数据; 当然更多数据建议使用工程分片实现更快的检索
 
 当给定一个数据:
 <=

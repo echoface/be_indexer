@@ -190,7 +190,7 @@ ConjLoop:
 			b.indexer.addWildcardEID(NewEntryID(conjID, true))
 		}
 
-		conjIndexingTxs := []*IndexingBETx{}
+		var conjIndexingTxs []*IndexingBETx
 		if conjIndexingTxs = b.tryUseIndexingTxCache(conjID); conjIndexingTxs == nil {
 
 			var err error
@@ -229,22 +229,23 @@ func (b *IndexerBuilder) indexingConjunction(conj *Conjunction, conjID ConjID) (
 	container := b.indexer.newContainer(incSize)
 	var needCacheCnt int
 
-	for field, expr := range conj.Expressions {
+	for field, exprs := range conj.Expressions {
+		for _, expr := range exprs {
+			desc := b.createFieldData(field)
+			holder := container.CreateHolder(desc)
 
-		desc := b.createFieldData(field)
-		holder := container.CreateHolder(desc)
-
-		var err error
-		var txData TxData
-		if txData, err = holder.IndexingBETx(desc, expr); err != nil {
-			return nil, false, fmt.Errorf("indexing field:%s fail:%v", field, err)
+			var err error
+			var txData TxData
+			if txData, err = holder.IndexingBETx(desc, expr); err != nil {
+				return nil, false, fmt.Errorf("indexing field:%s fail:%v", field, err)
+			}
+			entryID := NewEntryID(conjID, expr.Incl)
+			if txData.BetterToCache() {
+				needCacheCnt++
+			}
+			tx := &IndexingBETx{field: desc, holder: holder, EID: entryID, Data: txData}
+			conjIndexingTXs = append(conjIndexingTXs, tx)
 		}
-		entryID := NewEntryID(conjID, expr.Incl)
-		if txData.BetterToCache() {
-			needCacheCnt++
-		}
-		tx := &IndexingBETx{field: desc, holder: holder, EID: entryID, Data: txData}
-		conjIndexingTXs = append(conjIndexingTXs, tx)
 	}
 	return conjIndexingTXs, needCacheCnt > 0, nil
 }

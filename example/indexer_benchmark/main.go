@@ -142,6 +142,7 @@ func (ctx *benchmarkContext) RunKGroupIndexBench() {
 	})
 
 	indexer := builder.BuildIndex()
+	be_indexer.PrintIndexInfo(indexer)
 
 	util.PanicIf(len(ctx.queries) != ctx.queryCnt, "query cnt not match")
 	runtime.GC()
@@ -194,11 +195,12 @@ func (ctx *benchmarkContext) RunCompactIndexBench() {
 	indexer := builder.BuildIndex()
 	util.PanicIf(len(ctx.queries) != ctx.queryCnt, "query cnt not match")
 	runtime.GC()
+	be_indexer.PrintIndexInfo(indexer)
 
 	ctx.enableCPUProfile()
+	tn := time.Now()
 
 	fmt.Println("start bench compact indexer retrieve...")
-	tn := time.Now()
 	for _, assigns := range ctx.queries {
 		if _, err = indexer.Retrieve(assigns); err != nil {
 			util.PanicIfErr(err, "retrieve fail, %s", util.JSONPretty(assigns))
@@ -213,14 +215,12 @@ func main() {
 	flag.Parse()
 	be_indexer.LogLevel = be_indexer.ErrorLevel
 
-	testDocs := 100000
-	queriesCnt := 5000
+	testDocs := 1000000
+	queriesCnt := 1000
 	numberFields := 5
 	acMatchFields := 5
-	notice := `this test will test 10w document with 10 fields(five default, five base on ac-matcher), each document has one
-conjunction and each conjunction field has 50 values on avarage. NOTE: for bitmap based indexer, numbers of fields
-for each conjunction has no performance affect on retrieving.
-`
+	notice := `this will test 100w document with 10 fields(five default, five base on ac-matcher)
+each document contain one conjunction and each conjunction field has 50 values on average`
 	fmt.Println(notice)
 
 	if enableHTTPProfile {

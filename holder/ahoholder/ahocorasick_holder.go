@@ -132,7 +132,8 @@ func (h *ACEntriesHolder) GetEntries(field *FieldDesc, assigns Values) (EntriesC
 	for _, term := range terms {
 		key := string(term.Word)
 		if pl, ok := h.values[key]; ok && len(pl) > 0 {
-			cursors = append(cursors, NewEntriesCursor(NewQKey(field.Field, key), pl))
+			cursor := NewEntriesCursor(NewQKey(field.Field, key), pl)
+			cursors = append(cursors, cursor)
 		}
 	}
 	return cursors, nil

@@ -15,7 +15,6 @@ that seems more reasonable. so may be next version, should be refactored(fixed).
 
 const (
 	LinearSkipDistance = 8
-	FastTestOffset     = 256
 )
 
 type (
@@ -31,11 +30,11 @@ type (
 		key     QKey
 		cursor  int // current cur cursor
 		entries Entries
-		// Local slice: length will be cached and there is no overhead
-		// Global slice or passed (by reference): length cannot be cached and there is overhead
+
 		idSize int
+		curEID EntryID // 为了加速计算
 	}
-	EntriesCursors []*EntriesCursor
+	EntriesCursors []EntriesCursor
 
 	// FieldCursor for a boolean expression: {"tag", "in", [1, 2, 3]}
 	// tag_2: [ID5]
@@ -44,7 +43,7 @@ type (
 		current     *EntriesCursor
 		cursorGroup EntriesCursors
 	}
-	FieldCursors []*FieldCursor
+	FieldCursors []FieldCursor
 )
 
 func NewQKey(field BEField, v interface{}) QKey {
@@ -64,101 +63,73 @@ func (key *QKey) String() string {
 	return fmt.Sprintf("[%s,%+v]", key.field, key.value)
 }
 
-func NewEntriesCursor(key QKey, entries Entries) *EntriesCursor {
-	return &EntriesCursor{
+func NewEntriesCursor(key QKey, entries Entries) EntriesCursor {
+	eid := NULLENTRY
+	if len(entries) > 0 {
+		eid = entries[0]
+	}
+	return EntriesCursor{
 		key:     key,
 		cursor:  0,
+		curEID:  eid,
 		entries: entries,
 		idSize:  len(entries),
 	}
 }
 
 func (ec *EntriesCursor) GetCurEntryID() EntryID {
-	if ec.idSize > ec.cursor {
-		return ec.entries[ec.cursor]
-	}
-	return NULLENTRY
+	return ec.curEID
 }
 
-func (ec *EntriesCursor) LinearSkip(id EntryID) EntryID {
-	maxRight := len(ec.entries) - 1
-	for ec.cursor <= maxRight && ec.entries[ec.cursor] <= id {
+func (ec *EntriesCursor) linearSkipTo(id EntryID) EntryID {
+	for ec.cursor < ec.idSize && ec.entries[ec.cursor] < id {
 		ec.cursor++
 	}
-	return ec.GetCurEntryID()
-}
-
-// Skip https://en.m.wikipedia.org/wiki/Exponential_search
-// most cases, the target id is far away of cursor position
-func (ec *EntriesCursor) Skip(id EntryID) EntryID {
-	if entry := ec.GetCurEntryID(); entry > id {
-		return entry
+	if ec.cursor >= ec.idSize {
+		ec.curEID = NULLENTRY
+	} else {
+		ec.curEID = ec.entries[ec.cursor]
 	}
-	rightIdx := ec.cursor + 1
-	maxRight := len(ec.entries) - 1
-
-	for rightIdx <= maxRight && ec.entries[rightIdx] <= id {
-		ec.cursor = rightIdx
-		rightIdx = (rightIdx << 1) // 溢出? 64bit machine
-	}
-	if rightIdx > maxRight {
-		rightIdx = maxRight
-	}
-	if rightIdx-ec.cursor < LinearSkipDistance {
-		return ec.LinearSkip(id)
-	}
-	var mid int
-	for ec.cursor <= rightIdx && ec.entries[ec.cursor] <= id {
-		mid = (ec.cursor + rightIdx) >> 1
-		if ec.entries[mid] <= id {
-			ec.cursor = mid + 1
-		} else {
-			rightIdx = mid
-		}
-	}
-	return ec.GetCurEntryID()
-}
-
-func (ec *EntriesCursor) LinearSkipTo(id EntryID) EntryID {
-	maxRight := len(ec.entries) - 1
-	for ec.cursor <= maxRight && ec.entries[ec.cursor] < id {
-		ec.cursor++
-	}
-	return ec.GetCurEntryID()
+	return ec.curEID
 }
 
 func (ec *EntriesCursor) SkipTo(id EntryID) EntryID {
-	if entry := ec.GetCurEntryID(); entry >= id {
-		return entry
-	}
-	rightIdx := ec.cursor + 1
-	maxRight := len(ec.entries) - 1
-
-	for rightIdx <= maxRight && ec.entries[rightIdx] < id {
-		ec.cursor = rightIdx
-		rightIdx = (rightIdx << 1) // 溢出? 64bit machine
-	}
-	if rightIdx > maxRight {
-		rightIdx = maxRight
-	}
-	if rightIdx-ec.cursor < LinearSkipDistance {
-		return ec.LinearSkipTo(id)
+	if ec.curEID >= id {
+		return ec.curEID
 	}
 
-	var mid int
-	for ec.cursor <= rightIdx && ec.entries[ec.cursor] < id {
-		if rightIdx-ec.cursor < LinearSkipDistance {
-			return ec.LinearSkipTo(id)
-		}
+	oc := ec.cursor
 
-		mid = (ec.cursor + rightIdx) >> 1
-		if ec.entries[mid] >= id {
-			rightIdx = mid
+	bound := 1
+	rightSideIndex := oc + bound
+	for rightSideIndex < ec.idSize && ec.entries[rightSideIndex] < id { // notice: can't use <=
+		ec.cursor = rightSideIndex
+		bound = bound << 1
+		rightSideIndex = oc + bound
+	}
+	if rightSideIndex > ec.idSize {
+		rightSideIndex = ec.idSize
+	}
+	// id in the range: [ec.cursor, rightSideIndex)
+	// reuse `bound` as `mid` value
+	// fmt.Printf("cur:%d idx-range:[%d,%d) values:%v", oc, ec.cursor, rightSideIndex, ec.entries[ec.cursor:rightSideIndex])
+	for ec.cursor < rightSideIndex && ec.entries[ec.cursor] < id {
+		// if rightSideIndex-ec.cursor < LinearSkipDistance {
+		// return ec.linearSkipTo(id)
+		//}
+		bound = (ec.cursor + rightSideIndex) >> 1
+		if ec.entries[bound] >= id {
+			rightSideIndex = bound
 		} else {
-			ec.cursor = mid + 1
+			ec.cursor = bound + 1
 		}
 	}
-	return ec.GetCurEntryID()
+	if ec.cursor >= ec.idSize {
+		ec.curEID = NULLENTRY
+	} else {
+		ec.curEID = ec.entries[ec.cursor]
+	}
+	return ec.curEID
 }
 
 // Len FieldCursors sort API
@@ -177,13 +148,13 @@ func (s FieldCursors) Sort() {
 	}
 	// Do ShellSort pass with gap 6
 	// It could be written in this simplified form cause b-a <= 12
-	if x <= 12 { // make it seems sorted
-		for i := 6; i < x; i++ {
-			if s[i].GetCurEntryID() < s[i-6].GetCurEntryID() {
-				s[i], s[i-6] = s[i-6], s[i]
-			}
-		}
-	}
+	//if x <= 12 { // make it seems sorted
+	//	for i := 6; i < x; i++ {
+	//		if s[i].GetCurEntryID() < s[i-6].GetCurEntryID() {
+	//			s[i], s[i-6] = s[i-6], s[i]
+	//		}
+	//	}
+	//}
 	for i := 1; i < x; i++ {
 		for j := i; j > 0 && s[j].GetCurEntryID() < s[j-1].GetCurEntryID(); j-- {
 			s[j], s[j-1] = s[j-1], s[j]
@@ -195,83 +166,59 @@ func (s FieldCursors) Dump() string {
 	sb := &strings.Builder{}
 	for _, fc := range s {
 		fc.DumpEntries(sb)
-		sb.WriteString("\n")
 	}
 	return sb.String()
 }
 
 func (s FieldCursors) DumpJustCursors() string {
 	sb := &strings.Builder{}
-	for _, fc := range s {
+	for idx, fc := range s {
+		if idx > 0 {
+			sb.WriteString("\n")
+		}
 		fc.DumpCursorEntryID(sb)
-		sb.WriteString("\n")
 	}
 	return sb.String()
 }
 
-func NewFieldCursor(cursors ...*EntriesCursor) *FieldCursor {
-	scanner := &FieldCursor{
+func NewFieldCursor(cursors ...EntriesCursor) FieldCursor {
+	scanner := FieldCursor{
 		current:     nil,
 		cursorGroup: cursors,
 	}
-	for _, pl := range scanner.cursorGroup {
-		if scanner.current == nil ||
-			pl.GetCurEntryID() < scanner.current.GetCurEntryID() {
-
-			scanner.current = pl
+	for idx := range scanner.cursorGroup {
+		cursor := scanner.cursorGroup[idx]
+		if scanner.current == nil || cursor.curEID < scanner.current.curEID {
+			scanner.current = &cursor
 		}
 	}
 	return scanner
 }
 
-func (fc *FieldCursor) AddPostingList(cursor *EntriesCursor) {
-	fc.cursorGroup = append(fc.cursorGroup, cursor)
-	if fc.current == nil {
-		fc.current = cursor
-		return
-	}
-	if cursor.GetCurEntryID() < fc.current.GetCurEntryID() {
-		fc.current = cursor
-	}
-}
-
-func (fc *FieldCursor) GetCurConjID() ConjID {
-	return fc.GetCurEntryID().GetConjID()
-}
-
 func (fc *FieldCursor) ReachEnd() bool {
-	return fc.current.GetCurEntryID().IsNULLEntry()
+	return fc.current.curEID.IsNULLEntry()
 }
 
 func (fc *FieldCursor) GetCurEntryID() EntryID {
-	return fc.current.GetCurEntryID()
-}
-
-func (fc *FieldCursor) Skip(id EntryID) (newMin EntryID) {
-	newMin = NULLENTRY
-	for _, cursor := range fc.cursorGroup {
-		if tId := cursor.Skip(id); tId < newMin {
-			newMin = tId
-			fc.current = cursor
-		}
-	}
-	return
+	return fc.current.curEID
 }
 
 func (fc *FieldCursor) SkipTo(id EntryID) (newMin EntryID) {
 	newMin = NULLENTRY
-	for _, cursor := range fc.cursorGroup {
-		if tId := cursor.SkipTo(id); tId < newMin {
-			newMin = tId
-			fc.current = cursor
+	for idx := range fc.cursorGroup {
+		cur := &fc.cursorGroup[idx]
+		if eid := cur.SkipTo(id); eid <= newMin {
+			newMin = eid
+			fc.current = cur
 		}
 	}
 	return
 }
 
 func (fc *FieldCursor) DumpEntries(sb *strings.Builder) {
-	sb.WriteString("============== Field Cursors ==============\n")
-	for _, it := range fc.cursorGroup {
+	sb.WriteString("============== Field:%s Cursors ==============\n")
+	for idx := range fc.cursorGroup {
+		it := &fc.cursorGroup[idx]
 		if it == fc.current {
 			sb.WriteString(">")
 		} else {
@@ -284,15 +231,16 @@ func (fc *FieldCursor) DumpEntries(sb *strings.Builder) {
 
 func (fc *FieldCursor) DumpCursorEntryID(sb *strings.Builder) {
 	sb.WriteString("============== Field Cursor EID ==============\n")
-	for _, it := range fc.cursorGroup {
-		if it == fc.current {
+	for idx := range fc.cursorGroup {
+		cursor := &fc.cursorGroup[idx]
+		if cursor == fc.current {
 			sb.WriteString(">")
 		} else {
 			sb.WriteString(" ")
 		}
-		sb.WriteString(it.key.String())
-		curEIDStr := it.GetCurEntryID().DocString()
-		sb.WriteString(fmt.Sprintf(",idx:%02d,EID:%s\n", it.cursor, curEIDStr))
+		sb.WriteString(cursor.key.String())
+		curEIDStr := cursor.GetCurEntryID().DocString()
+		sb.WriteString(fmt.Sprintf(",idx:%02d,EID:%s\n", cursor.cursor, curEIDStr))
 	}
 }
 

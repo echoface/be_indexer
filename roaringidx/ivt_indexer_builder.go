@@ -93,15 +93,22 @@ func (builder *IvtBEIndexerBuilder) AddDocument(doc *be_indexer.Document) (err e
 		}
 
 		for field, containerBuilder := range builder.containerBuilder {
-			expr, ok := conj.Expressions[field]
-			if !ok {
+			exprs, ok := conj.Expressions[field]
+			if !ok || len(exprs) == 0 {
 				containerBuilder.EncodeWildcard(conjID)
 				continue
 			}
-
-			if err = containerBuilder.EncodeExpr(conjID, be_indexer.NewBoolExpr2(field, *expr)); err != nil {
-				util.PanicIf(builder.panicOnError, "failed evaluate boolean expression:%+v", expr)
-				return err
+			addWildcard := true
+			for _, expr := range exprs {
+				if err = containerBuilder.EncodeExpr(conjID, be_indexer.NewBoolExpr2(field, *expr)); err != nil {
+					util.PanicIf(builder.panicOnError, "failed evaluate boolean expression:%+v", expr)
+					return err
+				}
+				addWildcard = addWildcard && (!expr.Incl)
+			}
+			// need encode wildcard
+			if addWildcard {
+				containerBuilder.EncodeWildcard(conjID)
 			}
 		}
 	}

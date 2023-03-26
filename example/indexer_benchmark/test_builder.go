@@ -19,11 +19,11 @@ type (
 
 func createTestIndexer(data *benchmarkContext, docFn docBuilder) {
 
-	keywords := loadTestDataKeywords(100000)
+	keywords := loadTestDataKeywords(1000)
 
 	fmt.Println("start gen test numbers .........")
 	t := map[int]struct{}{}
-	for len(t) < 100000 {
+	for len(t) < 100 {
 		t[rand.Intn(math.MaxInt32)] = struct{}{}
 	}
 
@@ -66,7 +66,7 @@ func createTestIndexer(data *benchmarkContext, docFn docBuilder) {
 	for i := 0; i < data.queryCnt; i++ {
 		q := be_indexer.Assignments{}
 		for n := 0; n < data.numFieldCnt; n++ {
-			cnt := rand.Intn(4)
+			cnt := rand.Intn(2)
 			if cnt == 0 {
 				continue
 			}
@@ -77,12 +77,12 @@ func createTestIndexer(data *benchmarkContext, docFn docBuilder) {
 			q[be_indexer.BEField(fieldName)] = numbers[start:end]
 		}
 		for k := 0; k < data.acFieldCnt; k++ {
-			cnt := rand.Intn(10)
+			cnt := rand.Intn(2)
 			if cnt == 0 {
 				continue
 			}
 			start := rand.Intn(len(keywords) - cnt*5)
-			end := start + cnt*5
+			end := start + cnt
 			fieldName := fmt.Sprintf("ac_%d", k)
 			queryStr := strings.Join(keywords[start:end], "")
 

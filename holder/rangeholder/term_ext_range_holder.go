@@ -149,8 +149,9 @@ func (h *ExtendLgtHolder) GetEntries(field *FieldDesc, assigns Values) (r Entrie
 	}
 	rangeResults := map[*RangeEntries]int64{}
 	for _, id := range ids {
-		if entries, hit := h.plEntries[id]; hit {
-			r = append(r, NewEntriesCursor(NewQKey(field.Field, id), entries))
+		if entries, hit := h.plEntries[id]; hit && len(entries) > 0 {
+			cursor := NewEntriesCursor(NewQKey(field.Field, id), entries)
+			r = append(r, cursor)
 			LogInfoIf(h.debug, "kvs find:<%s:%d>, entries len:%d", field.Field, id, len(entries))
 		}
 		if pl := h.rangeIdx.Retrieve(id); pl != nil && len(pl.entries) > 0 {
@@ -159,7 +160,8 @@ func (h *ExtendLgtHolder) GetEntries(field *FieldDesc, assigns Values) (r Entrie
 		}
 	}
 	for rgPl, id := range rangeResults {
-		r = append(r, NewEntriesCursor(NewQKey(field.Field, id), rgPl.entries))
+		cursor := NewEntriesCursor(NewQKey(field.Field, id), rgPl.entries)
+		r = append(r, cursor)
 	}
 	return r, nil
 }

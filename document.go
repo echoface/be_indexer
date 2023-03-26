@@ -2,7 +2,6 @@ package be_indexer
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strings"
 )
@@ -12,7 +11,7 @@ type (
 	DocIDList []DocID
 
 	Conjunction struct { // 每个conjunction 内的field 逻辑为且， 参考DNF定义
-		Expressions map[BEField]*BoolValues `json:"exprs"` // 同一个Conj内不允许重复的Field
+		Expressions map[BEField][]*BoolValues `json:"exprs"` // 同一个Conj内不允许重复的Field
 	}
 
 	Document struct {
@@ -56,17 +55,19 @@ func (s DocIDList) Swap(i, j int)      { s[i], s[j] = s[j], s[i] }
 func (s DocIDList) Less(i, j int) bool { return s[i] < s[j] }
 
 // AddConjunction 一组完整的expression， 必须是完整一个描述文档的DNF Bool表达的条件组合*/
-func (doc *Document) AddConjunction(cons ...*Conjunction) {
+func (doc *Document) AddConjunction(cons ...*Conjunction) *Document {
 	for _, conj := range cons {
 		doc.Cons = append(doc.Cons, conj)
 	}
+	return doc
 }
 
-func (doc *Document) AddConjunctions(conj *Conjunction, others ...*Conjunction) {
+func (doc *Document) AddConjunctions(conj *Conjunction, others ...*Conjunction) *Document {
 	doc.Cons = append(doc.Cons, conj)
 	for _, conj := range others {
 		doc.Cons = append(doc.Cons, conj)
 	}
+	return doc
 }
 
 func (doc *Document) JSONString() string {
@@ -77,22 +78,22 @@ func (doc *Document) JSONString() string {
 // String a more compacted string
 func (doc *Document) String() string {
 	strBuilder := strings.Builder{}
-	strBuilder.WriteString(fmt.Sprintf("{doc:%d, cons:[", doc.ID))
+	strBuilder.WriteString(fmt.Sprintf("doc:%d, cons:[\n", doc.ID))
 	cnt := len(doc.Cons)
-	for _, conj := range doc.Cons {
+	for i, conj := range doc.Cons {
+		strBuilder.WriteString(fmt.Sprintf("\t%d:%s", i, conj.String()))
 		cnt--
-		strBuilder.WriteString(fmt.Sprintf("{%s}", conj.String()))
 		if cnt > 0 {
-			strBuilder.WriteString(",")
+			strBuilder.WriteString(",\n")
 		}
 	}
-	strBuilder.WriteString("]}")
+	strBuilder.WriteString("\n]")
 	return strBuilder.String()
 }
 
 func NewConjunction() *Conjunction {
 	return &Conjunction{
-		Expressions: make(map[BEField]*BoolValues),
+		Expressions: make(map[BEField][]*BoolValues),
 	}
 }
 
@@ -157,10 +158,7 @@ func (conj *Conjunction) AddExpression3(field string, include bool, values Value
 }
 
 func (conj *Conjunction) addExpression(field BEField, boolValues BoolValues) {
-	if _, ok := conj.Expressions[field]; ok {
-		panic(errors.New("conj don't allow one field show up twice"))
-	}
-	conj.Expressions[field] = &boolValues
+	conj.Expressions[field] = append(conj.Expressions[field], &boolValues)
 }
 
 func (conj *Conjunction) JSONString() string {
@@ -170,23 +168,35 @@ func (conj *Conjunction) JSONString() string {
 
 func (conj *Conjunction) String() string {
 	strBuilder := strings.Builder{}
-	strBuilder.WriteString("(")
-	cnt := conj.ExpressionCount()
-	for field, expr := range conj.Expressions {
-		strBuilder.WriteString(fmt.Sprintf("%s %s", field, expr.String()))
+	strBuilder.WriteString("{")
+	cnt := len(conj.Expressions)
+	for field, exprs := range conj.Expressions {
+		strBuilder.WriteString(fmt.Sprintf("%s (", field))
+		for i, expr := range exprs {
+			if i != 0 {
+				strBuilder.WriteString(",")
+			}
+			strBuilder.WriteString(expr.String())
+		}
 		cnt--
 		if cnt > 0 {
-			strBuilder.WriteString(",")
+			strBuilder.WriteString(") and ")
+		} else {
+			strBuilder.WriteString(")")
 		}
 	}
-	strBuilder.WriteString(")")
+	strBuilder.WriteString("}")
 	return strBuilder.String()
 }
 
 func (conj *Conjunction) CalcConjSize() (size int) {
-	for _, bv := range conj.Expressions {
-		if bv.Incl {
-			size++
+	for _, bvs := range conj.Expressions {
+	EXPR:
+		for _, expr := range bvs {
+			if expr.Incl {
+				size++
+				break EXPR
+			}
 		}
 	}
 	return size

@@ -67,11 +67,6 @@ func (bi *CompactBEIndex) initCursors(ctx *retrieveContext) (fCursors FieldCurso
 			fCursors = append(fCursors, NewFieldCursor(entriesList...))
 		}
 	}
-
-	if len(fCursors) == 0 {
-		return fCursors, nil
-	}
-
 	return fCursors, nil
 }
 
@@ -97,84 +92,78 @@ func (bi *CompactBEIndex) RetrieveWithCollector(
 
 	ctx.collector = collector
 	var fieldCursors FieldCursors
-	fieldCursors, err = bi.initCursors(&ctx)
-	if err != nil {
+	if fieldCursors, err = bi.initCursors(&ctx); err != nil {
 		return err
 	}
 
-	fieldCursors.Sort() // sort.Sort(fieldCursors)
+	// sort.Sort(fieldCursors)
+	fieldCursors.Sort()
 	if ctx.dumpEntriesDetail {
 		Logger.Infof("RetrieveWithCollector initial entries:\n%s", fieldCursors.Dump())
 	}
 
 RETRIEVE:
-	for {
-		if len(fieldCursors) == 0 {
-			break RETRIEVE
-		}
+	for len(fieldCursors) > 0 {
 
 		eid := fieldCursors[0].GetCurEntryID()
 		conjID := eid.GetConjID()
 
-		// remove those entries that have already reached end;
-		// the end-up cursor will in the end of slice after sorting
-		for len(fieldCursors) > 0 && fieldCursors[len(fieldCursors)-1].ReachEnd() {
-			fieldCursors = fieldCursors[:len(fieldCursors)-1]
-		}
-
-		// k means: need k numbers of eid has same values when document satisfied,
-		// but for Z entries, it's a special case that need logic k=1 to exclude docs
+		// needMatchCnt means: need at least needMatchCnt field has same eid when conjunction expr satisfied,
+		// so we can end up loop safely when needMatchCnt > sizeof(fieldCursors). this will boost up retrieve speed
+		// but for Z entries, it's a special case that need logic needMatchCnt=1 to exclude docs
 		// that boolean expression has `exclude` logic
-		k := conjID.Size()
-		stepK := k
-		LogInfoIf(ctx.dumpStepInfo, "start@step k:%d len(fieldCursors):%d", stepK, len(fieldCursors))
-		if k == 0 {
-			k = 1
-		}
-
-		// k means: need at least k groups of eid has same values when conjunction expr satisfied,
-		// so we can end up loop safely when k > sizeof(fieldCursors). this will boost up retrieve speed
-		if k > len(fieldCursors) {
-			LogInfoIf(ctx.dumpStepInfo, "end@step need k:%d but only:%d matched", stepK, len(fieldCursors))
+		stepK := conjID.Size()
+		needMatchCnt := util.MaxInt(1, stepK)
+		if needMatchCnt > len(fieldCursors) {
+			LogInfoIf(ctx.dumpStepInfo, "end retrieve@stepK:%d, need match:%d but only:%d cursors", stepK, needMatchCnt, len(fieldCursors))
 			break RETRIEVE
 		}
 
-		// k <= plgsCount check whether eid fieldCursors[k-1].GetCurEntryID equal
-		endEID := fieldCursors[k-1].GetCurEntryID()
+		// needMatchCnt <= plgsCount check whether eid fieldCursors[needMatchCnt-1].GetCurEntryID equal
+		endEID := fieldCursors[needMatchCnt-1].GetCurEntryID()
 
 		nextID := NewEntryID(endEID.GetConjID(), false)
+		// nextID := endEID
+
+		if ctx.dumpEntriesDetail {
+			Logger.Infof("step:%d round start, docs:%v entries:\n%s", stepK, collector.GetDocIDs(), fieldCursors.Dump())
+		}
+		if ctx.dumpStepInfo {
+			LogInfo("step:%d process need match:%d cursors:%d, eid:[%s..%s]", stepK, needMatchCnt, len(fieldCursors), eid.DocString(), endEID.DocString())
+		}
+
 		if endEID.GetConjID() == conjID {
 
-			nextID = endEID + 1
+			nextID = NewEntryID(endEID.GetConjID(), true) + 1
 
 			if eid.IsInclude() {
 
 				ctx.collector.Add(conjID.DocID(), conjID)
-				LogInfoIf(ctx.dumpStepInfo, "add doc@step k:%d conj:%d", stepK, conjID.DocID())
 
 			} else { //exclude
 
-				for i := k; i < len(fieldCursors); i++ {
-					if fieldCursors[i].GetCurConjID() != eid.GetConjID() {
-						break
+				for i := needMatchCnt; i < len(fieldCursors); i++ {
+					if fieldCursors[i].GetCurEntryID() < nextID {
+						fieldCursors[i].SkipTo(nextID)
 					}
-					fieldCursors[i].Skip(nextID)
 				}
 			}
 		}
-		// 推进游标
-		for i := 0; i < k; i++ {
+
+		for i := 0; i < needMatchCnt; i++ { // 推进游标
 			fieldCursors[i].SkipTo(nextID)
 		}
 
 		fieldCursors.Sort()
 		// sort.Sort(fieldCursors) // slow 12% compare to fieldCursors.Sort()
 
-		if ctx.dumpStepInfo {
-			Logger.Infof("finish@step k:%d docs:%+v", stepK, collector.GetDocIDs())
+		// remove those entries that have already reached end;
+		// the end-up cursor will in the end of slice after sorting
+		for len(fieldCursors) > 0 && fieldCursors[len(fieldCursors)-1].ReachEnd() {
+			fieldCursors = fieldCursors[:len(fieldCursors)-1]
 		}
-		if ctx.dumpEntriesDetail {
-			Logger.Infof("step:%d continue entries:\n%s", stepK, fieldCursors.DumpJustCursors())
+		if ctx.dumpStepInfo {
+			Logger.Infof("step:%d round end, result docs:%+v", stepK, collector.GetDocIDs())
 		}
 	}
 

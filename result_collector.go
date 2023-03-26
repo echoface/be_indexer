@@ -13,8 +13,6 @@ type (
 
 	// DocIDCollector Default Collector with removing duplicated doc
 	DocIDCollector struct {
-		docCnt int
-
 		// docBits bitmap hold results docs
 		docBits *roaring64.Bitmap
 	}
@@ -27,18 +25,15 @@ func NewDocIDCollector() *DocIDCollector {
 }
 
 func (c *DocIDCollector) DocCount() int {
-	return c.docCnt
+	return int(c.docBits.GetCardinality())
 }
 
 func (c *DocIDCollector) Reset() {
-	c.docCnt = 0
 	c.docBits.Clear()
 }
 
 func (c *DocIDCollector) Add(docID DocID, _ ConjID) {
-	if c.docBits.CheckedAdd(uint64(docID)) {
-		c.docCnt++
-	}
+	c.docBits.Add(uint64(docID))
 }
 
 func (c *DocIDCollector) GetDocIDs() (ids DocIDList) {

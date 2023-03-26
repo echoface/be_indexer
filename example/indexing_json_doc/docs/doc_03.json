@@ -3,8 +3,8 @@
   "cons": [
     {
       "exprs": {
-        "city": { "inc": false, "value": ["sh", "bj"]},
-        "url": { "inc": true, "value": ["xiaomi.com", "tencent.com"]}
+        "city": [{ "inc": false, "value": ["sh", "bj"]}],
+        "url": [{ "inc": true, "value": ["xiaomi.com", "tencent.com"]}]
       }
     }
   ]

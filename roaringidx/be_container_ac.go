@@ -2,8 +2,9 @@ package roaringidx
 
 import (
 	"fmt"
-	"github.com/echoface/be_indexer/holder/ahoholder"
 	"strings"
+
+	"github.com/echoface/be_indexer/holder/ahoholder"
 
 	aho "github.com/anknown/ahocorasick"
 	"github.com/echoface/be_indexer"
@@ -134,7 +135,7 @@ func (c *ACBEContainer) EncodeWildcard(id ConjunctionID) {
 
 func (c *ACBEContainer) EncodeExpr(id ConjunctionID, expr *be_indexer.BooleanExpr) error {
 	if expr == nil || util.NilInterface(expr.Value) {
-		c.AddWildcard(id)
+		// c.AddWildcard(id)
 		return nil
 	}
 	util.PanicIf(expr.Operator != be_indexer.ValueOptEQ, "ac_match support EQ operator only")
@@ -150,9 +151,9 @@ func (c *ACBEContainer) EncodeExpr(id ConjunctionID, expr *be_indexer.BooleanExp
 			c.AddExcludeID(v, id)
 		}
 	}
-	if !expr.Incl {
-		c.AddWildcard(id)
-	}
+	//if !expr.Incl {
+	//	c.AddWildcard(id)
+	//}
 	return nil
 }
 

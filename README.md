@@ -1,5 +1,14 @@
 # Boolean Expression Index
 
+## ChangeLog
+20230325: 支持在同一个Conjunction中添加同一个field的逻辑表达
+> eg: `{field in [1, 2, 3], not-in [2, 3, 4]} and .....`
+> input field:4 ... => true
+> input field:3 ... => false  // 即not有更高逻辑优先级; `真`更严格
+> 同一个DNF多个字段之间逻辑关系会存在一些边界情况与冲突逻辑的假设前提；本库实现是对逻辑true更严格的实现,
+> 并在roaringidx/be_indexer 两份逻辑实现中保持一致; 更多明细见: `./example/repeat_fields_test` 中的说明与示例
+
+
 ## Boolean expression index
 
 算法描述来源于论文:[Boolean expression indexing](https://theory.stanford.edu/~sergei/papers/vldb09-indexing.pdf),
@@ -56,6 +65,8 @@ Conjunction因提供的值不能被Parser/Holder 正确的解析成所需要的�
 
 
 ```go
+package main
+
 func buildTestDoc() []*be_indexer.Document {
 	return []*be_indexer.Document{}
 }

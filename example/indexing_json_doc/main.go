@@ -39,7 +39,7 @@ func main() {
 		return nil
 	})
 	for _, doc := range docs {
-		fmt.Println("add document:", doc.ID)
+		fmt.Println("indexing document", util.JSONString(doc))
 		err := builder.AddDocument(doc)
 		util.PanicIfErr(err, "should not fail")
 	}

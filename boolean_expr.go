@@ -102,13 +102,27 @@ func NewBoolValue(op ValueOpt, value Values, incl bool) BoolValues {
 
 func (v *BoolValues) booleanToken() string {
 	if v.Incl {
-		return "inc"
+		return "in"
 	}
-	return "exc"
+	return "not"
 }
 
 func (v *BoolValues) String() string {
-	return fmt.Sprintf("%s %v", v.booleanToken(), v.Value)
+	return fmt.Sprintf("%s %s%v", v.booleanToken(), v.operatorName(), v.Value)
+}
+
+func (v *BoolValues) operatorName() string {
+	switch v.Operator {
+	case ValueOptGT:
+		return ">"
+	case ValueOptLT:
+		return "<"
+	case ValueOptBetween:
+		return "between"
+	default:
+		break
+	}
+	return ""
 }
 
 func (v *BoolValues) JSONString() string {

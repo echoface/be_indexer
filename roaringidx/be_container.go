@@ -69,7 +69,7 @@ func (c *DefaultBEContainer) AddExclude(value BEValue, id ConjunctionID) {
 		c.exc[value] = pl
 	}
 	pl.Add(uint64(id))
-	c.AddWildcard(id)
+	// c.AddWildcard(id)
 }
 
 func (c *DefaultBEContainer) Retrieve(values be_indexer.Values, inout *PostingList) error {
@@ -102,7 +102,8 @@ func (c *DefaultBEContainer) EncodeWildcard(id ConjunctionID) {
 
 func (c *DefaultBEContainer) EncodeExpr(id ConjunctionID, expr *be_indexer.BooleanExpr) error {
 	if expr == nil {
-		c.EncodeWildcard(id)
+		return nil
+		// c.EncodeWildcard(id)
 	}
 	util.PanicIf(expr.Operator != be_indexer.ValueOptEQ, "default container support EQ operator only")
 

@@ -3,9 +3,9 @@
   "cons": [
     {
       "exprs": {
-        "age": { "inc": true, "value": ["18:30"] },
-        "ip": { "inc": false, "value": ["localhost", "127.0.0.1"] },
-        "city": { "inc": true, "value": ["sh", "bj", "gz", "hz", "sz"]}
+        "age": [{ "inc": true, "value": ["18:30"] }],
+        "ip": [{ "inc": false, "value": ["localhost", "127.0.0.1"] }],
+        "city": [{ "inc": true, "value": ["sh", "bj", "gz", "hz", "sz"]}]
       }
     }
   ]

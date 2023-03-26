@@ -3,7 +3,7 @@
   "cons": [
     {
       "exprs": {
-        "ip": { "inc": false, "value": ["localhost", "127.0.0.1"] }
+        "ip": [{ "inc": false, "value": ["localhost", "127.0.0.1"] }]
       }
     }
   ]

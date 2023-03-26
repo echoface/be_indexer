@@ -4,14 +4,14 @@
     "cons": [
       {
         "exprs": {
-          "age": { "inc": true, "value": [1, 2] },
-          "ip": { "inc": false, "value": ["localhost"] },
-          "city": { "inc": true, "value": ["sh", "bj"] }
+          "age": [{ "inc": true, "value": [1, 2] }],
+          "ip": [{ "inc": false, "value": ["localhost"] }],
+          "city": [{ "inc": true, "value": ["sh", "bj"] }]
         }
       },
       {
         "exprs": {
-          "age": { "inc": true, "value": [5] }
+          "age": [{ "inc": true, "value": [5] }]
         }
       }
     ]
@@ -21,9 +21,9 @@
     "cons": [
       {
         "exprs": {
-          "city": { "inc": true, "value": ["sh"]},
-          "ip": { "inc": false, "value": ["127.0.0.1"] },
-          "tag": { "inc": true, "value": ["tag1","tag2"]}
+          "city": [{ "inc": true, "value": ["sh"]}],
+          "ip": [{ "inc": false, "value": ["127.0.0.1"] }],
+          "tag": [{ "inc": true, "value": ["tag1","tag2"]}]
         }
       }
     ]
@@ -31,11 +31,15 @@
   {
     "id": 3,
     "cons": [
-      { "exprs": { "ip": { "inc": false, "value": ["localhost"] } } },
       {
         "exprs": {
-          "age": { "inc": true, "value": [1, 2] },
-          "city": { "inc": true, "value": ["sh", "bj"] }
+          "ip": [{ "inc": false, "value": ["localhost"]}]
+        }
+      },
+      {
+        "exprs": {
+          "age": [{ "inc": true, "value": [1, 2] }],
+          "city": [{ "inc": true, "value": ["sh", "bj"] }]
         }
       }
     ]

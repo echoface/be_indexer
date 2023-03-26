@@ -190,52 +190,55 @@ func (bi *KGroupsBEIndex) initCursors(ctx *retrieveContext, k int) (fCursors Fie
 }
 
 // retrieveK retrieve matched result from k size index data
-func (bi *KGroupsBEIndex) retrieveK(ctx *retrieveContext, fieldCursors FieldCursors, k int) {
-	if len(fieldCursors) < k {
-		LogInfoIf(ctx.dumpStepInfo, "end@step:%d need k:%d but only:%d matched", k, k, len(fieldCursors))
+func (bi *KGroupsBEIndex) retrieveK(ctx *retrieveContext, fieldCursors FieldCursors, needMatchCnt int) {
+	if len(fieldCursors) < needMatchCnt {
+		LogInfoIf(ctx.dumpStepInfo, "need match:%d but only:%d", needMatchCnt, len(fieldCursors))
 		return
 	}
-
 	// sort.Sort(fieldCursors)
 	fieldCursors.Sort()
 
-	for !fieldCursors[k-1].GetCurEntryID().IsNULLEntry() {
+	for !fieldCursors[needMatchCnt-1].GetCurEntryID().IsNULLEntry() {
+		if ctx.dumpStepInfo {
+			Logger.Infof("round need match:%d continue docs:%v", needMatchCnt, ctx.collector.GetDocIDs())
+		}
+		if ctx.dumpEntriesDetail {
+			Logger.Infof("round need match:%d continue entries\n%s", needMatchCnt, fieldCursors.Dump())
+		}
 
 		eid := fieldCursors[0].GetCurEntryID()
-		endEID := fieldCursors[k-1].GetCurEntryID()
+		endEID := fieldCursors[needMatchCnt-1].GetCurEntryID()
 
 		conjID := eid.GetConjID()
 		endConjID := endEID.GetConjID()
 
-		nextID := NewEntryID(endConjID, false)
+		nextID := NewEntryID(endConjID, false) // 逻辑按照conjID执行，但是直接使用endEID可能跳过排除逻辑的EID
 
 		if conjID == endConjID {
 
-			nextID = endEID + 1
+			// nextID = endEID + 1
+			nextID = NewEntryID(endEID.GetConjID(), true) + 1
 
 			if eid.IsInclude() {
 
 				ctx.collector.Add(conjID.DocID(), conjID)
-				LogInfoIf(ctx.dumpStepInfo, "add doc@step:%d doc:%d", k, conjID.DocID())
-			} else { //exclude
 
-				for i := k; i < fieldCursors.Len(); i++ {
-					if fieldCursors[i].GetCurConjID() != conjID {
-						break
+			} else { //exclude
+				for i := needMatchCnt; i < len(fieldCursors); i++ {
+					if fieldCursors[i].GetCurEntryID() < nextID {
+						fieldCursors[i].SkipTo(nextID)
 					}
-					fieldCursors[i].Skip(nextID)
 				}
 			}
 		}
-		// 推进游标
-		for i := 0; i < k; i++ {
+		for i := 0; i < needMatchCnt; i++ { // 推进游标
 			fieldCursors[i].SkipTo(nextID)
 		}
 
-		fieldCursors.Sort() // sort.Sort(fieldCursors)
-
+		fieldCursors.Sort()
+		// sort.Sort(fieldCursors)
 		if ctx.dumpStepInfo {
-			Logger.Infof("step:%d continue entries\n%s", k, fieldCursors.DumpJustCursors())
+			Logger.Infof("round end need match:%d, docs:%v", needMatchCnt, ctx.collector.GetDocIDs())
 		}
 	}
 }
@@ -269,16 +272,13 @@ func (bi *KGroupsBEIndex) RetrieveWithCollector(
 		if fCursors, err = bi.initCursors(&ctx, k); err != nil {
 			return err
 		}
-		LogInfoIf(ctx.dumpStepInfo, "start@step:%d len(fcursors):%d", k, len(fCursors))
+		LogInfoIf(ctx.dumpStepInfo, "start@step:%d cursors:%d", k, len(fCursors))
 		if ctx.dumpEntriesDetail {
 			Logger.Infof("RetrieveWithCollector k:%d initial entries:\n%s", k, fCursors.Dump())
 		}
 
-		tempK := k
-		if tempK == 0 {
-			tempK = 1
-		}
-		bi.retrieveK(&ctx, fCursors, tempK)
+		needMatchCnt := util.MaxInt(k, 1)
+		bi.retrieveK(&ctx, fCursors, needMatchCnt)
 	}
 	return nil
 }

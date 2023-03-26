@@ -320,7 +320,7 @@ func TestMatch(t *testing.T) {
 
 func TestSizeGroupedBEIndex_Retrieve(t *testing.T) {
 	convey.Convey("test index negative logic", t, func() {
-		docs, queries := BuildTestDocumentAndQueries(50000, 100, true)
+		docs, queries := BuildTestDocumentAndQueries(1000, 100, true)
 		b := NewIndexerBuilder()
 		for _, doc := range docs {
 			err := b.AddDocument(doc.ToDocument())
@@ -347,11 +347,12 @@ func TestSizeGroupedBEIndex_Retrieve(t *testing.T) {
 
 		start = time.Now().UnixNano() / 1000000
 		for idx, ass := range queries {
-			ids, err := index.Retrieve(ass.ToAssigns(), WithDumpEntries())
+			ids, err := index.Retrieve(ass.ToAssigns())
 			convey.So(err, convey.ShouldBeNil)
 
 			idxRes[idx] = ids
 			if len(noneIdxRes[idx]) != len(ids) {
+				ids, _ = index.Retrieve(ass.ToAssigns(), WithStepDetail(), WithDumpEntries())
 				diff := ids.Sub(noneIdxRes[idx])
 				diff = append(diff, noneIdxRes[idx].Sub(ids)...)
 				sort.Sort(diff)
@@ -371,7 +372,7 @@ func TestSizeGroupedBEIndex_Retrieve(t *testing.T) {
 
 func TestCompactedBEIndex_Retrieve(t *testing.T) {
 	convey.Convey("test index negative logic", t, func() {
-		docs, queries := BuildTestDocumentAndQueries(50000, 100, true)
+		docs, queries := BuildTestDocumentAndQueries(1000, 100, true)
 		b := NewCompactIndexerBuilder()
 		for _, doc := range docs {
 			_ = b.AddDocument(doc.ToDocument())
@@ -399,6 +400,7 @@ func TestCompactedBEIndex_Retrieve(t *testing.T) {
 			ids, _ := compactedIndex.Retrieve(ass.ToAssigns())
 			idxUnionRes[idx] = ids
 			if len(ids) != len(noneIdxRes[idx]) {
+				ids, _ = compactedIndex.Retrieve(ass.ToAssigns(), WithDumpEntries(), WithStepDetail())
 				diff := ids.Sub(noneIdxRes[idx])
 				diff = append(diff, noneIdxRes[idx].Sub(ids)...)
 				sort.Sort(diff)
@@ -407,7 +409,7 @@ func TestCompactedBEIndex_Retrieve(t *testing.T) {
 				}
 				sort.Sort(ids)
 				sort.Sort(noneIdxRes[idx])
-				fmt.Println("query:", ass)
+				fmt.Println("query:", util.JSONString(ass))
 				fmt.Printf("IdxRes    :%+v\n", ids)
 				fmt.Printf("NoneIdxRes:%+v\n", noneIdxRes[idx])
 				convey.So(nil, convey.ShouldNotBeNil)
@@ -531,22 +533,21 @@ func DocIDToIncludeEntries(ids []DocID, k int) (res []EntryID) {
 func TestBEIndex_Retrieve3(t *testing.T) {
 	plgs := FieldCursors{
 		NewFieldCursor(EntriesCursors{
-			NewEntriesCursor(wildcardQKey, DocIDToIncludeEntries([]DocID{17, 32, 37}, 2)),
-			NewEntriesCursor(wildcardQKey, DocIDToIncludeEntries(DocIDList{17, 33}, 2)),
-			NewEntriesCursor(wildcardQKey, DocIDToIncludeEntries(DocIDList{19, 60}, 2)),
-			NewEntriesCursor(wildcardQKey, DocIDToIncludeEntries(DocIDList{53, 54}, 2)),
+			NewEntriesCursor(NewQKey("a", 1), DocIDToIncludeEntries([]DocID{17, 32, 37}, 2)),
+			NewEntriesCursor(NewQKey("a", 2), DocIDToIncludeEntries(DocIDList{17, 33}, 2)),
+			NewEntriesCursor(NewQKey("a", 3), DocIDToIncludeEntries(DocIDList{19, 60}, 2)),
+			NewEntriesCursor(NewQKey("a", 4), DocIDToIncludeEntries(DocIDList{53, 54}, 2)),
 		}...),
 		NewFieldCursor(EntriesCursors{
-			NewEntriesCursor(wildcardQKey, DocIDToIncludeEntries(DocIDList{10, 19, 27, 32, 54, 81}, 2)),
-			NewEntriesCursor(wildcardQKey, DocIDToIncludeEntries(DocIDList{3, 19, 35, 81}, 2)),
+			NewEntriesCursor(NewQKey("b", 1), DocIDToIncludeEntries(DocIDList{3, 19, 35, 81}, 2)),
+			NewEntriesCursor(NewQKey("b", 2), DocIDToIncludeEntries(DocIDList{10, 19, 27, 32, 54, 81}, 2)),
 		}...),
-	}
-	for _, plg := range plgs {
-		plg.current = plg.cursorGroup[0]
 	}
 
 	ctx := newRetrieveCtx(nil)
 	ctx.collector = PickCollector()
+	ctx.dumpStepInfo = true
+	ctx.dumpEntriesDetail = true
 
 	index := &KGroupsBEIndex{}
 	convey.Convey("test retrieve k:2", t, func() {

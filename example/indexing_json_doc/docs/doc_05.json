@@ -3,8 +3,8 @@
   "cons": [
     {
       "exprs": {
-        "age": { "inc": true, "value": ["18:25"] },
-        "city": { "inc": true, "value": ["gz", "hz", "sz"]}
+        "age": [{ "inc": true, "value": ["18:25"] }],
+        "city": [{ "inc": true, "value": ["gz", "hz", "sz"]}]
       }
     }
   ]

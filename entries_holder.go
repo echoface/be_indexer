@@ -168,7 +168,8 @@ func (h *DefaultEntriesHolder) GetEntries(field *FieldDesc, assigns Values) (r E
 	for _, id := range ids {
 		key := NewTerm(field.ID, id)
 		if entries, hit := h.plEntries[key]; hit && len(entries) > 0 {
-			r = append(r, NewEntriesCursor(NewQKey(field.Field, id), entries))
+			cursor := NewEntriesCursor(NewQKey(field.Field, id), entries)
+			r = append(r, cursor)
 		}
 	}
 	return r, nil

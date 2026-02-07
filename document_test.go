@@ -63,7 +63,7 @@ func TestDocument_String(t *testing.T) {
 		doc := NewDocument(100)
 		doc.AddConjunction(
 			NewConjunction().LessThan("kkk", 15),
-			NewConjunction().GreatThan("age", 15),
+			NewConjunction().GreaterThan("age", 15),
 			NewConjunction().Between("kkk", 15, 20),
 			NewConjunction().In("age", NewIntValues(1, 2, 3)).NotIn("age", 5),
 			NewConjunction().NotIn("tag", NewStrValues("a", "b")).Include("age", NewIntValues(18)),

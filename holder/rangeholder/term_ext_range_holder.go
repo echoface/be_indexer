@@ -14,8 +14,8 @@ import (
 )
 
 type (
-	// ExtendLgtHolder implement base on default holder extend support for LT/GT operator
-	ExtendLgtHolder struct {
+	// RangeHolder implement base on default holder extend support for LT/GT operator
+	RangeHolder struct {
 		RangeHolderOption
 
 		debug  bool
@@ -34,7 +34,7 @@ type (
 	}
 	RangeOptionFn func(option *RangeHolderOption)
 
-	LtGtTxData struct {
+	RangeTxData struct {
 		Operator ValueOpt `json:"operator"`
 		RgValue  *Range   `json:"range,omitempty"`
 		EqValues []int64  `json:"eq_values,omitempty"`
@@ -63,13 +63,13 @@ func WithRangeHolderOption(opt *RangeHolderOption) RangeOptionFn {
 	}
 }
 
-func NewNumberExtendRangeHolder(fns ...RangeOptionFn) *ExtendLgtHolder {
+func NewNumberExtendRangeHolder(fns ...RangeOptionFn) *RangeHolder {
 	option := NewRangeHolderOption()
 	for _, fn := range fns {
 		fn(option)
 	}
 	rangeIdx := NewRangeIdx(option.RangeMin, option.RangeMax)
-	holder := &ExtendLgtHolder{
+	holder := &RangeHolder{
 		plEntries:         map[int64]Entries{},
 		rangeIdx:          rangeIdx,
 		RangeHolderOption: *option,
@@ -77,27 +77,27 @@ func NewNumberExtendRangeHolder(fns ...RangeOptionFn) *ExtendLgtHolder {
 	return holder
 }
 
-func (txd *LtGtTxData) BetterToCache() bool {
+func (txd *RangeTxData) BetterToCache() bool {
 	return len(txd.EqValues) > BetterToCacheMaxItemsCount
 }
 
-func (txd *LtGtTxData) Encode() ([]byte, error) {
+func (txd *RangeTxData) Encode() ([]byte, error) {
 	return json.Marshal(txd)
 }
 
-func (h *ExtendLgtHolder) DecodeTxData(data []byte) (TxData, error) {
-	var txd LtGtTxData
+func (h *RangeHolder) DecodeTxData(data []byte) (TxData, error) {
+	var txd RangeTxData
 	err := json.Unmarshal(data, &txd)
 	return &txd, err
 }
 
-func (h *ExtendLgtHolder) EnableDebug(debug bool) {
+func (h *RangeHolder) EnableDebug(debug bool) {
 	h.debug = debug
 }
 
-func (h *ExtendLgtHolder) DumpInfo(buffer *strings.Builder) {
+func (h *RangeHolder) DumpInfo(buffer *strings.Builder) {
 	summarys := map[string]interface{}{
-		"name":               "ExtendLgtHolder",
+		"name":               "RangeHolder",
 		"kvCnt":              len(h.plEntries),
 		"maxEntriesLen":      h.maxLen,
 		"avgEntriesLen":      h.avgLen,
@@ -109,8 +109,8 @@ func (h *ExtendLgtHolder) DumpInfo(buffer *strings.Builder) {
 	buffer.WriteString(util.JSONPretty(summarys))
 }
 
-func (h *ExtendLgtHolder) DumpEntries(buffer *strings.Builder) {
-	buffer.WriteString("ExtendLgtEntriesHolder entries:\n>>kv entries")
+func (h *RangeHolder) DumpEntries(buffer *strings.Builder) {
+	buffer.WriteString("RangeHolder entries:\n>>kv entries")
 	for v, entries := range h.plEntries {
 		buffer.WriteString(fmt.Sprintf("\n%d:", v))
 		buffer.WriteString(strings.Join(entries.DocString(), ","))
@@ -119,7 +119,7 @@ func (h *ExtendLgtHolder) DumpEntries(buffer *strings.Builder) {
 	buffer.WriteString(h.rangeIdx.String())
 }
 
-func (h *ExtendLgtHolder) CompileEntries() error {
+func (h *RangeHolder) CompileEntries() error {
 	var total int
 	valueCnt := len(h.plEntries)
 
@@ -139,9 +139,9 @@ func (h *ExtendLgtHolder) CompileEntries() error {
 	return nil
 }
 
-func (h *ExtendLgtHolder) GetEntries(field *FieldDesc, assigns Values) (r EntriesCursors, e error) {
+func (h *RangeHolder) GetEntries(field *FieldDesc, assigns Values) (r EntriesCursors, e error) {
 	var ids []int64
-	if ids, e = parser.ParseIntergers(assigns, h.EnableFloat2Int); e != nil {
+	if ids, e = parser.ParseIntegers(assigns, h.EnableFloat2Int); e != nil {
 		return nil, e
 	}
 	if len(ids) <= 0 {
@@ -209,20 +209,20 @@ func ParseRange(opt ValueOpt, value Values, enableF2I bool) (*Range, error) {
 	return nil, fmt.Errorf("not supported operator:%d", opt)
 }
 
-func (h *ExtendLgtHolder) IndexingBETx(field *FieldDesc, values *BoolValues) (r TxData, e error) {
+func (h *RangeHolder) IndexingBETx(field *FieldDesc, values *BoolValues) (r TxData, e error) {
 	switch values.Operator {
 	case ValueOptEQ: // NOTE: ids can be replicated if expression contain cross condition
 		var ids []int64
-		if ids, e = parser.ParseIntergers(values.Value, h.EnableFloat2Int); e != nil {
+		if ids, e = parser.ParseIntegers(values.Value, h.EnableFloat2Int); e != nil {
 			return r, fmt.Errorf("field:%s value:%+v parse fail, err:%v", field.Field, values, e)
 		}
-		return &LtGtTxData{EqValues: ids, Operator: ValueOptEQ}, nil
+		return &RangeTxData{EqValues: ids, Operator: ValueOptEQ}, nil
 	case ValueOptLT, ValueOptGT, ValueOptBetween:
 		rg, err := ParseRange(values.Operator, values.Value, h.EnableFloat2Int)
 		if err != nil {
 			return r, err
 		}
-		txData := &LtGtTxData{Operator: ValueOptBetween, RgValue: rg}
+		txData := &RangeTxData{Operator: ValueOptBetween, RgValue: rg}
 		if rg.Size() < h.RangeCvtValuesSize {
 			txData.Operator, txData.RgValue = ValueOptEQ, nil
 			txData.EqValues = make([]int64, 0, int(rg.Size()))
@@ -237,11 +237,11 @@ func (h *ExtendLgtHolder) IndexingBETx(field *FieldDesc, values *BoolValues) (r 
 	return nil, fmt.Errorf("unsupport Operator:%d", values.Operator)
 }
 
-func (h *ExtendLgtHolder) CommitIndexingBETx(tx IndexingBETx) error {
+func (h *RangeHolder) CommitIndexingBETx(tx IndexingBETx) error {
 	if tx.Data == nil {
 		return nil
 	}
-	data := tx.Data.(*LtGtTxData)
+	data := tx.Data.(*RangeTxData)
 	switch data.Operator {
 	case ValueOptEQ: // NOTE: ids can be replicated if expression contain cross condition
 		values := util.DistinctInteger(data.EqValues)

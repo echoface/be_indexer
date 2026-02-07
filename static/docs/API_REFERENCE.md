@@ -228,7 +228,7 @@ func (conj *Conjunction) NotIn(field BEField, values Values) *Conjunction
 func (conj *Conjunction) Exclude(field BEField, values Values) *Conjunction
 
 // 添加范围条件
-func (conj *Conjunction) GreatThan(field BEField, value int64) *Conjunction
+func (conj *Conjunction) GreaterThan(field BEField, value int64) *Conjunction
 func (conj *Conjunction) LessThan(field BEField, value int64) *Conjunction
 func (conj *Conjunction) Between(field BEField, l, h int64) *Conjunction
 
@@ -258,7 +258,7 @@ conj := be_indexer.NewConjunction().
 
 // 使用范围查询
 conj2 := be_indexer.NewConjunction().
-    GreatThan("score", 80).
+    GreaterThan("score", 80).
     LessThan("age", 60).
     Between("price", 100, 1000)
 
@@ -420,7 +420,7 @@ docs := []*be_indexer.Document{
     ),
     be_indexer.NewDocument(2).AddConjunction(
         be_indexer.NewConjunction().
-            GreatThan("age", 30).
+            GreaterThan("age", 30).
             Include("vip", be_indexer.NewStrValues("true")),
     ),
 }

@@ -98,7 +98,7 @@ func TestBEIndex_WithExtendRange(t *testing.T) {
 	// (sex is female && age < 20)
 	doc := NewDocument(12)
 	doc.AddConjunction(
-		NewConjunction().In("sex", "man").GreatThan("age", 18),
+		NewConjunction().In("sex", "man").GreaterThan("age", 18),
 		NewConjunction().In("sex", "female").LessThan("age", 20),
 	)
 

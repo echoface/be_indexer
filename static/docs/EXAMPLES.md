@@ -42,7 +42,7 @@ func main() {
         ),
         be_indexer.NewDocument(2).AddConjunction(
             be_indexer.NewConjunction().
-                GreatThan("age", 30).
+                GreaterThan("age", 30).
                 Include("vip", be_indexer.NewStrValues("true")),
         ),
     }
@@ -83,7 +83,7 @@ func main() {
     doc.AddConjunction(
         be_indexer.NewConjunction().
             Include("category", be_indexer.NewStrValues("electronics")).
-            GreatThan("price", 100),
+            GreaterThan("price", 100),
     )
 
     builder.AddDocument(doc)
@@ -135,8 +135,8 @@ func main() {
         // 规则3: 年龄大于30岁高消费用户
         be_indexer.NewDocument(1003).AddConjunction(
             be_indexer.NewConjunction().
-                GreatThan("age", 30).
-                GreatThan("consumption", 10000),
+                GreaterThan("age", 30).
+                GreaterThan("consumption", 10000),
         ),
     }
 
@@ -250,7 +250,7 @@ func main() {
             be_indexer.NewConjunction().
                 Include("brand", be_indexer.NewStrValues("apple")).
                 Include("category", be_indexer.NewStrValues("smartphone")).
-                GreatThan("price", 8000).
+                GreaterThan("price", 8000).
                 LessThan("price", 10000),
         ),
         // 小米手机
@@ -415,7 +415,7 @@ func main() {
             be_indexer.NewConjunction().
                 Include("category", be_indexer.NewStrValues("education")).
                 Include("difficulty", be_indexer.NewStrValues("advanced")).
-                GreatThan("rating", 4.5),
+                GreaterThan("rating", 4.5),
         ),
     }
 
@@ -867,7 +867,7 @@ func BenchmarkIndexing(b *testing.B) {
         docs[i].AddConjunction(
             be_indexer.NewConjunction().
                 Include("category", be_indexer.NewStrValues(fmt.Sprintf("cat%d", i%10))).
-                GreatThan("score", int64(i%100)),
+                GreaterThan("score", int64(i%100)),
         )
     }
 

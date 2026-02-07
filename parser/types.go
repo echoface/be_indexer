@@ -22,7 +22,7 @@ type (
 	}
 )
 
-func ParseIntegerNumber(v interface{}, f2i bool) (n int64, err error) {
+func ParseIntegerNumber(v interface{}, floatToInt bool) (n int64, err error) {
 	vf := reflect.ValueOf(v)
 	switch vf.Kind() {
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
@@ -33,29 +33,29 @@ func ParseIntegerNumber(v interface{}, f2i bool) (n int64, err error) {
 		if num, err := strconv.ParseInt(vf.String(), 10, 64); err == nil {
 			return num, nil
 		}
-		if f2i {
+		if floatToInt {
 			if fv, err := strconv.ParseFloat(vf.String(), 64); err == nil {
 				return int64(fv), nil
 			}
 		}
 		return 0, fmt.Errorf("invalid number:%s", vf.String())
 	case reflect.Float64, reflect.Float32:
-		if f2i {
+		if floatToInt {
 			return int64(vf.Float()), nil
 		}
 	default:
 	}
-	return 0, fmt.Errorf("not supprted number type:%+v", v)
+	return 0, fmt.Errorf("not supported number type:%+v", v)
 }
 
-func ParseIntergers(v interface{}, f2i bool) (res []int64, err error) {
+func ParseIntegers(v interface{}, floatToInt bool) (res []int64, err error) {
 	if util.NilInterface(v) {
 		return res, nil
 	}
 	switch t := v.(type) {
 	case string, json.Number, int, int8, int16, int32,
 		int64, uint, uint8, uint16, uint32, uint64, float64, float32:
-		if num, err := ParseIntegerNumber(t, f2i); err == nil {
+		if num, err := ParseIntegerNumber(t, floatToInt); err == nil {
 			return append(res, num), nil
 		}
 	case []int8, []int16, []int32, []int, []int64, []uint8, []uint16,
@@ -66,7 +66,7 @@ func ParseIntergers(v interface{}, f2i bool) (res []int64, err error) {
 		var num int64
 		for i := 0; i < rv.Len(); i++ {
 			vi := rv.Index(i).Interface()
-			if num, err = ParseIntegerNumber(vi, f2i); err != nil {
+			if num, err = ParseIntegerNumber(vi, floatToInt); err != nil {
 				return nil, err
 			}
 			res = append(res, num)
@@ -76,7 +76,7 @@ func ParseIntergers(v interface{}, f2i bool) (res []int64, err error) {
 		res = make([]int64, 0, len(t))
 		for _, iv := range t {
 			var num int64
-			if num, err = ParseIntegerNumber(iv, f2i); err != nil {
+			if num, err = ParseIntegerNumber(iv, floatToInt); err != nil {
 				return nil, fmt.Errorf("value:%v not a number value", iv)
 			}
 			res = append(res, num)

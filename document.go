@@ -119,7 +119,7 @@ func (conj *Conjunction) Exclude(field BEField, values Values) *Conjunction {
 	return conj
 }
 
-func (conj *Conjunction) GreatThan(field BEField, value int64) *Conjunction {
+func (conj *Conjunction) GreaterThan(field BEField, value int64) *Conjunction {
 	conj.AddBoolExprs(&BooleanExpr{
 		Field:      field,
 		BoolValues: NewGTBoolValue(value),

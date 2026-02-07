@@ -74,7 +74,7 @@ func main() {
         // 商品2: 年龄大于30岁，不在农村的用户
         be_indexer.NewDocument(2).AddConjunction(
             be_indexer.NewConjunction().
-                GreatThan("age", 30).
+                GreaterThan("age", 30).
                 Exclude("city", be_indexer.NewStrValues("rural")),
         ),
         // 商品3: 年龄25岁，城市在上海或广州
@@ -179,7 +179,7 @@ fmt.Println("匹配的广告:", matchedAds)
 products := []*be_indexer.Document{
     be_indexer.NewDocument(2001).AddConjunction(
         be_indexer.NewConjunction().
-            GreatThan("price", 100).
+            GreaterThan("price", 100).
             LessThan("price", 500).
             Include("category", be_indexer.NewStrValues("electronics")),
     ),
@@ -254,7 +254,7 @@ result, _ := indexer.Retrieve(query)
 doc := be_indexer.NewDocument(5001)
 doc.AddConjunction(
     be_indexer.NewConjunction().
-        GreatThan("score", 80).    // score > 80
+        GreaterThan("score", 80).    // score > 80
         LessThan("age", 60).       // age < 60
         Between("price", 100, 1000), // price between [100, 1000]
 )

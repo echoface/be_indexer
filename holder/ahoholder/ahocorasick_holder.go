@@ -1,7 +1,6 @@
 package ahoholder
 
 import (
-	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -31,7 +30,9 @@ type (
 		machine *aho.Machine // matcher     *cedar.Matcher
 	}
 
-	AcHolderTxData cache.StrListValues
+	AcHolderTxData struct {
+		Keys cache.StrListValues
+	}
 )
 
 func init() {
@@ -50,20 +51,18 @@ func NewACEntriesHolder(option ACHolderOption) *ACEntriesHolder {
 	return holder
 }
 
-func (txd *AcHolderTxData) BetterToCache() bool {
-	return len(txd.Values) > BetterToCacheMaxItemsCount
-}
-
 func (txd *AcHolderTxData) Encode() ([]byte, error) {
-	return json.Marshal(txd.Values)
+	return proto.Marshal(&txd.Keys)
 }
 
-func (h *ACEntriesHolder) DecodeTxData(data []byte) (TxData, error) {
-	if len(data) == 0 {
-		return &AcHolderTxData{Values: nil}, nil
+func (h *ACEntriesHolder) DecodeFieldIndexingData(data []byte) (IndexingData, error) {
+	txData := &AcHolderTxData{
+		Keys: cache.StrListValues{},
 	}
-	txData := &AcHolderTxData{Values: []string{}}
-	err := proto.Unmarshal(data, (*cache.StrListValues)(txData))
+	if len(data) == 0 {
+		return txData, nil
+	}
+	err := proto.Unmarshal(data, &txData.Keys)
 	return txData, err
 }
 
@@ -89,17 +88,20 @@ func (h *ACEntriesHolder) DumpEntries(buffer *strings.Builder) {
 	}
 }
 
-func (h *ACEntriesHolder) IndexingBETx(_ *FieldDesc, bv *BoolValues) (TxData, error) {
+func (h *ACEntriesHolder) BuildFieldIndexingData(_ *FieldDesc, bv *BoolValues) (IndexingData, error) {
 	util.PanicIf(bv.Operator != ValueOptEQ, "ac_matcher container support EQ operator only")
 
 	keys, err := ParseAcMatchDict(bv.Value)
 	if err != nil {
 		return nil, fmt.Errorf("ac holder need string(able) value, err:%v", err)
 	}
-	return &AcHolderTxData{Values: keys}, nil
+	data := cache.StrListValues{
+		Values: keys,
+	}
+	return &AcHolderTxData{Keys: data}, nil
 }
 
-func (h *ACEntriesHolder) CommitIndexingBETx(tx IndexingBETx) error {
+func (h *ACEntriesHolder) CommitFieldIndexingData(tx FieldIndexingData) error {
 	if tx.Data == nil {
 		return nil
 	}
@@ -108,7 +110,7 @@ func (h *ACEntriesHolder) CommitIndexingBETx(tx IndexingBETx) error {
 	if data, ok = tx.Data.(*AcHolderTxData); !ok {
 		return fmt.Errorf("invalid Tx.Data type")
 	}
-	for _, v := range data.Values {
+	for _, v := range data.Keys.GetValues() {
 		h.values[v] = append(h.values[v], tx.EID)
 	}
 	return nil
@@ -140,7 +142,6 @@ func (h *ACEntriesHolder) GetEntries(field *FieldDesc, assigns Values) (EntriesC
 }
 
 func (h *ACEntriesHolder) CompileEntries() error {
-
 	var total int64
 	keys := make([][]rune, 0, len(h.values))
 	for term, entries := range h.values {

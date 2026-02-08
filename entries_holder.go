@@ -27,38 +27,35 @@ type (
 		// GetEntries retrieve all satisfied PostingList from holder
 		GetEntries(field *FieldDesc, assigns Values) (EntriesCursors, error)
 
-		// IndexingBETx holder tokenize/parse values into what its needed data
-		// then wait IndexerBuilder call CommitAppend to apply 'Data' into holder
+		// BuildFieldIndexingData holder tokenize/parse values into what its needed data
+		// then wait IndexerBuilder call CommitFieldIndexingData to apply 'Data' into holder
 		// when all expression prepare success in a conjunction
-		IndexingBETx(field *FieldDesc, bv *BoolValues) (TxData, error)
+		BuildFieldIndexingData(field *FieldDesc, bv *BoolValues) (IndexingData, error)
 
-		// CommitIndexingBETx NOTE: builder will panic when error return,
+		// CommitFieldIndexingData NOTE: builder will panic when error return,
 		// because partial success for a conjunction will cause logic error
-		CommitIndexingBETx(tx IndexingBETx) error
+		CommitFieldIndexingData(tx FieldIndexingData) error
 
-		// DecodeTxData decode data; used for building progress cache
-		DecodeTxData(data []byte) (TxData, error)
+		// DecodeFieldIndexingData decode data; used for building progress cache
+		DecodeFieldIndexingData(data []byte) (IndexingData, error)
 
 		// CompileEntries finalize entries status for query, build or make sorted
 		// according to the paper, entries must be sorted
 		CompileEntries() error
 	}
 
-	TxData interface {
-		// BetterToCache if txData big enough, prefer to cache it; builder will
-		// detect all expressions in a conjunction and decide whether cache it or not
-		BetterToCache() bool
-
+	// holder 自定义的索引数据，encode用于支持增量构建
+	IndexingData interface {
 		// Encode serialize TxData for caching
 		Encode() ([]byte, error)
 	}
 
-	IndexingBETx struct {
+	FieldIndexingData struct {
 		field  *FieldDesc
 		holder EntriesHolder
 
 		EID  EntryID
-		Data TxData
+		Data IndexingData
 	}
 
 	Term struct {
@@ -81,13 +78,12 @@ type (
 	Uint64TxData cache.Uint64ListValues
 )
 
-var (
-	BetterToCacheMaxItemsCount = 512
-)
+var BetterToCacheMaxItemsCount = 512
 
 func NewTerm(fid, idValue uint64) Term {
 	return Term{FieldID: fid, IDValue: idValue}
 }
+
 func (tm Term) String() string {
 	return fmt.Sprintf("<%d,%d>", tm.FieldID, tm.IDValue)
 }
@@ -109,8 +105,8 @@ func (txd *Uint64TxData) Encode() ([]byte, error) {
 	return proto.Marshal(protoMsg)
 }
 
-// DecodeTxData decode data; used for building progress cache
-func (h *DefaultEntriesHolder) DecodeTxData(data []byte) (TxData, error) {
+// DecodeFieldIndexingData decode data; used for building progress cache
+func (h *DefaultEntriesHolder) DecodeFieldIndexingData(data []byte) (IndexingData, error) {
 	if len(data) == 0 {
 		return &Uint64TxData{Values: nil}, nil
 	}
@@ -175,7 +171,7 @@ func (h *DefaultEntriesHolder) GetEntries(field *FieldDesc, assigns Values) (r E
 	return r, nil
 }
 
-func (h *DefaultEntriesHolder) IndexingBETx(field *FieldDesc, bv *BoolValues) (TxData, error) {
+func (h *DefaultEntriesHolder) BuildFieldIndexingData(field *FieldDesc, bv *BoolValues) (IndexingData, error) {
 	util.PanicIf(bv.Operator != ValueOptEQ, "default container support EQ operator only")
 
 	// NOTE: ids can be replicated if expression contain cross condition
@@ -186,7 +182,7 @@ func (h *DefaultEntriesHolder) IndexingBETx(field *FieldDesc, bv *BoolValues) (T
 	return &Uint64TxData{Values: ids}, nil
 }
 
-func (h *DefaultEntriesHolder) CommitIndexingBETx(tx IndexingBETx) error {
+func (h *DefaultEntriesHolder) CommitFieldIndexingData(tx FieldIndexingData) error {
 	if tx.Data == nil {
 		return nil
 	}

@@ -15,15 +15,17 @@ type (
 	}
 
 	Document struct {
-		ID   DocID          `json:"id"`   // 只支持2^43最大值个Doc
-		Cons []*Conjunction `json:"cons"` // conjunction之间的关系是或，具体描述可以看论文的表述
+		ID      DocID          `json:"id"`      // 只支持2^43最大值个Doc
+		Version uint64         `json:"version"` // 【增量缓存】业务提供的文档版本号，0表示不使用缓存
+		Cons    []*Conjunction `json:"cons"`    // conjunction之间的关系是或，具体描述可以看论文的表述
 	}
 )
 
 func NewDocument(id DocID) *Document {
 	return &Document{
-		ID:   id,
-		Cons: make([]*Conjunction, 0),
+		ID:      id,
+		Version: 0, // 默认为0，表示不使用缓存
+		Cons:    make([]*Conjunction, 0),
 	}
 }
 

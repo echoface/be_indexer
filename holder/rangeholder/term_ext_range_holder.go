@@ -77,15 +77,11 @@ func NewNumberExtendRangeHolder(fns ...RangeOptionFn) *RangeHolder {
 	return holder
 }
 
-func (txd *RangeTxData) BetterToCache() bool {
-	return len(txd.EqValues) > BetterToCacheMaxItemsCount
-}
-
 func (txd *RangeTxData) Encode() ([]byte, error) {
 	return json.Marshal(txd)
 }
 
-func (h *RangeHolder) DecodeTxData(data []byte) (TxData, error) {
+func (h *RangeHolder) DecodeFieldIndexingData(data []byte) (IndexingData, error) {
 	var txd RangeTxData
 	err := json.Unmarshal(data, &txd)
 	return &txd, err
@@ -209,7 +205,7 @@ func ParseRange(opt ValueOpt, value Values, enableF2I bool) (*Range, error) {
 	return nil, fmt.Errorf("not supported operator:%d", opt)
 }
 
-func (h *RangeHolder) IndexingBETx(field *FieldDesc, values *BoolValues) (r TxData, e error) {
+func (h *RangeHolder) BuildFieldIndexingData(field *FieldDesc, values *BoolValues) (r IndexingData, e error) {
 	switch values.Operator {
 	case ValueOptEQ: // NOTE: ids can be replicated if expression contain cross condition
 		var ids []int64
@@ -237,7 +233,7 @@ func (h *RangeHolder) IndexingBETx(field *FieldDesc, values *BoolValues) (r TxDa
 	return nil, fmt.Errorf("unsupport Operator:%d", values.Operator)
 }
 
-func (h *RangeHolder) CommitIndexingBETx(tx IndexingBETx) error {
+func (h *RangeHolder) CommitFieldIndexingData(tx FieldIndexingData) error {
 	if tx.Data == nil {
 		return nil
 	}

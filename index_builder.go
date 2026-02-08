@@ -2,11 +2,10 @@ package be_indexer
 
 import (
 	"fmt"
+	"hash/fnv"
 
-	"github.com/echoface/be_indexer/codegen/cache"
 	"github.com/echoface/be_indexer/parser"
 	"github.com/echoface/be_indexer/util"
-	"google.golang.org/protobuf/proto"
 )
 
 type (
@@ -18,6 +17,10 @@ type (
 		fieldsData map[BEField]*FieldDesc
 
 		idAllocator parser.IDAllocator
+
+		// 【增量缓存】文档级缓存相关字段
+		docCache   DocLevelCache // 文档级缓存接口
+		schemaHash uint64        // 字段配置哈希，用于校验缓存有效性
 	}
 
 	// CacheProvider a interface
@@ -32,13 +35,22 @@ type (
 
 	BuilderOption struct {
 		indexerType     IndexerType
-		builderCache    CacheProvider
 		badConjBehavior BadConjBehavior // 是否允许一个doc中部分Conjunction解析失败
+		docLevelCache   DocLevelCache   // 【增量缓存】文档级缓存
 	}
 
 	BuilderOpt func(builder *IndexerBuilder)
 
-	IndexerType     int
+	IndexerType int
+
+	// 索引构建的中间结果
+	ConjIndexingData struct {
+		idx       int
+		incSize   int
+		conjID    ConjID
+		fieldData []*FieldIndexingData
+	}
+
 	BadConjBehavior int
 )
 
@@ -57,9 +69,10 @@ func WithBadConjBehavior(v BadConjBehavior) BuilderOpt {
 	}
 }
 
-func WithCacheProvider(provider CacheProvider) BuilderOpt {
+// WithDocLevelCache 设置文档级缓存
+func WithDocLevelCache(cache DocLevelCache) BuilderOpt {
 	return func(builder *IndexerBuilder) {
-		builder.builderCache = provider
+		builder.docLevelCache = cache
 	}
 }
 
@@ -89,9 +102,6 @@ func NewCompactIndexerBuilder(opts ...BuilderOpt) *IndexerBuilder {
 
 func (b *IndexerBuilder) Reset() {
 	b.initIndexer()
-	if b.builderCache != nil {
-		b.builderCache.Reset()
-	}
 }
 
 func (b *IndexerBuilder) initIndexer() {
@@ -110,6 +120,7 @@ func (b *IndexerBuilder) ConfigField(field BEField, settings FieldOption) {
 	util.PanicIfErr(err, "config field:%s with option fail:%+v", field, settings)
 }
 
+// 从业务定义的文档构建
 func (b *IndexerBuilder) AddDocument(docs ...*Document) error {
 	for _, doc := range docs {
 		util.PanicIf(doc == nil, "nil document not be allowed")
@@ -123,8 +134,61 @@ func (b *IndexerBuilder) AddDocument(docs ...*Document) error {
 	return nil
 }
 
-func (b *IndexerBuilder) BuildIndex() BEIndex {
+// 从文档级索引缓存（中间结果）恢复
+func (b *IndexerBuilder) AddDocIndexingData(cached *DocIdxCache) error {
+	for _, conjResult := range cached.ConjIdxCaches {
+		// 恢复成 ConjIndexingData
+		cd, err := b.toConjIndexingData(cached.DocID, &conjResult)
+		if err != nil {
+			return err
+		}
+		// 统一提交
+		b.commitConjIndexingData(cd)
+	}
+	return nil
+}
 
+// toConjIndexingData 将缓存结果转换为 ConjIndexingData
+func (b *IndexerBuilder) toConjIndexingData(docID DocID, conjResult *ConjIdxCache) (*ConjIndexingData, error) {
+	cd := &ConjIndexingData{
+		idx:       conjResult.ConjIdx,
+		conjID:    NewConjID(docID, conjResult.ConjIdx, conjResult.ConjSize),
+		incSize:   conjResult.ConjSize,
+		fieldData: make([]*FieldIndexingData, 0),
+	}
+
+	container := b.indexer.newContainer(conjResult.ConjSize)
+
+	// 恢复每个 Field
+	for _, fieldTx := range conjResult.FieldCacheIdx {
+		desc := b.fieldsData[fieldTx.Field]
+		if desc == nil {
+			return nil, fmt.Errorf("field %s not configured", fieldTx.Field)
+		}
+		holder := container.CreateHolder(desc)
+
+		// 恢复每个 Expression
+		for _, txCache := range fieldTx.Entries {
+			txData, err := holder.DecodeFieldIndexingData(txCache.DataBytes)
+			if err != nil {
+				return nil, fmt.Errorf("decode tx data failed for field %s: %v", fieldTx.Field, err)
+			}
+
+			// 构造 FieldIndexingData
+			tx := &FieldIndexingData{
+				field:  desc,
+				holder: holder,
+				EID:    txCache.EID,
+				Data:   txData,
+			}
+			cd.fieldData = append(cd.fieldData, tx)
+		}
+	}
+
+	return cd, nil
+}
+
+func (b *IndexerBuilder) BuildIndex() BEIndex {
 	b.indexer.setFieldDesc(b.fieldsData)
 
 	err := b.indexer.compileIndexer()
@@ -149,8 +213,27 @@ func (b *IndexerBuilder) configureField(field BEField, option FieldOption) (*Fie
 		FieldOption: option,
 	}
 	b.fieldsData[field] = desc
+
+	// 【增量缓存】更新 schema hash 并清空缓存
+	b.updateSchemaHash()
+	if b.docLevelCache != nil {
+		b.docLevelCache.Clear()
+		Logger.Infof("schema changed, doc level cache cleared")
+	}
+
 	Logger.Infof("configure field:%s, fieldID:%d\n", field, desc.ID)
 	return desc, nil
+}
+
+// updateSchemaHash 计算字段配置哈希
+func (b *IndexerBuilder) updateSchemaHash() {
+	h := fnv.New64a()
+	for field, desc := range b.fieldsData {
+		h.Write([]byte(field))
+		h.Write([]byte(desc.Container))
+		// 可以扩展：包含更多配置项
+	}
+	b.schemaHash = h.Sum64()
 }
 
 func (b *IndexerBuilder) validDocument(doc *Document) error {
@@ -176,58 +259,105 @@ func (b *IndexerBuilder) createFieldData(field BEField) *FieldDesc {
 	return desc
 }
 
+// commitConjIndexingData 统一提交 Conjunction 数据
+func (b *IndexerBuilder) commitConjIndexingData(cd *ConjIndexingData) {
+	// 提交 Wildcard
+	if cd.incSize == 0 {
+		b.indexer.addWildcardEID(NewEntryID(cd.conjID, true))
+	}
+
+	// 提交所有 FieldIndexingData
+	for _, tx := range cd.fieldData {
+		err := tx.holder.CommitFieldIndexingData(*tx)
+		util.PanicIfErr(err, "commit indexing data failed")
+	}
+}
+
 func (b *IndexerBuilder) buildDocEntries(doc *Document) error {
 	util.PanicIf(len(doc.Cons) == 0, "no conjunctions in this document")
 	util.PanicIf(len(doc.Cons) > 0xFF, "number of conjunction need less than 256")
 
+	// 【增量缓存】尝试从文档级缓存恢复
+	if b.docLevelCache != nil && doc.Version > 0 {
+		cacheKey := NewDocCacheKey(doc.ID, doc.Version)
+		if cached, ok := b.docLevelCache.Get(cacheKey); ok && cached.SchemaHash == b.schemaHash {
+			Logger.Debugf("doc cache hit: docID=%d, version=%d", doc.ID, doc.Version)
+			return b.AddDocIndexingData(cached)
+		}
+	}
+
+	// 缓存未命中，构建并捕获结果
+	var cacheEntry *DocIdxCache
+	if b.docLevelCache != nil && doc.Version > 0 {
+		cacheEntry = &DocIdxCache{
+			DocID:      doc.ID,
+			Version:    doc.Version,
+			SchemaHash: b.schemaHash,
+		}
+	}
+
+	// 阶段 1：准备阶段 - 收集所有 Conjunction 的数据
+	allConjData := make([]ConjIndexingData, 0, len(doc.Cons))
+
 ConjLoop:
 	for idx, conj := range doc.Cons {
-
 		incSize := conj.CalcConjSize()
 		conjID := NewConjID(doc.ID, idx, incSize)
 
+		// 收集 Wildcard（暂不提交）
 		if incSize == 0 {
-			b.indexer.addWildcardEID(NewEntryID(conjID, true))
+			// Wildcard 将在阶段 2 统一提交
 		}
 
-		var conjIndexingTxs []*IndexingBETx
-		if conjIndexingTxs = b.tryUseIndexingTxCache(conjID); conjIndexingTxs == nil {
-
-			var err error
-			var needCache bool
-
-			if conjIndexingTxs, needCache, err = b.indexingConjunction(conj, conjID); err != nil {
-				switch b.badConjBehavior {
-				case SkipBadConj:
-					Logger.Errorf("indexing conj:%s fail:%v", conjID.String(), err)
-					continue ConjLoop
-				case ErrorBadConj:
-					return fmt.Errorf("indexing conj:%s fail:%v", conjID.String(), err)
-				default:
-				}
-				util.PanicIf(true, "indexing conj:%s fail:%v", conjID.String(), err)
+		conjIndexingData, err := b.indexingConjunction(conjID, conj)
+		if err != nil {
+			switch b.badConjBehavior {
+			case SkipBadConj:
+				Logger.Errorf("indexing conj:%s fail:%v", conjID.String(), err)
+				continue ConjLoop
+			case ErrorBadConj:
+				return fmt.Errorf("indexing conj:%s fail:%v", conjID.String(), err)
+			default:
 			}
-
-			if needCache {
-				b.tryCacheIndexingTx(conjID, conjIndexingTxs)
-			}
+			util.PanicIf(true, "indexing conj:%s fail:%v", conjID.String(), err)
 		}
 
-		for _, tx := range conjIndexingTxs {
-			err := tx.holder.CommitIndexingBETx(*tx)
-			util.PanicIfErr(err, "commit indexing data failed")
+		allConjData = append(allConjData, ConjIndexingData{
+			idx:       idx,
+			conjID:    conjID,
+			incSize:   incSize,
+			fieldData: conjIndexingData,
+		})
+	}
+
+	// 阶段 2：提交阶段 - 所有 Conjunction 都成功准备后，统一提交到 holder
+	for i := range allConjData {
+		cd := &allConjData[i]
+		// 统一提交
+		b.commitConjIndexingData(cd)
+
+		// 【增量缓存】捕获 Conjunction 结果
+		if cacheEntry != nil {
+			cacheEntry.ConjIdxCaches = append(cacheEntry.ConjIdxCaches, cd.toCacheResult())
 		}
 	}
+
+	// 【增量缓存】保存到缓存
+	if cacheEntry != nil && len(cacheEntry.ConjIdxCaches) > 0 {
+		cacheKey := NewDocCacheKey(doc.ID, doc.Version)
+		b.docLevelCache.Set(cacheKey, cacheEntry)
+		Logger.Debugf("doc cache saved: docID=%d, version=%d", doc.ID, doc.Version)
+	}
+
 	return nil
 }
 
 // indexingConjunction return (txs []*IndexingBETx, needCache bool, err error)
-func (b *IndexerBuilder) indexingConjunction(conj *Conjunction, conjID ConjID) ([]*IndexingBETx, bool, error) {
+func (b *IndexerBuilder) indexingConjunction(conjID ConjID, conj *Conjunction) ([]*FieldIndexingData, error) {
 	incSize := conjID.Size()
-	conjIndexingTXs := make([]*IndexingBETx, 0, len(conj.Expressions))
+	conjIndexingTXs := make([]*FieldIndexingData, 0, len(conj.Expressions))
 
 	container := b.indexer.newContainer(incSize)
-	var needCacheCnt int
 
 	for field, exprs := range conj.Expressions {
 		for _, expr := range exprs {
@@ -235,75 +365,59 @@ func (b *IndexerBuilder) indexingConjunction(conj *Conjunction, conjID ConjID) (
 			holder := container.CreateHolder(desc)
 
 			var err error
-			var txData TxData
-			if txData, err = holder.IndexingBETx(desc, expr); err != nil {
-				return nil, false, fmt.Errorf("indexing field:%s fail:%v", field, err)
+			var txData IndexingData
+			if txData, err = holder.BuildFieldIndexingData(desc, expr); err != nil {
+				return nil, fmt.Errorf("indexing field:%s fail:%v", field, err)
 			}
 			entryID := NewEntryID(conjID, expr.Incl)
-			if txData.BetterToCache() {
-				needCacheCnt++
-			}
-			tx := &IndexingBETx{field: desc, holder: holder, EID: entryID, Data: txData}
+			tx := &FieldIndexingData{field: desc, holder: holder, EID: entryID, Data: txData}
 			conjIndexingTXs = append(conjIndexingTXs, tx)
 		}
 	}
-	return conjIndexingTXs, needCacheCnt > 0, nil
+	return conjIndexingTXs, nil
 }
 
-func (b *IndexerBuilder) tryUseIndexingTxCache(conjID ConjID) (cachedIndexingTx []*IndexingBETx) {
-	if b.builderCache == nil {
-		return nil
+// toCacheResult 转换为可缓存的格式
+func (cd *ConjIndexingData) toCacheResult() ConjIdxCache {
+	result := ConjIdxCache{
+		ConjIdx:  cd.idx,
+		ConjSize: cd.incSize,
 	}
 
-	txCache := &cache.IndexingTxCache{}
-	if data, ok := b.builderCache.Get(conjID); !ok {
-		return nil
-	} else if err := proto.Unmarshal(data, txCache); err != nil {
-		return nil
+	// 捕获 Wildcard
+	if cd.incSize == 0 {
+		result.WildcardEID = NewEntryID(cd.conjID, true)
 	}
 
-	container := b.indexer.newContainer(conjID.Size())
-
-	for field, fieldData := range txCache.FieldData {
-		desc := b.createFieldData(BEField(field))
-		holder := container.CreateHolder(desc)
-
-		var err error
-		var txData TxData
-		if txData, err = holder.DecodeTxData(fieldData.Data); err != nil {
-			Logger.Errorf("doc:%d field:%s indexing field:%s fail:%v", conjID.DocID(), field, err)
-			return nil
+	// 按字段分组捕获 Transactions
+	fieldTxMap := make(map[BEField]*FieldIndexes)
+	for _, tx := range cd.fieldData {
+		field := tx.field.Field
+		if _, ok := fieldTxMap[field]; !ok {
+			fieldTxMap[field] = &FieldIndexes{
+				Field: field,
+			}
 		}
 
-		eid := EntryID(fieldData.Eid)
-		tx := &IndexingBETx{field: desc, holder: holder, EID: eid, Data: txData}
-		cachedIndexingTx = append(cachedIndexingTx, tx)
-	}
-	return cachedIndexingTx
-}
-
-func (b *IndexerBuilder) tryCacheIndexingTx(conjID ConjID, txs []*IndexingBETx) {
-	if b.builderCache == nil {
-		return
-	}
-	txCache := &cache.IndexingTxCache{
-		ConjunctionId: uint64(conjID),
-		FieldData:     map[string]*cache.FieldCache{},
-	}
-	var err error
-	for _, tx := range txs {
-		var content []byte
-		if content, err = tx.Data.Encode(); err != nil {
-			LogErr("field:%s TxData encode fail:%v", tx.field, err)
-			return
+		// 序列化 TxData
+		dataBytes, err := tx.Data.Encode()
+		if err != nil {
+			Logger.Errorf("encode tx data failed for field %s: %v", field, err)
+			continue
 		}
 
-		txCache.FieldData[string(tx.field.Field)] = &cache.FieldCache{
-			Eid:  uint64(tx.EID),
-			Data: content,
+		fieldTxMap[field].Entries = append(fieldTxMap[field].Entries, IdxCacheEntry{
+			EID:       tx.EID,
+			DataBytes: dataBytes,
+		})
+	}
+
+	// 转换 map 为 slice
+	for _, fieldTx := range fieldTxMap {
+		if len(fieldTx.Entries) > 0 {
+			result.FieldCacheIdx = append(result.FieldCacheIdx, *fieldTx)
 		}
 	}
-	if data, err := proto.Marshal(txCache); err == nil {
-		b.builderCache.Set(conjID, data)
-	}
+
+	return result
 }

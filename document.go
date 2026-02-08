@@ -15,7 +15,7 @@ type (
 	}
 
 	Document struct {
-		ID   DocID          `json:"id"`   // 只支持int32最大值个Doc
+		ID   DocID          `json:"id"`   // 只支持2^43最大值个Doc
 		Cons []*Conjunction `json:"cons"` // conjunction之间的关系是或，具体描述可以看论文的表述
 	}
 )

@@ -2,6 +2,82 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased] - 2026-02-10
+
+### Added
+
+#### Parser Interface Refactoring
+
+重构 Parser 接口设计，引入 `ValueTokenizer` 和 `ValueIDGenerator` 两个核心接口，使代码更加清晰和灵活。
+
+**主要变更：**
+
+1. **新增 `ValueTokenizer` 接口**
+   - 用于 `DefaultEntriesHolder`，将值转换为字符串列表
+   - 支持双向解析：
+     - `TokenizeValue`: 索引阶段，解析布尔表达式的值
+     - `TokenizeAssign`: 查询阶段，解析查询参数
+   - GeoHashParser、NumberParser 等已实现此接口
+
+2. **`ValueIDGenerator` 接口增强**
+   - 添加 `Name()` 方法，用于标识解析器
+   - 用于 `roaringidx` 包，将值转换为 uint64 ID
+   - 保持向后兼容：`FieldValueParser` 作为别名保留
+
+3. **GeoHashParser 现在同时实现两个接口**
+   - `ValueTokenizer`: 供 `DefaultEntriesHolder` 使用，生成 geohash 字符串
+   - `ValueIDGenerator`: 供 `roaringidx` 使用，生成 uint64 ID
+   - 核心逻辑基于字符串生成，uint64 通过字符串转换获得，符合 geohash 自然流程
+
+**API 变更：**
+
+```go
+// 新的接口定义
+type ValueTokenizer interface {
+    TokenizeValue(v interface{}) ([]string, error)   // 索引阶段
+    TokenizeAssign(v interface{}) ([]string, error)  // 查询阶段
+}
+
+type ValueIDGenerator interface {
+    Name() string
+    ParseAssign(v interface{}) ([]uint64, error)
+    ParseValue(v interface{}) ([]uint64, error)
+}
+
+// 向后兼容的别名
+type FieldValueParser = ValueIDGenerator  // Deprecated
+```
+
+**使用方式更新：**
+
+```go
+// DefaultEntriesHolder: 使用 RegisterFieldTokenizer
+holder := be_indexer.NewDefaultEntriesHolder()
+holder.RegisterFieldTokenizer("tag", parser.NewNumberParser())
+holder.RegisterFieldTokenizer("geo", parser.NewGeoHashParser(nil))
+
+// roaringidx: 使用 ValueIDGenerator（即 FieldValueParser）
+builder.ConfigureField("geo", roaringidx.FieldSetting{
+    Container: roaringidx.ContainerNameDefault,
+    Parser:    parser.NewGeoHashParser(nil),  // 自动适配 ValueIDGenerator
+})
+```
+
+**向后兼容性：**
+
+- `FieldValueParser` 作为 `ValueIDGenerator` 的别名保留，现有代码无需修改
+- 所有原有 Parser 已实现 `Name()` 方法
+- roaringidx 的使用方式保持不变
+
+**文件改动：**
+- `parser/types.go`: 新增接口定义和别名
+- `parser/geohash_parser.go`: 实现双接口
+- `parser/number_parser.go`: 实现 ValueTokenizer 接口
+- `parser/str_parser_hash.go`: 添加 Name() 方法
+- `parser/range_parser.go`: 添加 Name() 方法
+
+---
+
 ## [Unreleased] - 2026-02-08
 
 ### Added

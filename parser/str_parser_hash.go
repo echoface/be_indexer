@@ -11,7 +11,7 @@ type (
 	StrHashParser struct{}
 )
 
-func NewStrHashParser() FieldValueParser {
+func NewStrHashParser() ValueIDGenerator {
 	return &StrHashParser{}
 }
 

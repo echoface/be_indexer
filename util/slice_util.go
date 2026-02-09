@@ -79,6 +79,18 @@ func DistinctInteger[T Integer](vs []T) (res []T) {
 	return res
 }
 
+func DistinctString(vs []string) (res []string) {
+	m := map[string]struct{}{}
+	for _, v := range vs {
+		m[v] = struct{}{}
+	}
+	res = make([]string, 0, len(m))
+	for v := range m {
+		res = append(res, v)
+	}
+	return res
+}
+
 func RunesToBytes(rs []rune) []byte {
 	size := 0
 	for _, r := range rs {

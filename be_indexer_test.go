@@ -738,10 +738,8 @@ func TestBEIndexer_Retrieve_Geohash(t *testing.T) {
 	convey.Convey("geohash targeting", t, func() {
 		RegisterEntriesHolder(HolderNameDefault, func() EntriesHolder {
 			holder := NewDefaultEntriesHolder()
-			holder.FieldParser = map[BEField]parser.FieldValueParser{
-				"tag": parser.NewNumberParser(),
-				"geo": parser.NewGeoHashParser(nil),
-			}
+			holder.RegisterFieldTokenizer("tag", parser.NewNumberParser())
+			holder.RegisterFieldTokenizer("geo", parser.NewGeoHashParser(nil))
 			return holder
 		})
 

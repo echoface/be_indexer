@@ -9,10 +9,8 @@ import (
 func main() {
 	be_indexer.RegisterEntriesHolder(be_indexer.HolderNameDefault, func() be_indexer.EntriesHolder {
 		holder := be_indexer.NewDefaultEntriesHolder()
-		holder.FieldParser = map[be_indexer.BEField]parser.FieldValueParser{
-			"tag": parser.NewNumberParser(),
-			"geo": parser.NewGeoHashParser(nil),
-		}
+		holder.RegisterFieldTokenizer("tag", parser.NewNumberParser())
+		holder.RegisterFieldTokenizer("geo", parser.NewGeoHashParser(nil))
 		return holder
 	})
 

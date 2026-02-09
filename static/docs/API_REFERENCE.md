@@ -545,17 +545,52 @@ func (s DocIDList) Less(i, j int) bool
 
 ## 解析器API
 
-### FieldValueParser
+### ValueTokenizer (DefaultEntriesHolder 使用)
 
-字段值解析器接口。
+用于 `DefaultEntriesHolder` 的字段值解析器接口，将值转换为字符串列表供索引构建。
 
 ```go
-type FieldValueParser interface {
+type ValueTokenizer interface {
+    // TokenizeValue 索引阶段：解析布尔表达式的值（如 "30:90:1000" 展开为多个 geohash）
+    TokenizeValue(v interface{}) ([]string, error)
+
+    // TokenizeAssign 查询阶段：解析查询参数（如 [30.5, 98.2] 转为单个 geohash）
+    TokenizeAssign(v interface{}) ([]string, error)
+}
+```
+
+**使用方式：**
+```go
+holder := be_indexer.NewDefaultEntriesHolder()
+holder.RegisterFieldTokenizer("geo", parser.NewGeoHashParser(nil))
+```
+
+### ValueIDGenerator (roaringidx 使用)
+
+用于 `roaringidx` 的字段值解析器接口，将值转换为 uint64 ID。
+
+```go
+type ValueIDGenerator interface {
     Name() string
     ParseAssign(v interface{}) ([]uint64, error)
     ParseValue(v interface{}) ([]uint64, error)
 }
 ```
+
+**向后兼容：**
+```go
+// FieldValueParser 是 ValueIDGenerator 的别名
+type FieldValueParser = ValueIDGenerator  // Deprecated: 使用 ValueIDGenerator
+```
+
+### 双接口实现
+
+以下 Parser 同时实现了 `ValueTokenizer` 和 `ValueIDGenerator` 两个接口：
+
+- **GeoHashParser**: 地理哈希解析器
+- **NumberParser**: 数值解析器
+
+这意味着同一个 Parser 实例可以同时用于 `DefaultEntriesHolder` 和 `roaringidx`。
 
 ### 内置解析器
 
@@ -619,29 +654,63 @@ func (p *RangeParser) ParseValue(v interface{}) ([]uint64, error)
 
 #### 5. GeoHashParser
 
-地理哈希解析器。
+地理哈希解析器，同时实现 `ValueTokenizer` 和 `ValueIDGenerator` 接口。
 
 ```go
 type GeoHashParser struct {
-    precision int
+    GeoOption
 }
 
-func NewGeoHashParser(precision int) *GeoHashParser
+type GeoOption struct {
+    Precision               int  // geohash 精度 (默认 6)
+    CompressPrecisionMin    int  // 最小压缩精度 (默认 4)
+    CompressPrecisionCutoff int  // 压缩截断精度 (默认 6)
+}
+
+func NewGeoHashParser(option *GeoOption) *GeoHashParser
 func (p *GeoHashParser) Name() string
+
+// ValueTokenizer 接口 (供 DefaultEntriesHolder 使用)
+func (p *GeoHashParser) TokenizeAssign(v interface{}) ([]string, error)
+func (p *GeoHashParser) TokenizeValue(v interface{}) ([]string, error)
+
+// ValueIDGenerator 接口 (供 roaringidx 使用)
 func (p *GeoHashParser) ParseAssign(v interface{}) ([]uint64, error)
 func (p *GeoHashParser) ParseValue(v interface{}) ([]uint64, error)
 ```
+
+**输入格式：**
+- **索引阶段**: `"lat:lon:radius"` (如 `"31.21275902:121.53779984:1000"`)
+- **查询阶段**: `[2]float64{lat, lon}` 或 `[]float64{lat, lon}`
 
 **使用示例：**
 ```go
 import "github.com/echoface/be_indexer/parser"
 
-// 在roaringidx中使用解析器
-builder := roaringidx.NewIndexerBuilder()
-builder.ConfigureField("package", roaringidx.FieldSetting{
-    Container: roaringidx.ContainerNameDefault,
-    Parser:    parser.NewHashStrParser(),
+// 示例 1: 在 DefaultEntriesHolder 中使用 (使用 ValueTokenizer 接口)
+be_indexer.RegisterEntriesHolder(be_indexer.HolderNameDefault, func() be_indexer.EntriesHolder {
+    holder := be_indexer.NewDefaultEntriesHolder()
+    holder.RegisterFieldTokenizer("geo", parser.NewGeoHashParser(nil))
+    return holder
 })
+
+// 示例 2: 在 roaringidx 中使用 (使用 ValueIDGenerator 接口)
+builder := roaringidx.NewIndexerBuilder()
+builder.ConfigureField("geo", roaringidx.FieldSetting{
+    Container: roaringidx.ContainerNameDefault,
+    Parser:    parser.NewGeoHashParser(nil),
+})
+
+// 构建文档 (索引阶段)
+doc := be_indexer.NewDocument(1)
+doc.AddConjunction(be_indexer.NewConjunction().
+    In("geo", "31.21275902:121.53779984:1000"))  // 上海某位置1公里内
+
+// 检索 (查询阶段)
+assigns := map[be_indexer.BEField]be_indexer.Values{
+    "geo": [2]float64{31.21275902, 121.53779984},  // 查询坐标
+}
+result, err := indexer.Retrieve(assigns)
 ```
 
 ### 解析器工具函数

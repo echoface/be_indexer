@@ -30,6 +30,32 @@ func (p *NumberParser) Name() string {
 	return "number"
 }
 
+// TokenizeAssign implements ValueTokenizer for query phase
+func (p *NumberParser) TokenizeAssign(v interface{}) ([]string, error) {
+	ids, err := p.ParseAssign(v)
+	if err != nil {
+		return nil, err
+	}
+	results := make([]string, len(ids))
+	for i, id := range ids {
+		results[i] = fmt.Sprintf("%d", id)
+	}
+	return results, nil
+}
+
+// TokenizeValue implements ValueTokenizer for indexing phase
+func (p *NumberParser) TokenizeValue(v interface{}) ([]string, error) {
+	ids, err := p.ParseValue(v)
+	if err != nil {
+		return nil, err
+	}
+	results := make([]string, len(ids))
+	for i, id := range ids {
+		results[i] = fmt.Sprintf("%d", id)
+	}
+	return results, nil
+}
+
 func (p *NumberParser) ParseAssign(v interface{}) (values []uint64, e error) {
 	if util.NilInterface(v) {
 		return values, nil

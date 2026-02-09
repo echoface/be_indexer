@@ -85,80 +85,105 @@ func parseLatLonRadius(s string) (lat, lon, r float64, err error) {
 	return
 }
 
-func (p *GeoHashParser) genGeoHashID(v string) ([]uint64, error) {
+func (p *GeoHashParser) genGeoHash(v string) ([]string, error) {
 	lat, lon, r, err := parseLatLonRadius(v)
 	if err != nil {
 		return nil, err
 	}
 	codes := proximityhash.CreateGeohash(lat, lon, r, uint(p.Precision))
 	codes = proximityhash.CompressGeoHash(codes, p.CompressPrecisionMin, p.CompressPrecisionCutoff)
-
-	results := make([]uint64, len(codes))
-	for idx, code := range codes {
-		id, _ := geohash.ConvertStringToInt(code)
-		results[idx] = id
-	}
-	return results, nil
+	return codes, nil
 }
 
-func (p *GeoHashParser) genQueryAssignGeoHashIDs(lat, lon float64) []uint64 {
+func (p *GeoHashParser) genQueryAssignGeoHash(lat, lon float64) []string {
 	geohashCode := geohash.Encode(lat, lon)
-	results := make([]uint64, 0, p.Precision)
+	results := make([]string, 0, p.Precision)
 	for i := p.CompressPrecisionMin; i <= p.Precision; i++ {
-		geohashID, _ := geohash.ConvertStringToInt(geohashCode[:i])
+		geohashID := geohashCode[:i]
 		results = append(results, geohashID)
 	}
 	return results
 }
 
-// ParseAssign parse query assign value into id-encoded ids
-func (p *GeoHashParser) ParseAssign(v interface{}) ([]uint64, error) {
+// TokenizeAssign implements ValueTokenizer for query phase
+// Parses query coordinates like [30.5, 98.2] into geohash strings
+func (p *GeoHashParser) TokenizeAssign(v interface{}) ([]string, error) {
+	var lat, lon float64
 	switch value := v.(type) {
 	case [2]float64:
-		return p.genQueryAssignGeoHashIDs(value[0], value[1]), nil
+		lat, lon = value[0], value[1]
 	case []float64:
 		if len(value) != 2 {
 			return nil, fmt.Errorf("need lat/lon value")
 		}
-		return p.genQueryAssignGeoHashIDs(value[0], value[1]), nil
+		lat, lon = value[0], value[1]
 	default:
-		break
+		return nil, fmt.Errorf("bad query assign fmt, need [lat, lon]")
 	}
-	return nil, fmt.Errorf("bad query assign fmt")
+	return p.genQueryAssignGeoHash(lat, lon), nil
 }
 
-// ParseValue parse bool expression value into id-encoded ids
-func (p *GeoHashParser) ParseValue(v interface{}) ([]uint64, error) {
+// ParseAssign implements ValueIDGenerator for query phase
+// Parses query coordinates like [30.5, 98.2] into geohash ids
+func (p *GeoHashParser) ParseAssign(v interface{}) ([]uint64, error) {
+	codes, err := p.TokenizeAssign(v)
+	if err != nil {
+		return nil, err
+	}
+	results := make([]uint64, len(codes))
+	for i, code := range codes {
+		id, _ := geohash.ConvertStringToInt(code)
+		results[i] = id
+	}
+	return results, nil
+}
+
+// TokenizeValue implements ValueTokenizer for indexing phase
+// Parses range strings like "30:90:1000" into multiple geohash strings
+func (p *GeoHashParser) TokenizeValue(v interface{}) ([]string, error) {
 	switch value := v.(type) {
 	case string:
-		return p.genGeoHashID(value)
+		return p.genGeoHash(value)
 	case []string:
-		results := make([]uint64, 0)
+		results := make([]string, 0)
 		for _, v := range value {
-			parts, err := p.genGeoHashID(v)
+			parts, err := p.genGeoHash(v)
 			if err != nil {
 				return nil, err
 			}
 			results = append(results, parts...)
 		}
-		return util.DistinctInteger(results), nil
+		return util.DistinctString(results), nil
 	case []interface{}:
-		results := make([]uint64, 0)
+		results := make([]string, 0)
 		for _, vi := range value {
 			s, ok := vi.(string)
 			if !ok {
 				return nil, fmt.Errorf("need format like lat:lon:radius")
 			}
-
-			parts, err := p.genGeoHashID(s)
+			parts, err := p.genGeoHash(s)
 			if err != nil {
 				return nil, err
 			}
 			results = append(results, parts...)
 		}
-		return util.DistinctInteger(results), nil
+		return util.DistinctString(results), nil
 	default:
-		break
 	}
 	return nil, fmt.Errorf("unsupported geohash type")
+}
+
+// ParseValue implements ValueIDGenerator for indexing phase
+// Parses range strings like "30:90:1000" into multiple geohash ids
+func (p *GeoHashParser) ParseValue(v interface{}) ([]uint64, error) {
+	codes, err := p.TokenizeValue(v)
+	if err != nil {
+		return nil, err
+	}
+	results := make([]uint64, len(codes))
+	for i, code := range codes {
+		id, _ := geohash.ConvertStringToInt(code)
+		results[i] = id
+	}
+	return results, nil
 }

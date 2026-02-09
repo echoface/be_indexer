@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/echoface/be_indexer"
-	"github.com/echoface/be_indexer/parser"
 	"github.com/echoface/be_indexer/roaringidx"
 	"github.com/echoface/be_indexer/util"
 )
@@ -74,7 +73,6 @@ func (ctx *benchmarkContext) RunRoaringBench() {
 	for i := 0; i < ctx.numFieldCnt; i++ {
 		fieldName := fmt.Sprintf("number_%d", i)
 		_ = builder.ConfigureField(fieldName, roaringidx.FieldSetting{
-			Parser:    parser.NewNumberParser(),
 			Container: "default",
 		})
 	}
@@ -113,14 +111,7 @@ func (ctx *benchmarkContext) RunRoaringBench() {
 
 func (ctx *benchmarkContext) RunKGroupIndexBench() {
 	be_indexer.RegisterEntriesHolder(be_indexer.HolderNameDefault, func() be_indexer.EntriesHolder {
-		holder := be_indexer.NewDefaultEntriesHolder()
-		holder.FieldParser = map[be_indexer.BEField]parser.FieldValueParser{}
-		numberParser := parser.NewNumberParser()
-		for i := 0; i < ctx.numFieldCnt; i++ {
-			fieldName := fmt.Sprintf("number_%d", i)
-			holder.FieldParser[be_indexer.BEField(fieldName)] = numberParser
-		}
-		return holder
+		return be_indexer.NewDefaultEntriesHolder()
 	})
 	builder := be_indexer.NewIndexerBuilder()
 	for i := 0; i < ctx.numFieldCnt; i++ {
@@ -162,14 +153,7 @@ func (ctx *benchmarkContext) RunKGroupIndexBench() {
 
 func (ctx *benchmarkContext) RunCompactIndexBench() {
 	be_indexer.RegisterEntriesHolder(be_indexer.HolderNameDefault, func() be_indexer.EntriesHolder {
-		holder := be_indexer.NewDefaultEntriesHolder()
-		holder.FieldParser = map[be_indexer.BEField]parser.FieldValueParser{}
-		numberParser := parser.NewNumberParser()
-		for i := 0; i < ctx.numFieldCnt; i++ {
-			fieldName := fmt.Sprintf("number_%d", i)
-			holder.FieldParser[be_indexer.BEField(fieldName)] = numberParser
-		}
-		return holder
+		return be_indexer.NewDefaultEntriesHolder()
 	})
 
 	builder := be_indexer.NewCompactIndexerBuilder()

@@ -10,16 +10,30 @@ import (
 )
 
 type (
-	// FieldValueParser turn value into a unique id
-	FieldValueParser interface {
-		Name() string
+	// ValueTokenizer 将值转换为字符串列表，供索引构建 term
+	// 这是 DefaultEntriesHolder 使用的 tokenizer 接口
+	// 支持双向解析：索引阶段和查询阶段的解析逻辑可能不同
+	ValueTokenizer interface {
+		// TokenizeValue 索引阶段：解析布尔表达式的值（如 "30:90:1000" 展开为多个 geohash）
+		TokenizeValue(v interface{}) ([]string, error)
 
+		// TokenizeAssign 查询阶段：解析查询参数（如 [30.5, 98.2] 转为单个 geohash）
+		TokenizeAssign(v interface{}) ([]string, error)
+	}
+
+	// ValueIDGenerator turn value into a unique id
+	ValueIDGenerator interface {
+		Name() string
 		// ParseAssign parse query assign value into id-encoded ids
 		ParseAssign(v interface{}) ([]uint64, error)
 
 		// ParseValue parse bool expression value into id-encoded ids
 		ParseValue(v interface{}) ([]uint64, error)
 	}
+
+	// FieldValueParser is an alias for ValueIDGenerator for backward compatibility
+	// Deprecated: Use ValueIDGenerator instead
+	FieldValueParser = ValueIDGenerator
 )
 
 func ParseIntegerNumber(v interface{}, floatToInt bool) (n int64, err error) {

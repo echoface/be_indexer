@@ -18,8 +18,7 @@ step ist optional, it will generate start, start+step, start+2*stem ....
 */
 type (
 	// NumberRangeParser format: start:end:step; the `step` is optional
-	NumberRangeParser struct {
-	}
+	NumberRangeParser struct{}
 
 	RangeDesc struct {
 		start int64
@@ -28,7 +27,7 @@ type (
 	}
 )
 
-func NewNumRangeParser() FieldValueParser {
+func NewNumRangeParser() ValueIDGenerator {
 	return &NumberRangeParser{}
 }
 

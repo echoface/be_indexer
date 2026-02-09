@@ -8,7 +8,7 @@ import (
 type (
 	// FieldSetting public settings for configuring a field
 	FieldSetting struct {
-		Parser    parser.FieldValueParser
+		Parser    parser.ValueIDGenerator
 		Container string
 	}
 

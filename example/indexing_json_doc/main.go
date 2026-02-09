@@ -8,17 +8,13 @@ import (
 	"strings"
 
 	"github.com/echoface/be_indexer"
-	"github.com/echoface/be_indexer/parser"
 	"github.com/echoface/be_indexer/util"
 )
 
 func main() {
+	// 使用默认的 DefaultEntriesHolder，它使用简单的 string 转换作为 parser
 	be_indexer.RegisterEntriesHolder(be_indexer.HolderNameDefault, func() be_indexer.EntriesHolder {
-		holder := be_indexer.NewDefaultEntriesHolder()
-		holder.FieldParser = map[be_indexer.BEField]parser.FieldValueParser{
-			"age": parser.NewNumRangeParser(),
-		}
-		return holder
+		return be_indexer.NewDefaultEntriesHolder()
 	})
 	builder := be_indexer.NewIndexerBuilder()
 	be_indexer.LogLevel = be_indexer.DebugLevel

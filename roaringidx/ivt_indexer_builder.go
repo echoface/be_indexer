@@ -3,8 +3,6 @@ package roaringidx
 import (
 	"fmt"
 
-	"github.com/echoface/be_indexer/parser"
-
 	"github.com/echoface/be_indexer/util"
 
 	"github.com/echoface/be_indexer"
@@ -18,8 +16,6 @@ type (
 		panicOnError bool
 
 		containerBuilder map[be_indexer.BEField]BEContainerBuilder
-
-		defaultParser *parser.CommonStrParser
 	}
 )
 
@@ -28,7 +24,6 @@ func NewIndexerBuilder() *IvtBEIndexerBuilder {
 		panicOnError:     false,
 		containerBuilder: map[be_indexer.BEField]BEContainerBuilder{},
 		docMaxConjSize:   1,
-		defaultParser:    parser.NewCommonParser(),
 	}
 	return builder
 }
@@ -39,14 +34,7 @@ func (builder *IvtBEIndexerBuilder) WithErrPanic(panic bool) *IvtBEIndexerBuilde
 }
 
 func (builder *IvtBEIndexerBuilder) ConfigureField(field string, option FieldSetting) error {
-	fieldMeta := &FieldMeta{
-		FieldSetting: option,
-		field:        be_indexer.BEField(field),
-	}
-	if fieldMeta.Parser == nil {
-		fieldMeta.Parser = builder.defaultParser
-	}
-	fieldContainerBuilder := NewContainerBuilder(fieldMeta)
+	fieldContainerBuilder := NewContainerBuilder(be_indexer.BEField(field), option.Container)
 	if fieldContainerBuilder == nil {
 		util.PanicIf(builder.panicOnError, "field:%s settings:%+v not supported", field, option)
 		return fmt.Errorf("field:%s settings:%+v not supported", field, option)

@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/echoface/be_indexer"
-	"github.com/echoface/be_indexer/parser"
 	"github.com/smartystreets/goconvey/convey"
 )
 
@@ -16,12 +15,10 @@ func TestIvtScanner_Retrieve(t *testing.T) {
 		convey.So(builder, convey.ShouldNotBeNil)
 
 		_ = builder.ConfigureField("ad_id", FieldSetting{
-			Container: "default",
-			Parser:    parser.NewNumberParser(),
+			Container: ContainerNameDefault,
 		})
 		_ = builder.ConfigureField("package", FieldSetting{
-			Container: "default",
-			Parser:    parser.NewStrHashParser(),
+			Container: ContainerNameDefaultStr,
 		})
 
 		doc1 := be_indexer.NewDocument(1)
@@ -76,7 +73,7 @@ func TestIvtScanner_Retrieve2(t *testing.T) {
 		convey.So(builder, convey.ShouldNotBeNil)
 
 		_ = builder.ConfigureField("keywords", FieldSetting{
-			Container: "ac_matcher",
+			Container: ContainerNameAcMatch,
 		})
 
 		doc1 := be_indexer.NewDocument(1)
@@ -133,12 +130,10 @@ func TestIvtScanner_Retrieve3(t *testing.T) {
 		convey.So(builder, convey.ShouldNotBeNil)
 
 		_ = builder.ConfigureField("ad_id", FieldSetting{
-			Container: "default",
-			Parser:    parser.NewNumberParser(),
+			Container: ContainerNameDefault,
 		})
 		_ = builder.ConfigureField("package", FieldSetting{
-			Container: "default",
-			Parser:    parser.NewStrHashParser(),
+			Container: ContainerNameDefaultStr,
 		})
 
 		doc1 := be_indexer.NewDocument(1)
@@ -172,12 +167,10 @@ func TestIvtScanner_Retrieve4(t *testing.T) {
 		convey.So(builder, convey.ShouldNotBeNil)
 
 		_ = builder.ConfigureField("ad_id", FieldSetting{
-			Container: "default",
-			Parser:    parser.NewNumberParser(),
+			Container: ContainerNameDefault,
 		})
 		_ = builder.ConfigureField("package", FieldSetting{
-			Container: "default",
-			Parser:    parser.NewStrHashParser(),
+			Container: ContainerNameDefaultStr,
 		})
 
 		doc1 := be_indexer.NewDocument(1)

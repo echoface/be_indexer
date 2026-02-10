@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"hash/fnv"
 
-	"github.com/echoface/be_indexer/parser"
 	"github.com/echoface/be_indexer/util"
 )
 
@@ -16,11 +15,7 @@ type (
 
 		fieldsData map[BEField]*FieldDesc
 
-		idAllocator parser.IDAllocator
-
-		// 【增量缓存】文档级缓存相关字段
-		docCache   DocLevelCache // 文档级缓存接口
-		schemaHash uint64        // 字段配置哈希，用于校验缓存有效性
+		schemaHash uint64 // 字段配置哈希，用于校验缓存有效性
 	}
 
 	// CacheProvider a interface
@@ -84,9 +79,8 @@ func WithIndexerType(t IndexerType) BuilderOpt {
 
 func NewIndexerBuilder(opts ...BuilderOpt) *IndexerBuilder {
 	builder := &IndexerBuilder{
-		indexer:     NewKGroupsBEIndex(),
-		fieldsData:  map[BEField]*FieldDesc{},
-		idAllocator: parser.NewIDAllocatorImpl(),
+		indexer:    NewKGroupsBEIndex(),
+		fieldsData: map[BEField]*FieldDesc{},
 	}
 	for _, optFn := range opts {
 		optFn(builder)

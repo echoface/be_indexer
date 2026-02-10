@@ -3,8 +3,6 @@ package main
 import (
 	"fmt"
 
-	"github.com/echoface/be_indexer/parser"
-
 	idx "github.com/echoface/be_indexer"
 	rridx "github.com/echoface/be_indexer/roaringidx"
 	"github.com/echoface/be_indexer/util"
@@ -76,8 +74,12 @@ func genDocs() (docs []*idx.Document, caseData []CaseData) {
 
 func RunRRIndexing() {
 	b := rridx.NewIndexerBuilder()
-	_ = b.ConfigureField("age", rridx.FieldSetting{Container: rridx.ContainerNameDefault, Parser: parser.NewNumberParser()})
-	_ = b.ConfigureField("city", rridx.FieldSetting{Container: rridx.ContainerNameDefault, Parser: parser.NewStrHashParser()})
+	_ = b.ConfigureField("age", rridx.FieldSetting{
+		Container: rridx.ContainerNameDefault,
+	})
+	_ = b.ConfigureField("city", rridx.FieldSetting{
+		Container: rridx.ContainerNameDefaultStr,
+	})
 
 	docs, cases := genDocs()
 	util.PanicIfErr(b.AddDocuments(docs...), "indexing document fail")

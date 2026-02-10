@@ -2,6 +2,7 @@ package roaringidx
 
 import (
 	"github.com/echoface/be_indexer"
+	"github.com/echoface/be_indexer/parser"
 	"github.com/echoface/be_indexer/util"
 )
 
@@ -26,6 +27,8 @@ type (
 	DefaultBEContainer struct {
 		meta *FieldMeta
 
+		parser parser.ValueIDGenerator
+
 		wc PostingList
 
 		inc map[BEValue]PostingList
@@ -34,14 +37,15 @@ type (
 	}
 )
 
-func NewDefaultBEContainer(meta *FieldMeta) *DefaultBEContainer {
-	util.PanicIf(meta.Parser == nil, "default container must need parser")
+func NewDefaultBEContainer(meta *FieldMeta, p parser.ValueIDGenerator) *DefaultBEContainer {
+	util.PanicIf(p == nil, "default container must need parser")
 
 	return &DefaultBEContainer{
-		meta: meta,
-		wc:   NewPostingList(),
-		inc:  map[BEValue]PostingList{},
-		exc:  map[BEValue]PostingList{},
+		meta:   meta,
+		parser: p,
+		wc:     NewPostingList(),
+		inc:    map[BEValue]PostingList{},
+		exc:    map[BEValue]PostingList{},
 	}
 }
 
@@ -79,7 +83,7 @@ func (c *DefaultBEContainer) Retrieve(values be_indexer.Values, inout *PostingLi
 		return nil
 	}
 
-	ids, err := c.meta.Parser.ParseAssign(values)
+	ids, err := c.parser.ParseAssign(values)
 	if err != nil {
 		return err
 	}
@@ -107,7 +111,7 @@ func (c *DefaultBEContainer) EncodeExpr(id ConjunctionID, expr *be_indexer.Boole
 	}
 	util.PanicIf(expr.Operator != be_indexer.ValueOptEQ, "default container support EQ operator only")
 
-	valueIDs, err := c.meta.Parser.ParseValue(expr.Value)
+	valueIDs, err := c.parser.ParseValue(expr.Value)
 	if err != nil {
 		return err
 	}

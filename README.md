@@ -5,56 +5,80 @@
 ### 2026-02-08: 支持增量索引构建 (Incremental Index Building)
 
 新增文档级缓存机制，支持增量索引构建，大幅提升更新场景下的构建性能。
-
+在广告检索场景（百万级文档，5-10%更新率）下，增量构建相比全量构建可实现 **3-5x 性能提升**。
 **主要特性：**
 - **Document.Version** - 新增版本字段，业务层控制文档是否变更
 - **DocLevelCache 接口** - 业务可自定义缓存实现（内存/Redis/文件等）
-- **自动缓存管理** - 自动检测缓存命中、恢复、保存
 - **Schema Hash 校验** - 字段配置变化时自动清空缓存，避免数据不一致
-
-**性能提升：**
-在广告检索场景（百万级文档，5-10%更新率）下，增量构建相比全量构建可实现 **3-5x 性能提升**。
-
-**使用示例：**
-```go
-// 1. 实现缓存接口（或使用内置内存缓存）
-cache := NewMemoryDocCache()
-
-// 2. 创建带缓存的 Builder
-builder := be_indexer.NewIndexerBuilder(
-    be_indexer.WithDocLevelCache(cache),
-)
-builder.ConfigField("age", be_indexer.FieldOption{
-    Container: be_indexer.HolderNameDefault,
-})
-
-// 3. 添加文档时指定 Version（时间戳/版本号）
-doc := be_indexer.NewDocument(1)
-doc.Version = uint64(ad.UpdateTime.Unix())  // 业务提供版本
-doc.AddConjunction(be_indexer.NewConjunction().
-    In("age", []int{18, 25, 30}).
-    In("city", []string{"beijing", "shanghai"}))
-
-builder.AddDocument(doc)
-indexer := builder.BuildIndex()
-```
-
-**工作原理：**
-- Version = 0：不使用缓存，全量构建（向后兼容）
-- Version > 0：检查缓存，命中则直接恢复，未命中则编译并缓存
-- Schema 变化：自动清空所有缓存，避免数据不一致
-
 详见：[增量索引构建示例](./example/incremental_indexer/main.go)
 
 ---
 
-20230325: 支持在同一个Conjunction中添加同一个field的逻辑表达
+### 20230325: 支持在同一个Conjunction中添加同一个field的逻辑表达
 > eg: `{field in [1, 2, 3], not-in [2, 3, 4]} and .....`
 > input field:4 ... => true
 > input field:3 ... => false  // 即not有更高逻辑优先级; `真`更严格
 > 同一个DNF多个字段之间逻辑关系会存在一些边界情况与冲突逻辑的假设前提；本库实现是对逻辑true更严格的实现,
 > 并在roaringidx/be_indexer 两份逻辑实现中保持一致; 更多明细见: `./example/repeat_fields_test` 中的说明与示例
 
+
+## 项目架构与依赖关系
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              示例层 (Examples)                               │
+├─────────────────────────────────────────────────────────────────────────────┤
+│  example/be_indexer_usage      example/roaringidx_usage                      │
+│  example/indexer_benchmark     example/repeat_fields_test                    │
+│  example/incremental_indexer   example/geohash_exmaple                       │
+│  ...                           ...                                           │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                      │
+                                      ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              索引实现层 (Indexers)                            │
+├───────────────────────────────┬─────────────────────────────────────────────┤
+│   roaringidx ( roaring bitmap │   be_indexer (核心包 - Boolean Expression    │
+│    索引，支持 AC 模式匹配)     │    Indexing 论文实现)                        │
+├───────────────────────────────┴─────────────────────────────────────────────┤
+│   Holder 扩展容器                                                             │
+│   ┌────────────────────┐  ┌────────────────────┐                            │
+│   │ holder/ahoholder   │  │ holder/rangeholder │  (数值范围容器)            │
+│   │ (AC 自动机容器)     │  └────────────────────┘                            │
+│   └────────────────────┘                                                   │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                      │
+                                      ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              基础组件层 (Components)                         │
+├───────────────────────────┬─────────────────────┬───────────────────────────┤
+│      parser               │   codegen/cache     │         util              │
+│  (Value ID 解析器)         │  (Protobuf 缓存)    │     (工具函数库)          │
+│  - NumberParser           │                     │                           │
+│  - StrHashParser          │                     │                           │
+│  - GeoHashParser          │                     │                           │
+│  - CommonParser           │                     │                           │
+└───────────────────────────┴─────────────────────┴───────────────────────────┘
+```
+
+### 包依赖说明
+
+| 包名 | 功能 | 依赖的内部包 |
+|------|------|-------------|
+| `be_indexer` | 核心索引实现（Boolean Expression Indexing） | parser, util, codegen/cache |
+| `roaringidx` | Roaring Bitmap 索引实现 | be_indexer, holder/ahoholder, parser, util |
+| `holder/ahoholder` | AC 自动机模式匹配容器 | be_indexer, codegen/cache, util |
+| `holder/rangeholder` | 数值范围索引容器 | be_indexer, parser, util |
+| `parser` | 值解析器（支持多种数据类型） | util |
+| `codegen/cache` | Protobuf 序列化缓存 | 无 |
+| `util` | 通用工具函数 | 无 |
+
+### 架构特点
+
+1. **分层设计**：从底层工具到顶层应用，层次清晰
+2. **双索引系统**：支持传统 Boolean Expression Indexing 和 Roaring Bitmap 两种实现
+3. **可扩展 Holders**：通过 holder 包扩展不同存储和检索策略
+4. **无循环依赖**：所有依赖关系单向，从底层到顶层
 
 ## Boolean expression index
 
@@ -242,14 +266,24 @@ NOTE：
 ```go
 
   builder := roaringidx.NewIndexerBuilder()
-  _ = builder.ConfigureField("package", roaringidx.FieldSetting{
+  
+  // 配置字段，通过 Container 类型指定解析方式
+  // ContainerNameDefault: 使用 NumberParser（适合数字字段）
+  // ContainerNameDefaultStr: 使用 StrHashParser（适合字符串字段）
+  // ContainerNameAcMatch: AC 自动机模式匹配（适合关键词字段）
+  _ = builder.ConfigureField("ad_id", roaringidx.FieldSetting{
     Container: roaringidx.ContainerNameDefault,
-    Parser:    parser.NewStrHashParser(),
+  })
+  _ = builder.ConfigureField("package", roaringidx.FieldSetting{
+    Container: roaringidx.ContainerNameDefaultStr,
+  })
+  _ = builder.ConfigureField("keywords", roaringidx.FieldSetting{
+    Container: roaringidx.ContainerNameAcMatch,
   })
 
   doc1 := be_indexer.NewDocument(1)
   doc1.AddConjunction(be_indexer.NewConjunction().
-    Include("age", be_indexer.NewIntValues(10, 20, 100)).
+    Include("ad_id", be_indexer.NewIntValues(10, 20, 100)).
     Exclude("package", be_indexer.NewStrValues("com.echoface.not")))
   
   builder.AddDocuments(doc1)
@@ -259,7 +293,7 @@ NOTE：
 
   scanner := roaringidx.NewScanner(indexer)
   docs, err := scanner.Retrieve(map[be_indexer.BEField]be_indexer.Values{
-	  "age": []int64{12, 20},
+	  "ad_id": []int64{12, 20},
 	  "package": []interface{}{"com.echoface.be", "com.echoface.not"},
   })
   util.PanicIfErr(err, "retrieve fail, err:%v", err)

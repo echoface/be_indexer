@@ -2,20 +2,18 @@ package roaringidx
 
 import (
 	"github.com/echoface/be_indexer"
-	"github.com/echoface/be_indexer/parser"
 )
 
 type (
 	// FieldSetting public settings for configuring a field
 	FieldSetting struct {
-		Parser    parser.ValueIDGenerator
 		Container string
 	}
 
 	FieldMeta struct {
-		FieldSetting
-
 		field be_indexer.BEField
+		// Container type identifier
+		Container string
 	}
 
 	IvtBEIndexer struct {

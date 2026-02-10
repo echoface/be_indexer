@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/echoface/be_indexer"
-	"github.com/echoface/be_indexer/parser"
 	"github.com/echoface/be_indexer/roaringidx"
 	"github.com/echoface/be_indexer/util"
 )
@@ -18,11 +17,9 @@ func main() {
 
 	_ = builder.ConfigureField("ad_id", roaringidx.FieldSetting{
 		Container: roaringidx.ContainerNameDefault,
-		Parser:    parser.NewNumberParser(),
 	})
 	_ = builder.ConfigureField("package", roaringidx.FieldSetting{
-		Container: roaringidx.ContainerNameDefault,
-		Parser:    parser.NewStrHashParser(),
+		Container: roaringidx.ContainerNameDefaultStr,
 	})
 	_ = builder.ConfigureField("keywords", roaringidx.FieldSetting{
 		Container: roaringidx.ContainerNameAcMatch,

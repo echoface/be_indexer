@@ -1,27 +1,54 @@
 package roaringidx
 
+import (
+	"github.com/echoface/be_indexer"
+	"github.com/echoface/be_indexer/parser"
+)
+
 var containerFactory map[string]ContainerBuilderFunc
 
 type (
-	ContainerBuilderFunc func(meta *FieldMeta) BEContainerBuilder
+	// ContainerBuilderFunc creates a BEContainerBuilder for a field
+	ContainerBuilderFunc func(field be_indexer.BEField) BEContainerBuilder
 )
 
 const (
-	ContainerNameDefault = "default"
-	ContainerNameAcMatch = "ac_matcher"
+	ContainerNameDefault    = "default"
+	ContainerNameDefaultStr = "default_str" // default container with StrHashParser
+	ContainerNameAcMatch    = "ac_matcher"
 )
 
 func init() {
 	containerFactory = make(map[string]ContainerBuilderFunc)
 
-	containerFactory[ContainerNameDefault] = func(meta *FieldMeta) BEContainerBuilder {
-		return NewDefaultBEContainer(meta)
+	// Default container with NumberParser
+	containerFactory[ContainerNameDefault] = func(field be_indexer.BEField) BEContainerBuilder {
+		meta := &FieldMeta{
+			field:     field,
+			Container: ContainerNameDefault,
+		}
+		return NewDefaultBEContainer(meta, parser.NewNumberParser())
 	}
-	containerFactory[ContainerNameAcMatch] = func(meta *FieldMeta) BEContainerBuilder {
+
+	// Default container with StrHashParser
+	containerFactory[ContainerNameDefaultStr] = func(field be_indexer.BEField) BEContainerBuilder {
+		meta := &FieldMeta{
+			field:     field,
+			Container: ContainerNameDefaultStr,
+		}
+		return NewDefaultBEContainer(meta, parser.NewStrHashParser())
+	}
+
+	// AC matcher container (no parser needed)
+	containerFactory[ContainerNameAcMatch] = func(field be_indexer.BEField) BEContainerBuilder {
+		meta := &FieldMeta{
+			field:     field,
+			Container: ContainerNameAcMatch,
+		}
 		return NewACBEContainer(meta, DefaultACContainerQueryJoinSep)
 	}
-	//containerFactory["bsi"] = func(setting FieldSetting) BEContainerBuilder {
-	//	return NewBSIBEContainerBuilder(setting)
+	//containerFactory["bsi"] = func(field be_indexer.BEField) BEContainerBuilder {
+	//	return NewBSIBEContainerBuilder(field)
 	//}
 }
 
@@ -33,9 +60,9 @@ func RegisterContainerBuilder(name string, builderFunc ContainerBuilderFunc) boo
 	return true
 }
 
-func NewContainerBuilder(meta *FieldMeta) BEContainerBuilder {
-	if fn, ok := containerFactory[meta.Container]; ok {
-		return fn(meta)
+func NewContainerBuilder(field be_indexer.BEField, containerType string) BEContainerBuilder {
+	if fn, ok := containerFactory[containerType]; ok {
+		return fn(field)
 	}
 	return nil
 }

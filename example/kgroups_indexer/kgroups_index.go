@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/echoface/be_indexer/core"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -19,15 +20,15 @@ import (
 )
 
 type MockTargeting struct {
-	ID be_indexer.DocID
+	ID core.DocID
 	A  []int
 	B  []int
 	C  []int
 	D  []int
 }
 
-func (t *MockTargeting) ToConj() *be_indexer.Conjunction {
-	conj := be_indexer.NewConjunction()
+func (t *MockTargeting) ToConj() *core.Conjunction {
+	conj := core.NewConjunction()
 	if len(t.A) > 0 {
 		conj.In("A", t.A)
 	}
@@ -91,12 +92,12 @@ func init() {
 	flag.BoolVar(&enableProfiling, "profile", false, "enable cpu profiling")
 }
 
-func BuildIndex() be_indexer.BEIndex {
+func BuildIndex() core.BEIndex {
 	b := be_indexer.NewIndexerBuilder()
-	targets := map[be_indexer.DocID]*MockTargeting{}
+	targets := map[core.DocID]*MockTargeting{}
 	for i := 1; i < docCount; i++ {
 		target := &MockTargeting{
-			ID: be_indexer.DocID(i),
+			ID: core.DocID(i),
 			A:  randValue(3),
 			B:  randValue(5),
 			C:  randValue(10),
@@ -104,18 +105,22 @@ func BuildIndex() be_indexer.BEIndex {
 		}
 
 		conj := target.ToConj()
-		if len(conj.Expressions) > 0 {
-			doc := be_indexer.NewDocument(target.ID)
+		if len(conj.Predicates) > 0 {
+			doc := core.NewDocument(target.ID)
 			doc.AddConjunction(conj)
 			b.AddDocument(doc)
 
-			targets[be_indexer.DocID(i)] = target
+			targets[core.DocID(i)] = target
 		}
 	}
-	return b.BuildIndex()
+	idx, err := b.BuildIndex()
+	if err != nil {
+		panic(err)
+	}
+	return idx
 }
 
-func QueryTest(index be_indexer.BEIndex) {
+func QueryTest(index core.BEIndex) {
 	type Q struct {
 		A []int
 		B []int
@@ -124,7 +129,7 @@ func QueryTest(index be_indexer.BEIndex) {
 	}
 
 	var Qs []Q
-	var assigns []be_indexer.Assignments
+	var assigns []core.Assignments
 
 	for i := 0; i < 1000; i++ {
 		q := Q{
@@ -134,7 +139,7 @@ func QueryTest(index be_indexer.BEIndex) {
 			D: randValue(2),
 		}
 		Qs = append(Qs, q)
-		assign := be_indexer.Assignments{}
+		assign := core.Assignments{}
 		if len(q.A) > 0 {
 			assign["A"] = q.A
 		}

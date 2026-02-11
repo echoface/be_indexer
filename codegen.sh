@@ -8,3 +8,4 @@ fi
 PROJ_DIR=`pwd`
 protoc -I="${PROJ_DIR}"/static/idl/proto --go_out=codegen "${PROJ_DIR}"/static/idl/proto/cache.proto
 
+protoc -I="${PROJ_DIR}"/static/idl/proto --go_out=codegen "${PROJ_DIR}"/static/idl/proto/indexstore.proto

@@ -6,8 +6,10 @@ import (
 	"strings"
 
 	aho "github.com/anknown/ahocorasick"
-	. "github.com/echoface/be_indexer"
+	"github.com/echoface/be_indexer"
 	"github.com/echoface/be_indexer/codegen/cache"
+	indexstore "github.com/echoface/be_indexer/codegen/indexstore"
+	"github.com/echoface/be_indexer/core"
 	"github.com/echoface/be_indexer/util"
 	"google.golang.org/protobuf/proto"
 )
@@ -19,14 +21,18 @@ type (
 		QuerySep string
 	}
 
-	ACEntriesHolder struct {
+	ACBuilder struct {
 		ACHolderOption
-		debug       bool
+		values map[string]core.Entries
+	}
+
+	ACIndex struct {
+		ACHolderOption
 		totalTokens int
 		maxLen      int64 // max length of Entries
 		avgLen      int64 // avg length of Entries
 
-		values  map[string]Entries
+		values  map[string]core.Entries
 		machine *aho.Machine // matcher     *cedar.Matcher
 	}
 
@@ -36,26 +42,32 @@ type (
 )
 
 func init() {
-	RegisterEntriesHolder(HolderNameACMatcher, func() EntriesHolder {
-		return NewACEntriesHolder(ACHolderOption{QuerySep: " "})
+	be_indexer.RegisterField(core.HolderNameACMatcher, core.FieldImplementation{
+		NewBuilder: func() core.FieldIndexBuilder { return NewACBuilder(ACHolderOption{QuerySep: " "}) },
+		NewIndex:   func() core.FieldIndex { return NewACIndex(ACHolderOption{QuerySep: " "}) },
 	})
 }
 
-// NewACEntriesHolder it will default drop the builder after compile ac-machine,
-func NewACEntriesHolder(option ACHolderOption) *ACEntriesHolder {
-	holder := &ACEntriesHolder{
+func NewACBuilder(option ACHolderOption) *ACBuilder {
+	return &ACBuilder{
 		ACHolderOption: option,
-		values:         map[string]Entries{},
-		machine:        new(aho.Machine), // matcher: cedar.NewMatcher(), deprecated for bug reason
+		values:         map[string]core.Entries{},
 	}
-	return holder
+}
+
+func NewACIndex(option ACHolderOption) *ACIndex {
+	return &ACIndex{
+		ACHolderOption: option,
+		values:         map[string]core.Entries{},
+		machine:        new(aho.Machine),
+	}
 }
 
 func (txd *AcHolderTxData) Encode() ([]byte, error) {
 	return proto.Marshal(&txd.Keys)
 }
 
-func (h *ACEntriesHolder) DecodeFieldIndexingData(data []byte) (IndexingData, error) {
+func (h *ACBuilder) DecodeFieldIndexingData(data []byte) (core.IndexingData, error) {
 	txData := &AcHolderTxData{
 		Keys: cache.StrListValues{},
 	}
@@ -66,30 +78,8 @@ func (h *ACEntriesHolder) DecodeFieldIndexingData(data []byte) (IndexingData, er
 	return txData, err
 }
 
-func (h *ACEntriesHolder) EnableDebug(debug bool) {
-	h.debug = debug
-}
-
-// DumpInfo
-// {name: %s, value_count:%d max_entries:%d avg_entries:%d}
-func (h *ACEntriesHolder) DumpInfo(buffer *strings.Builder) {
-	info := fmt.Sprintf("{name: %s, value_count:%d max_entries:%d avg_entries:%d}",
-		"ac_holder", len(h.values), h.maxLen, h.avgLen)
-	buffer.WriteString(info)
-}
-
-func (h *ACEntriesHolder) DumpEntries(buffer *strings.Builder) {
-	buffer.WriteString("ACMatchHolder origin keywords dict:")
-	for key, entries := range h.values {
-		buffer.WriteString("\n")
-		buffer.WriteString(key)
-		buffer.WriteString(":")
-		buffer.WriteString(strings.Join(entries.DocString(), ","))
-	}
-}
-
-func (h *ACEntriesHolder) BuildFieldIndexingData(_ *FieldDesc, bv *BoolValues) (IndexingData, error) {
-	util.PanicIf(bv.Operator != ValueOptEQ, "ac_matcher container support EQ operator only")
+func (h *ACBuilder) BuildFieldIndexingData(_ *core.FieldDesc, bv *core.ValueExpr) (core.IndexingData, error) {
+	util.PanicIf(bv.Operator != core.ValueOptEQ, "ac_matcher container support EQ operator only")
 
 	keys, err := ParseAcMatchDict(bv.Value)
 	if err != nil {
@@ -101,7 +91,7 @@ func (h *ACEntriesHolder) BuildFieldIndexingData(_ *FieldDesc, bv *BoolValues) (
 	return &AcHolderTxData{Keys: data}, nil
 }
 
-func (h *ACEntriesHolder) CommitFieldIndexingData(tx FieldIndexingData) error {
+func (h *ACBuilder) CommitFieldIndexingData(tx core.FieldIndexingData) error {
 	if tx.Data == nil {
 		return nil
 	}
@@ -116,7 +106,33 @@ func (h *ACEntriesHolder) CommitFieldIndexingData(tx FieldIndexingData) error {
 	return nil
 }
 
-func (h *ACEntriesHolder) GetEntries(field *FieldDesc, assigns Values) (EntriesCursors, error) {
+func (h *ACBuilder) CompileEntries() (core.FieldIndex, error) {
+	holder := &ACIndex{
+		ACHolderOption: h.ACHolderOption,
+		values:         h.values,
+		machine:        new(aho.Machine),
+	}
+	if err := holder.buildMachine(); err != nil {
+		return nil, err
+	}
+	// Reset builder
+	h.values = nil
+	return holder, nil
+}
+
+// ------------------------------------------------------------------------------------------------
+// ACIndex Implementation
+// ------------------------------------------------------------------------------------------------
+
+// DumpInfo
+// {name: %s, value_count:%d max_entries:%d avg_entries:%d}
+func (h *ACIndex) DumpInfo(buffer *strings.Builder) {
+	info := fmt.Sprintf("{name: %s, value_count:%d max_entries:%d avg_entries:%d}",
+		"ac_holder", len(h.values), h.maxLen, h.avgLen)
+	buffer.WriteString(info)
+}
+
+func (h *ACIndex) GetEntries(field *core.FieldDesc, assigns core.Values) ([]core.PostingIterator, error) {
 	if len(h.values) == 0 {
 		return nil, nil
 	}
@@ -128,20 +144,20 @@ func (h *ACEntriesHolder) GetEntries(field *FieldDesc, assigns Values) (EntriesC
 		return nil, nil
 	}
 
-	var cursors EntriesCursors
+	var cursors []core.PostingIterator
 
 	terms := h.machine.MultiPatternSearch(buf, false)
 	for _, term := range terms {
 		key := string(term.Word)
 		if pl, ok := h.values[key]; ok && len(pl) > 0 {
-			cursor := NewEntriesCursor(NewQKey(field.Field, key), pl)
+			cursor := be_indexer.NewSliceIterator(be_indexer.NewTerm(field.Field, key), pl)
 			cursors = append(cursors, cursor)
 		}
 	}
 	return cursors, nil
 }
 
-func (h *ACEntriesHolder) CompileEntries() error {
+func (h *ACIndex) buildMachine() error {
 	var total int64
 	keys := make([][]rune, 0, len(h.values))
 	for term, entries := range h.values {
@@ -165,3 +181,38 @@ func (h *ACEntriesHolder) CompileEntries() error {
 	}
 	return h.machine.Build(keys)
 }
+
+func (h *ACIndex) Serialize() ([]byte, error) {
+	dump := &indexstore.ACHolderDump{}
+	dump.Entries = make([]*indexstore.ACEntry, 0, len(h.values))
+	for keyword, entries := range h.values {
+		ids := make([]uint64, len(entries))
+		for i, id := range entries {
+			ids[i] = uint64(id)
+		}
+		entry := &indexstore.ACEntry{
+			Keyword: keyword,
+			Ids:     &indexstore.EntryIDList{Ids: ids},
+		}
+		dump.Entries = append(dump.Entries, entry)
+	}
+	return proto.Marshal(dump)
+}
+
+func (h *ACIndex) Deserialize(data []byte) error {
+	dump := &indexstore.ACHolderDump{}
+	if err := proto.Unmarshal(data, dump); err != nil {
+		return err
+	}
+	h.values = make(map[string]core.Entries)
+	for _, entry := range dump.Entries {
+		ids := make([]core.EntryID, len(entry.Ids.Ids))
+		for i, v := range entry.Ids.Ids {
+			ids[i] = core.EntryID(v)
+		}
+		h.values[entry.Keyword] = core.Entries(ids)
+	}
+	// Rebuild AC machine
+	return h.buildMachine()
+}
+

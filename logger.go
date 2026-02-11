@@ -1,6 +1,10 @@
 package be_indexer
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/echoface/be_indexer/core"
+)
 
 const (
 	DebugLevel = iota
@@ -9,17 +13,11 @@ const (
 )
 
 var (
-	LogLevel int           = InfoLevel // control defaultLogger log level
-	Logger   BEIndexLogger = &DefaultLogger{}
+	LogLevel int                = InfoLevel // control defaultLogger log level
+	Logger   core.BEIndexLogger = &DefaultLogger{}
 )
 
 type (
-	BEIndexLogger interface {
-		Debugf(format string, v ...interface{})
-		Infof(format string, v ...interface{})
-		Errorf(format string, v ...interface{})
-	}
-
 	// DefaultLogger a console logger use fmt lib
 	DefaultLogger struct {
 	}

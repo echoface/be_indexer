@@ -1,6 +1,7 @@
 package roaringidx
 
 import (
+	"github.com/echoface/be_indexer/core"
 	"fmt"
 	"strings"
 
@@ -80,7 +81,7 @@ func (scanner *IvtScanner) GetRawResult() *PostingList {
 	return &scanner.conjIDResults
 }
 
-func (scanner *IvtScanner) mergeFieldResult(field be_indexer.BEField, pl PostingList) {
+func (scanner *IvtScanner) mergeFieldResult(field core.BEField, pl PostingList) {
 	defer func() {
 		if scanner.debug {
 			be_indexer.Logger.Infof("merger result from field:%s pl:%s \n after:%s",
@@ -99,7 +100,7 @@ func (scanner *IvtScanner) mergeFieldResult(field be_indexer.BEField, pl Posting
 	scanner.conjIDResults.And(pl.Bitmap)
 }
 
-func (scanner *IvtScanner) retrieve(assigns be_indexer.Assignments) (err error) {
+func (scanner *IvtScanner) retrieve(assigns core.Assignments) (err error) {
 	tmpPl := NewPostingList()
 
 	for field, can := range scanner.indexer.data {
@@ -125,7 +126,7 @@ func (scanner *IvtScanner) Ended() bool {
 }
 
 // RetrieveDocs return document id as map
-func (scanner *IvtScanner) RetrieveDocs(assignments be_indexer.Assignments) (docs map[int64]struct{}, err error) {
+func (scanner *IvtScanner) RetrieveDocs(assignments core.Assignments) (docs map[int64]struct{}, err error) {
 	if err = scanner.retrieve(assignments); err != nil {
 		return nil, err
 	}
@@ -140,7 +141,7 @@ func (scanner *IvtScanner) RetrieveDocs(assignments be_indexer.Assignments) (doc
 }
 
 // Retrieve return document id list
-func (scanner *IvtScanner) Retrieve(assignments be_indexer.Assignments) (docs []uint64, err error) {
+func (scanner *IvtScanner) Retrieve(assignments core.Assignments) (docs []uint64, err error) {
 	if err = scanner.retrieve(assignments); err != nil {
 		return nil, err
 	}

@@ -1,6 +1,7 @@
 package roaringidx
 
 import (
+	"github.com/echoface/be_indexer/core"
 	"fmt"
 
 	"github.com/echoface/be_indexer/parser"
@@ -17,7 +18,7 @@ type (
 		// panicOnError will panic program when build indexer meta
 		panicOnError bool
 
-		containerBuilder map[be_indexer.BEField]BEContainerBuilder
+		containerBuilder map[core.BEField]BEContainerBuilder
 
 		defaultParser *parser.CommonStrParser
 	}
@@ -26,7 +27,7 @@ type (
 func NewIndexerBuilder() *IvtBEIndexerBuilder {
 	builder := &IvtBEIndexerBuilder{
 		panicOnError:     false,
-		containerBuilder: map[be_indexer.BEField]BEContainerBuilder{},
+		containerBuilder: map[core.BEField]BEContainerBuilder{},
 		docMaxConjSize:   1,
 		defaultParser:    parser.NewCommonParser(),
 	}
@@ -41,7 +42,7 @@ func (builder *IvtBEIndexerBuilder) WithErrPanic(panic bool) *IvtBEIndexerBuilde
 func (builder *IvtBEIndexerBuilder) ConfigureField(field string, option FieldSetting) error {
 	fieldMeta := &FieldMeta{
 		FieldSetting: option,
-		field:        be_indexer.BEField(field),
+		field:        core.BEField(field),
 	}
 	if fieldMeta.Parser == nil {
 		fieldMeta.Parser = builder.defaultParser
@@ -52,11 +53,11 @@ func (builder *IvtBEIndexerBuilder) ConfigureField(field string, option FieldSet
 		return fmt.Errorf("field:%s settings:%+v not supported", field, option)
 	}
 
-	builder.containerBuilder[be_indexer.BEField(field)] = fieldContainerBuilder
+	builder.containerBuilder[core.BEField(field)] = fieldContainerBuilder
 	return nil
 }
 
-func (builder *IvtBEIndexerBuilder) AddDocuments(docs ...*be_indexer.Document) (err error) {
+func (builder *IvtBEIndexerBuilder) AddDocuments(docs ...*core.Document) (err error) {
 	for _, doc := range docs {
 		err = builder.AddDocument(doc)
 		if err != nil {
@@ -66,7 +67,7 @@ func (builder *IvtBEIndexerBuilder) AddDocuments(docs ...*be_indexer.Document) (
 	return nil
 }
 
-func (builder *IvtBEIndexerBuilder) AddDocument(doc *be_indexer.Document) (err error) {
+func (builder *IvtBEIndexerBuilder) AddDocument(doc *core.Document) (err error) {
 
 	if doc == nil || len(doc.Cons) == 0 {
 		util.PanicIf(builder.panicOnError, "zero conjunction in this document")
@@ -84,7 +85,7 @@ func (builder *IvtBEIndexerBuilder) AddDocument(doc *be_indexer.Document) (err e
 
 		// NOTE: check conjunction contains none-configured field expression
 		// this may case logic error if we omit those boolean-expression
-		for field := range conj.Expressions {
+		for field := range conj.Predicates {
 			if _, ok := builder.containerBuilder[field]; !ok {
 				util.PanicIf(builder.panicOnError, "document contains none-configured field:%s", field)
 				be_indexer.LogErrIf(true, "document contains none-configured field:%", field)
@@ -93,14 +94,14 @@ func (builder *IvtBEIndexerBuilder) AddDocument(doc *be_indexer.Document) (err e
 		}
 
 		for field, containerBuilder := range builder.containerBuilder {
-			exprs, ok := conj.Expressions[field]
+			exprs, ok := conj.Predicates[field]
 			if !ok || len(exprs) == 0 {
 				containerBuilder.EncodeWildcard(conjID)
 				continue
 			}
 			addWildcard := true
 			for _, expr := range exprs {
-				if err = containerBuilder.EncodeExpr(conjID, be_indexer.NewBoolExpr2(field, *expr)); err != nil {
+				if err = containerBuilder.EncodeExpr(conjID, core.NewPredicate2(field, *expr)); err != nil {
 					util.PanicIf(builder.panicOnError, "failed evaluate boolean expression:%+v", expr)
 					return err
 				}

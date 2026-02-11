@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/echoface/be_indexer/core"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -15,15 +16,15 @@ import (
 )
 
 type MockTargeting struct {
-	ID be_indexer.DocID
+	ID core.DocID
 	A  []int
 	B  []int
 	C  []int
 	D  []int
 }
 
-func (t *MockTargeting) ToConj() *be_indexer.Conjunction {
-	conj := be_indexer.NewConjunction()
+func (t *MockTargeting) ToConj() *core.Conjunction {
+	conj := core.NewConjunction()
 	if len(t.A) > 0 {
 		conj.In("A", t.A)
 	}
@@ -93,13 +94,13 @@ func main() {
 	b := be_indexer.NewIndexerBuilder()
 	cb := be_indexer.NewCompactIndexerBuilder()
 
-	targets := map[be_indexer.DocID]*MockTargeting{}
+	targets := map[core.DocID]*MockTargeting{}
 
 	be_indexer.LogLevel = be_indexer.ErrorLevel
 
 	for i := 1; i < docCount; i++ {
 		target := &MockTargeting{
-			ID: be_indexer.DocID(i),
+			ID: core.DocID(i),
 			A:  randValue(3),
 			B:  randValue(5),
 			C:  randValue(10),
@@ -107,23 +108,25 @@ func main() {
 		}
 
 		conj := target.ToConj()
-		if len(conj.Expressions) > 0 {
-			doc := be_indexer.NewDocument(target.ID)
+		if len(conj.Predicates) > 0 {
+			doc := core.NewDocument(target.ID)
 			doc.AddConjunction(conj)
 
 			util.PanicIfErr(b.AddDocument(doc), "build doc fail, doc:%s", doc.String())
 			util.PanicIfErr(cb.AddDocument(doc), "build doc fail, doc:%s", doc.String())
 
-			targets[be_indexer.DocID(i)] = target
+			targets[core.DocID(i)] = target
 		}
 	}
 
-	index := b.BuildIndex()
+	index, err := b.BuildIndex()
+	util.PanicIfErr(err, "build index fail")
 	sb := &strings.Builder{}
 	index.DumpIndexInfo(sb)
 	fmt.Println("index summary:", sb.String())
 
-	compactedIndex := cb.BuildIndex()
+	compactedIndex, err := cb.BuildIndex()
+	util.PanicIfErr(err, "build compacted index fail")
 	sb.Reset()
 	compactedIndex.DumpIndexInfo(sb)
 	fmt.Println("compactedIndex summary:", sb.String())
@@ -136,7 +139,7 @@ func main() {
 	}
 
 	var Qs []Q
-	var assigns []be_indexer.Assignments
+	var assigns []core.Assignments
 
 	for i := 0; i < 1000; i++ {
 		q := Q{
@@ -146,7 +149,7 @@ func main() {
 			D: randValue(2),
 		}
 		Qs = append(Qs, q)
-		assign := be_indexer.Assignments{}
+		assign := core.Assignments{}
 		if len(q.A) > 0 {
 			assign["A"] = q.A
 		}
@@ -162,9 +165,9 @@ func main() {
 		assigns = append(assigns, assign)
 	}
 
-	idxRes := make(map[int][]be_indexer.DocID)
-	idxUnionRes := make(map[int][]be_indexer.DocID)
-	//noneIdxRes := make(map[int][]be_indexer.DocID)
+	idxRes := make(map[int][]core.DocID)
+	idxUnionRes := make(map[int][]core.DocID)
+	//noneIdxRes := make(map[int][]core.DocID)
 
 	if enableProfiling {
 		f, err := os.OpenFile("cpu.prof", os.O_RDWR|os.O_CREATE, 0644)

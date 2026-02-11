@@ -30,10 +30,6 @@ type (
 		// ParseValue parse bool expression value into id-encoded ids
 		ParseValue(v interface{}) ([]uint64, error)
 	}
-
-	// FieldValueParser is an alias for ValueIDGenerator for backward compatibility
-	// Deprecated: Use ValueIDGenerator instead
-	FieldValueParser = ValueIDGenerator
 )
 
 func ParseIntegerNumber(v interface{}, floatToInt bool) (n int64, err error) {

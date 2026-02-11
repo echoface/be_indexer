@@ -1,0 +1,978 @@
+=== RUN   TestBEIndex_Retrieve
+total docs: 3
+configure field:age, fieldID:0
+
+configure field:ip, fieldID:1
+
+configure field:city, fieldID:2
+
+configure field:tag, fieldID:3
+
+
++++++++ size grouped boolean indexing info +++++++++++
+wildcard info: count:1
+>> container for size k:0
+holder information:{
+ "dataSize": 32,
+ "dictSize": 1,
+ "mode": "segment_phase2",
+ "name": "CompressedKVHolder(Segment)",
+ "postings": 1
+}
+>> container for size k:1
+holder information:{
+ "dataSize": 40,
+ "dictSize": 1,
+ "mode": "segment_phase2",
+ "name": "CompressedKVHolder(Segment)",
+ "postings": 1
+}
+>> container for size k:2
+holder information:{
+ "dataSize": 324,
+ "dictSize": 8,
+ "mode": "segment_phase2",
+ "name": "CompressedKVHolder(Segment)",
+ "postings": 8
+}
+++++++++++++ size grouped index info end ++++++++++++++++++
+
+
++++++++ size grouped boolean indexing entries +++++++++++ 
+>>Z:
+[_Z_,0]:[3#1]
+>>K:0
+CompressedKVHolder entries (Phase 2):
+(DumpEntries not fully implemented for SegmentReader yet)
+>>K:1
+CompressedKVHolder entries (Phase 2):
+(DumpEntries not fully implemented for SegmentReader yet)
+>>K:2
+CompressedKVHolder entries (Phase 2):
+(DumpEntries not fully implemented for SegmentReader yet)
++++++++++++++size grouped index entries end +++++++++++++++++
+
+<nil> [1 3]
+<nil> []
+<nil> [1 2 3]
+--- PASS: TestBEIndex_Retrieve (0.00s)
+=== RUN   TestMatch
+
+  test match [32m✔[0m
+
+[31m[0m[33m[0m[32m
+1 total assertion[0m
+
+
+  test neg match [32m✔[0m
+
+[31m[0m[33m[0m[32m
+2 total assertions[0m
+
+--- PASS: TestMatch (0.00s)
+=== RUN   TestSizeGroupedBEIndex_Retrieve
+
+  test index negative logic configure field:A, fieldID:0
+
+configure field:B, fieldID:1
+
+configure field:C, fieldID:2
+
+configure field:D, fieldID:3
+
+[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m
++++++++ size grouped boolean indexing info +++++++++++
+wildcard info: count:54
+>> container for size k:0
+holder information:{
+ "dataSize": 21997,
+ "dictSize": 596,
+ "mode": "segment_phase2",
+ "name": "CompressedKVHolder(Segment)",
+ "postings": 596
+}
+>> container for size k:1
+holder information:{
+ "dataSize": 59234,
+ "dictSize": 600,
+ "mode": "segment_phase2",
+ "name": "CompressedKVHolder(Segment)",
+ "postings": 600
+}
+>> container for size k:2
+holder information:{
+ "dataSize": 77739,
+ "dictSize": 600,
+ "mode": "segment_phase2",
+ "name": "CompressedKVHolder(Segment)",
+ "postings": 600
+}
+>> container for size k:3
+holder information:{
+ "dataSize": 59899,
+ "dictSize": 600,
+ "mode": "segment_phase2",
+ "name": "CompressedKVHolder(Segment)",
+ "postings": 600
+}
+>> container for size k:4
+holder information:{
+ "dataSize": 34143,
+ "dictSize": 600,
+ "mode": "segment_phase2",
+ "name": "CompressedKVHolder(Segment)",
+ "postings": 600
+}
+++++++++++++ size grouped index info end ++++++++++++++++++
+
+queries count: 100
+NontIndexQuery Take 7(ms)
+[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0mIndexQuery Take 11(ms)
+
+
+[31m[0m[33m[0m[32m
+1103 total assertions[0m
+
+--- PASS: TestSizeGroupedBEIndex_Retrieve (0.09s)
+=== RUN   TestCompactedBEIndex_Retrieve
+
+  test index negative logic configure field:B, fieldID:0
+
+configure field:C, fieldID:1
+
+configure field:D, fieldID:2
+
+configure field:A, fieldID:3
+
+[32m✔[0m
++++++++ compact boolean indexing info +++++++++++
+wildcard info: count:72
+holder information:{
+ "dataSize": 196757,
+ "dictSize": 600,
+ "mode": "segment_phase2",
+ "name": "CompressedKVHolder(Segment)",
+ "postings": 600
+}
+++++++++++++++dump index info end ++++++++++++++++
+
+queries count: 100
+NontIndexQuery Take 6(ms)
+UnionIndexQuery Take 8(ms)
+
+
+[31m[0m[33m[0m[32m
+1104 total assertions[0m
+
+--- PASS: TestCompactedBEIndex_Retrieve (0.07s)
+=== RUN   TestBEIndex_Retrieve2
+
+  test index and simple bench for kGroup/Compacted indexer kGroupIndex summary 
++++++++ size grouped boolean indexing info +++++++++++
+wildcard info: count:5775
+>> container for size k:0
+holder information:{
+ "dataSize": 1071269,
+ "dictSize": 600,
+ "mode": "segment_phase2",
+ "name": "CompressedKVHolder(Segment)",
+ "postings": 600
+}
+>> container for size k:1
+holder information:{
+ "dataSize": 4197764,
+ "dictSize": 600,
+ "mode": "segment_phase2",
+ "name": "CompressedKVHolder(Segment)",
+ "postings": 600
+}
+>> container for size k:2
+holder information:{
+ "dataSize": 6182437,
+ "dictSize": 600,
+ "mode": "segment_phase2",
+ "name": "CompressedKVHolder(Segment)",
+ "postings": 600
+}
+>> container for size k:3
+holder information:{
+ "dataSize": 4495927,
+ "dictSize": 600,
+ "mode": "segment_phase2",
+ "name": "CompressedKVHolder(Segment)",
+ "postings": 600
+}
+>> container for size k:4
+holder information:{
+ "dataSize": 1299113,
+ "dictSize": 600,
+ "mode": "segment_phase2",
+ "name": "CompressedKVHolder(Segment)",
+ "postings": 600
+}
+++++++++++++ size grouped index info end ++++++++++++++++++
+
+compactedIndex summary 
++++++++ compact boolean indexing info +++++++++++
+wildcard info: count:5775
+holder information:{
+ "dataSize": 17231975,
+ "dictSize": 600,
+ "mode": "segment_phase2",
+ "name": "CompressedKVHolder(Segment)",
+ "postings": 600
+}
+++++++++++++++dump index info end ++++++++++++++++
+
+queries count: 100
+NoneIndexQuery Take 3083(ms) 30830(us)/ops
+avg result len: 6028
+KGroupIndexQuery Take 660(ms), 6603(us)/ops
+CompactedIndexQuery Take 654(ms), 6545(us)/ops
+
+
+[31m[0m[33m[0m[32m
+1104 total assertions[0m
+
+--- PASS: TestBEIndex_Retrieve2 (20.00s)
+=== RUN   TestBEIndex_Retrieve3
+
+  test retrieve k:2 [32m✔[0m
+
+[31m[0m[33m[0m[32m
+1105 total assertions[0m
+
+--- PASS: TestBEIndex_Retrieve3 (0.00s)
+=== RUN   TestBEIndex_Retrieve4
+
+  test doc add retrieve basic [32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m
+
+[31m[0m[33m[0m[32m
+1124 total assertions[0m
+
+--- PASS: TestBEIndex_Retrieve4 (0.00s)
+=== RUN   TestBEIndex_Retrieve5
+configure field:tag, fieldID:0
+
+configure field:age, fieldID:1
+
+configure field:sex, fieldID:2
+
+
+  test SizeGroupedIndex Multi Conjunction retrieve [32m✔[0m
++++++++ size grouped boolean indexing info +++++++++++
+wildcard info: count:1
+>> container for size k:0
+holder information:{
+ "dataSize": 37,
+ "dictSize": 1,
+ "mode": "segment_phase2",
+ "name": "CompressedKVHolder(Segment)",
+ "postings": 1
+}
+>> container for size k:1
+holder information:{
+ "dataSize": 177,
+ "dictSize": 5,
+ "mode": "segment_phase2",
+ "name": "CompressedKVHolder(Segment)",
+ "postings": 5
+}
+>> container for size k:2
+holder information:{
+ "dataSize": 176,
+ "dictSize": 5,
+ "mode": "segment_phase2",
+ "name": "CompressedKVHolder(Segment)",
+ "postings": 5
+}
+++++++++++++ size grouped index info end ++++++++++++++++++
+
+
++++++++ size grouped boolean indexing entries +++++++++++ 
+>>Z:
+[_Z_,0]:[13#1]
+>>K:0
+CompressedKVHolder entries (Phase 2):
+(DumpEntries not fully implemented for SegmentReader yet)
+>>K:1
+CompressedKVHolder entries (Phase 2):
+(DumpEntries not fully implemented for SegmentReader yet)
+>>K:2
+CompressedKVHolder entries (Phase 2):
+(DumpEntries not fully implemented for SegmentReader yet)
++++++++++++++size grouped index entries end +++++++++++++++++
+
+<sex,[man]> fetch 1 posting list
+
+start@step:1 cursors:1
+RetrieveWithCollector k:1 initial entries:
+============== Field Cursors ==============
+>[sex,man],blk:4,idx:00,EID:^14#1
+
+round need match:1 continue docs:[]
+round need match:1 continue entries
+============== Field Cursors ==============
+>[sex,man],blk:4,idx:00,EID:^14#1
+
+round end need match:1, docs:[14]
+<sex,[man]> nothing matched from entries holder
+
+start@step:0 cursors:1
+RetrieveWithCollector k:0 initial entries:
+============== Field Cursors ==============
+>[_Z_,0],idx:00,EID:^13#1
+
+round need match:1 continue docs:[14]
+round need match:1 continue entries
+============== Field Cursors ==============
+>[_Z_,0],idx:00,EID:^13#1
+
+round end need match:1, docs:[13 14]
+[13 14]
+[32m✔[0m[32m✔[0m<sex,[female]> nothing matched from entries holder
+
+<age,[60]> nothing matched from entries holder
+
+<tag,[61]> nothing matched from entries holder
+
+<sex,[female]> nothing matched from entries holder
+
+<age,[60]> fetch 1 posting list
+
+<tag,[61]> nothing matched from entries holder
+
+<sex,[female]> nothing matched from entries holder
+
+<age,[60]> fetch 1 posting list
+
+<tag,[61]> nothing matched from entries holder
+
+[14]
+[32m✔[0m[32m✔[0m<sex,[female]> nothing matched from entries holder
+
+<age,[27]> fetch 1 posting list
+
+<tag,[1]> fetch 1 posting list
+
+<tag,[1]> fetch 1 posting list
+
+<sex,[female]> nothing matched from entries holder
+
+<age,[27]> fetch 1 posting list
+
+<sex,[female]> nothing matched from entries holder
+
+<age,[27]> nothing matched from entries holder
+
+<tag,[1]> nothing matched from entries holder
+
+[12 13]
+[32m✔[0m[32m✔[0m
+
+[31m[0m[33m[0m[32m
+1131 total assertions[0m
+
+--- PASS: TestBEIndex_Retrieve5 (0.00s)
+=== RUN   TestBEIndex_RetrievePartialConjunction
+
+  不允许一个doc部分conjunction异常 configure field:tag, fieldID:0
+
+configure field:keyword, fieldID:1
+
+[32m✔[0m
+
+[31m[0m[33m[0m[32m
+1132 total assertions[0m
+
+
+  conjunction异常时返回错误 configure field:tag, fieldID:0
+
+configure field:keyword, fieldID:1
+
+[32m✔[0m
+
+[31m[0m[33m[0m[32m
+1133 total assertions[0m
+
+
+  部分Conjunction异常，不影响其他Conjunction匹配 configure field:tag, fieldID:0
+
+configure field:keyword, fieldID:1
+
+indexing conj:<12,1,2> fail:indexing field:keyword fail:field:keyword value:in values:"abc" parse fail, err:unsupported value type: *cache.StrListValues
+[32m✔[0m<tag,[1 2 27]> fetch 1 posting list
+
+<keyword,[abc abc英文歌]> fetch 1 posting list
+
+start@step:2 cursors:2
+RetrieveWithCollector k:2 initial entries:
+============== Field Cursors ==============
+>[tag,1],blk:0,idx:00,EID:^12#1
+============== Field Cursors ==============
+>[keyword,abc],blk:1,idx:00,EID:^12#1
+
+round need match:2 continue docs:[]
+round need match:2 continue entries
+============== Field Cursors ==============
+>[tag,1],blk:0,idx:00,EID:^12#1
+============== Field Cursors ==============
+>[keyword,abc],blk:1,idx:00,EID:^12#1
+
+round end need match:2, docs:[12]
+<tag,[1 2 27]> nothing matched from entries holder
+
+<keyword,[abc abc英文歌]> nothing matched from entries holder
+
+start@step:1 cursors:0
+RetrieveWithCollector k:1 initial entries:
+
+need match:1 but only:0
+<tag,[1 2 27]> nothing matched from entries holder
+
+<keyword,[abc abc英文歌]> nothing matched from entries holder
+
+start@step:0 cursors:0
+RetrieveWithCollector k:0 initial entries:
+
+need match:1 but only:0
+[32m✔[0m[32m✔[0m
+
+[31m[0m[33m[0m[32m
+1136 total assertions[0m
+
+--- PASS: TestBEIndex_RetrievePartialConjunction (0.00s)
+=== RUN   TestBEIndexer_Retrieve_Geohash
+
+  geohash targeting holder name:default already registered, override!!!
+configure field:tag, fieldID:0
+
+configure field:geo, fieldID:1
+
+[32m✔[0m[32m✔[0m
++++++++ compact boolean indexing info +++++++++++
+wildcard info: count:0
+holder information:{
+ "dataSize": 632,
+ "dictSize": 17,
+ "field#geo#parser": "custom",
+ "field#tag#parser": "custom",
+ "mode": "segment_phase2",
+ "name": "CompressedKVHolder(Segment)",
+ "postings": 17
+}
+++++++++++++++dump index info end ++++++++++++++++
+
+
++++++++ compact boolean indexing entries +++++++++++
+Z:
+[_Z_,0]:[]
+CompressedKVHolder entries (Phase 2):
+(DumpEntries not fully implemented for SegmentReader yet)
++++++++++++++ dump entries end ++++++++++++++++++++++
+
+RetrieveWithCollector initial entries:
+============== Field Cursors ==============
+>[geo,wtw3td],blk:13,idx:00,EID:^1#1
+
+step:1 round start, docs:[] entries:
+============== Field Cursors ==============
+>[geo,wtw3td],blk:13,idx:00,EID:^1#1
+
+step:1 process need match:1 cursors:1, eid:[1#1..1#1]
+step:1 round end, result docs:[1]
+[1] <nil>
+[32m✔[0mRetrieveWithCollector initial entries:
+
+[32m✔[0m
+
+[31m[0m[33m[0m[32m
+1140 total assertions[0m
+
+--- PASS: TestBEIndexer_Retrieve_Geohash (0.00s)
+=== RUN   TestBEIndex_DumpLoad
+
+  test dump and load configure field:tag, fieldID:0
+
+configure field:age, fieldID:1
+
+[32m✔[0mDumped size: 281 bytes
+[31m🔥[0m
+
+[31m
+Errors:
+
+  * /Users/bytedance/echoface/be_indexer/be_indexer_test.go 
+  Line 810: - read-only index: newContainer not supported 
+  goroutine 46 [running]:
+  	/Users/bytedance/go/pkg/mod/github.com/smartystreets/goconvey@v1.7.2/convey/reporting/reports.go:150 +0x40
+  	/Users/bytedance/go/pkg/mod/github.com/smartystreets/goconvey@v1.7.2/convey/reporting/reports.go:123 +0x64
+  	/Users/bytedance/go/pkg/mod/github.com/smartystreets/goconvey@v1.7.2/convey/context.go:253 +0xbc
+  panic({0x104862180?, 0x1048ec5c0?})
+  	/opt/homebrew/Cellar/go@1.22/1.22.12/libexec/src/runtime/panic.go:770 +0x124
+  github.com/echoface/be_indexer.(*KGroupsBEIndex).newContainer(...)
+  	/Users/bytedance/echoface/be_indexer/be_indexer_kgroups.go:197
+  github.com/echoface/be_indexer.(*KGroupsBEIndex).Load(0x140001d59c0, {0x1048ee268?, 0x1400f7700c0?})
+  	/Users/bytedance/echoface/be_indexer/be_indexer_kgroups.go:530 +0x418
+  github.com/echoface/be_indexer.TestBEIndex_DumpLoad.func1()
+  	/Users/bytedance/echoface/be_indexer/be_indexer_test.go:810 +0x81c
+  	/Users/bytedance/go/pkg/mod/github.com/smartystreets/goconvey@v1.7.2/convey/discovery.go:89 +0x24
+  	/Users/bytedance/go/pkg/mod/github.com/smartystreets/goconvey@v1.7.2/convey/context.go:279 +0x15c
+  	/Users/bytedance/go/pkg/mod/github.com/smartystreets/goconvey@v1.7.2/convey/context.go:112 +0xdc
+  github.com/jtolds/gls.(*ContextManager).SetValues.func1(0x0)
+  	/Users/bytedance/go/pkg/mod/github.com/jtolds/gls@v4.20.0+incompatible/context.go:97 +0x3f0
+  github.com/jtolds/gls.EnsureGoroutineId.func1()
+  	/Users/bytedance/go/pkg/mod/github.com/jtolds/gls@v4.20.0+incompatible/gid.go:24 +0x28
+  github.com/jtolds/gls._m(0x104b85601?, 0x14000192d80?)
+  	/Users/bytedance/go/pkg/mod/github.com/jtolds/gls@v4.20.0+incompatible/stack_tags.go:108 +0x28
+  github.com/jtolds/gls.github_com_jtolds_gls_markS(0x1400f703710?, 0x0?)
+  	/Users/bytedance/go/pkg/mod/github.com/jtolds/gls@v4.20.0+incompatible/stack_tags.go:56 +0x1c
+  github.com/jtolds/gls.addStackTag(...)
+  	/Users/bytedance/go/pkg/mod/github.com/jtolds/gls@v4.20.0+incompatible/stack_tags.go:49
+  github.com/jtolds/gls.EnsureGoroutineId(0x1400f703710)
+  	/Users/bytedance/go/pkg/mod/github.com/jtolds/gls@v4.20.0+incompatible/gid.go:24 +0xc4
+  github.com/jtolds/gls.(*ContextManager).SetValues(0x140001b6210, 0x1400f7036b0, 0x1400f6ceb80)
+  	/Users/bytedance/go/pkg/mod/github.com/jtolds/gls@v4.20.0+incompatible/context.go:63 +0x150
+  	/Users/bytedance/go/pkg/mod/github.com/smartystreets/goconvey@v1.7.2/convey/context.go:107 +0x274
+  	/Users/bytedance/go/pkg/mod/github.com/smartystreets/goconvey@v1.7.2/convey/doc.go:76 +0x8c
+  github.com/echoface/be_indexer.TestBEIndex_DumpLoad(0x140001991e0?)
+  	/Users/bytedance/echoface/be_indexer/be_indexer_test.go:783 +0x74
+  testing.tRunner(0x140001991e0, 0x1048ea590)
+  	/opt/homebrew/Cellar/go@1.22/1.22.12/libexec/src/testing/testing.go:1689 +0xec
+  created by testing.(*T).Run in goroutine 1
+  	/opt/homebrew/Cellar/go@1.22/1.22.12/libexec/src/testing/testing.go:1742 +0x318
+  
+  goroutine 1 [chan receive]:
+  testing.(*T).Run(0x140001989c0, {0x10479b138?, 0x140001d7b38?}, 0x1048ea590)
+  	/opt/homebrew/Cellar/go@1.22/1.22.12/libexec/src/testing/testing.go:1750 +0x32c
+  testing.runTests.func1(0x140001989c0)
+  	/opt/homebrew/Cellar/go@1.22/1.22.12/libexec/src/testing/testing.go:2161 +0x40
+  testing.tRunner(0x140001989c0, 0x140001d7c58)
+  	/opt/homebrew/Cellar/go@1.22/1.22.12/libexec/src/testing/testing.go:1689 +0xec
+  testing.runTests(0x140001a6198, {0x104b802e0, 0x23, 0x23}, {0x140001d7d18?, 0x10455fe90?, 0x104b85ba0?})
+  	/opt/homebrew/Cellar/go@1.22/1.22.12/libexec/src/testing/testing.go:2159 +0x3b0
+  testing.(*M).Run(0x140001cb360)
+  	/opt/homebrew/Cellar/go@1.22/1.22.12/libexec/src/testing/testing.go:2027 +0x5a4
+  main.main()
+  	_testmain.go:119 +0x16c
+  
+
+[0m[33m[0m[31m
+1142 total assertions[0m
+
+--- FAIL: TestBEIndex_DumpLoad (0.00s)
+=== RUN   TestBEIndex_DumpLoad_TypeMismatch
+
+  dump/load should reject indexer type mismatch configure field:tag, fieldID:0
+
+configure field:age, fieldID:1
+
+[32m✔[0m[32m✔[0mconfigure field:tag, fieldID:0
+
+configure field:age, fieldID:1
+
+[32m✔[0m[32m✔[0m
+
+[31m[0m[33m[0m[31m
+1146 total assertions[0m
+
+--- PASS: TestBEIndex_DumpLoad_TypeMismatch (0.00s)
+=== RUN   TestBEIndex_DumpLoad_ResetState
+
+  load twice into same index instance should not mix old data configure field:tag, fieldID:0
+
+configure field:age, fieldID:1
+
+[32m✔[0mconfigure field:tag, fieldID:0
+
+[32m✔[0m[31m🔥[0m
+
+[31m
+Errors:
+
+  * /Users/bytedance/echoface/be_indexer/be_indexer_test.go 
+  Line 886: - read-only index: newContainer not supported 
+  goroutine 48 [running]:
+  	/Users/bytedance/go/pkg/mod/github.com/smartystreets/goconvey@v1.7.2/convey/reporting/reports.go:150 +0x40
+  	/Users/bytedance/go/pkg/mod/github.com/smartystreets/goconvey@v1.7.2/convey/reporting/reports.go:123 +0x64
+  	/Users/bytedance/go/pkg/mod/github.com/smartystreets/goconvey@v1.7.2/convey/context.go:253 +0xbc
+  panic({0x104862180?, 0x1048ec5c0?})
+  	/opt/homebrew/Cellar/go@1.22/1.22.12/libexec/src/runtime/panic.go:770 +0x124
+  github.com/echoface/be_indexer.(*KGroupsBEIndex).newContainer(...)
+  	/Users/bytedance/echoface/be_indexer/be_indexer_kgroups.go:197
+  github.com/echoface/be_indexer.(*KGroupsBEIndex).Load(0x140001d59d8, {0x1048ee248?, 0x1400f7d2a80?})
+  	/Users/bytedance/echoface/be_indexer/be_indexer_kgroups.go:530 +0x418
+  github.com/echoface/be_indexer.TestBEIndex_DumpLoad_ResetState.func1()
+  	/Users/bytedance/echoface/be_indexer/be_indexer_test.go:886 +0x740
+  	/Users/bytedance/go/pkg/mod/github.com/smartystreets/goconvey@v1.7.2/convey/discovery.go:89 +0x24
+  	/Users/bytedance/go/pkg/mod/github.com/smartystreets/goconvey@v1.7.2/convey/context.go:279 +0x15c
+  	/Users/bytedance/go/pkg/mod/github.com/smartystreets/goconvey@v1.7.2/convey/context.go:112 +0xdc
+  github.com/jtolds/gls.(*ContextManager).SetValues.func1(0x0)
+  	/Users/bytedance/go/pkg/mod/github.com/jtolds/gls@v4.20.0+incompatible/context.go:97 +0x3f0
+  github.com/jtolds/gls.EnsureGoroutineId.func1()
+  	/Users/bytedance/go/pkg/mod/github.com/jtolds/gls@v4.20.0+incompatible/gid.go:24 +0x28
+  github.com/jtolds/gls._m(0x104b85601?, 0x14000192d80?)
+  	/Users/bytedance/go/pkg/mod/github.com/jtolds/gls@v4.20.0+incompatible/stack_tags.go:108 +0x28
+  github.com/jtolds/gls.github_com_jtolds_gls_markS(0x1400f771dd0?, 0x0?)
+  	/Users/bytedance/go/pkg/mod/github.com/jtolds/gls@v4.20.0+incompatible/stack_tags.go:56 +0x1c
+  github.com/jtolds/gls.addStackTag(...)
+  	/Users/bytedance/go/pkg/mod/github.com/jtolds/gls@v4.20.0+incompatible/stack_tags.go:49
+  github.com/jtolds/gls.EnsureGoroutineId(0x1400f771dd0)
+  	/Users/bytedance/go/pkg/mod/github.com/jtolds/gls@v4.20.0+incompatible/gid.go:24 +0xc4
+  github.com/jtolds/gls.(*ContextManager).SetValues(0x140001b6210, 0x1400f771d70, 0x1400f6cf1c0)
+  	/Users/bytedance/go/pkg/mod/github.com/jtolds/gls@v4.20.0+incompatible/context.go:63 +0x150
+  	/Users/bytedance/go/pkg/mod/github.com/smartystreets/goconvey@v1.7.2/convey/context.go:107 +0x274
+  	/Users/bytedance/go/pkg/mod/github.com/smartystreets/goconvey@v1.7.2/convey/doc.go:76 +0x8c
+  github.com/echoface/be_indexer.TestBEIndex_DumpLoad_ResetState(0x140001996c0?)
+  	/Users/bytedance/echoface/be_indexer/be_indexer_test.go:863 +0x74
+  testing.tRunner(0x140001996c0, 0x1048ea598)
+  	/opt/homebrew/Cellar/go@1.22/1.22.12/libexec/src/testing/testing.go:1689 +0xec
+  created by testing.(*T).Run in goroutine 1
+  	/opt/homebrew/Cellar/go@1.22/1.22.12/libexec/src/testing/testing.go:1742 +0x318
+  
+  goroutine 1 [chan receive]:
+  testing.(*T).Run(0x140001989c0, {0x1047a03cf?, 0x140001d7b38?}, 0x1048ea598)
+  	/opt/homebrew/Cellar/go@1.22/1.22.12/libexec/src/testing/testing.go:1750 +0x32c
+  testing.runTests.func1(0x140001989c0)
+  	/opt/homebrew/Cellar/go@1.22/1.22.12/libexec/src/testing/testing.go:2161 +0x40
+  testing.tRunner(0x140001989c0, 0x140001d7c58)
+  	/opt/homebrew/Cellar/go@1.22/1.22.12/libexec/src/testing/testing.go:1689 +0xec
+  testing.runTests(0x140001a6198, {0x104b802e0, 0x23, 0x23}, {0x140001d7d18?, 0x10455fe90?, 0x104b85ba0?})
+  	/opt/homebrew/Cellar/go@1.22/1.22.12/libexec/src/testing/testing.go:2159 +0x3b0
+  testing.(*M).Run(0x140001cb360)
+  	/opt/homebrew/Cellar/go@1.22/1.22.12/libexec/src/testing/testing.go:2027 +0x5a4
+  main.main()
+  	_testmain.go:119 +0x16c
+  
+
+[0m[33m[0m[31m
+1149 total assertions[0m
+
+--- FAIL: TestBEIndex_DumpLoad_ResetState (0.00s)
+=== RUN   TestDocLevelCache_Basic
+
+  test document level cache basic functionality [32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m
+
+[31m[0m[33m[0m[31m
+1155 total assertions[0m
+
+--- PASS: TestDocLevelCache_Basic (0.00s)
+=== RUN   TestIncrementalIndexing_WithCache
+
+  test incremental indexing with document level cache schema changed, doc level cache cleared
+configure field:age, fieldID:0
+
+schema changed, doc level cache cleared
+configure field:city, fieldID:1
+
+[32m✔[0m[32m✔[0mschema changed, doc level cache cleared
+configure field:age, fieldID:0
+
+schema changed, doc level cache cleared
+configure field:city, fieldID:1
+
+doc cache saved: docID=2, version=1
+[32m✔[0m[32m✔[0m[32m✔[0mschema changed, doc level cache cleared
+configure field:age, fieldID:0
+
+schema changed, doc level cache cleared
+configure field:city, fieldID:1
+
+doc cache saved: docID=2, version=1
+[32m✔[0m[32m✔[0m<city,[shanghai]> fetch 1 posting list
+
+<age,[25]> fetch 1 posting list
+
+<age,[25]> nothing matched from entries holder
+
+<city,[shanghai]> nothing matched from entries holder
+
+<age,[25]> nothing matched from entries holder
+
+<city,[shanghai]> nothing matched from entries holder
+
+[32m✔[0m<age,[25]> fetch 1 posting list
+
+<city,[shanghai]> fetch 1 posting list
+
+<age,[25]> nothing matched from entries holder
+
+<city,[shanghai]> nothing matched from entries holder
+
+<age,[25]> nothing matched from entries holder
+
+<city,[shanghai]> nothing matched from entries holder
+
+[32m✔[0m[32m✔[0m
+
+[31m[0m[33m[0m[31m
+1165 total assertions[0m
+
+--- PASS: TestIncrementalIndexing_WithCache (0.00s)
+=== RUN   TestIncrementalIndexing_CacheMissOnVersionChange
+
+  test cache miss when document version changes schema changed, doc level cache cleared
+configure field:tag, fieldID:0
+
+doc cache saved: docID=1, version=1
+[32m✔[0m[32m✔[0mschema changed, doc level cache cleared
+configure field:tag, fieldID:0
+
+doc cache saved: docID=1, version=2
+[32m✔[0m[32m✔[0m
+
+[31m[0m[33m[0m[31m
+1169 total assertions[0m
+
+--- PASS: TestIncrementalIndexing_CacheMissOnVersionChange (0.00s)
+=== RUN   TestIncrementalIndexing_CacheClearedOnSchemaChange
+
+  test cache cleared when schema changes schema changed, doc level cache cleared
+configure field:age, fieldID:0
+
+doc cache saved: docID=1, version=1
+[32m✔[0m[32m✔[0mschema changed, doc level cache cleared
+configure field:gender, fieldID:1
+
+[32m✔[0m
+
+[31m[0m[33m[0m[31m
+1172 total assertions[0m
+
+--- PASS: TestIncrementalIndexing_CacheClearedOnSchemaChange (0.00s)
+=== RUN   TestDocument_AddConjunction
+
+  test doc option [32m✔[0m[32m✔[0m
+
+[31m[0m[33m[0m[31m
+1174 total assertions[0m
+
+--- PASS: TestDocument_AddConjunction (0.00s)
+=== RUN   TestDocument_Prepare
+
+  test doc prepare [32m✔[0m[32m✔[0m[32m✔[0m
+
+[31m[0m[33m[0m[31m
+1177 total assertions[0m
+
+--- PASS: TestDocument_Prepare (0.00s)
+=== RUN   TestConjunction_AddBoolExpr
+
+  test expressions [32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m
+
+[31m[0m[33m[0m[31m
+1185 total assertions[0m
+
+--- PASS: TestConjunction_AddBoolExpr (0.00s)
+=== RUN   TestDocument_String
+
+  test string     document_test.go:71: doc:100, cons:[
+        	0:{kkk (in <15)},
+        	1:{age (in >15)},
+        	2:{kkk (in between[15 20])},
+        	3:{age (in [1 2 3],not 5)},
+        	4:{tag (not [a b]) and age (in [18])}
+        ]
+
+
+[31m[0m[33m[0m[31m
+1185 total assertions[0m
+
+--- PASS: TestDocument_String (0.00s)
+=== RUN   TestDocument_AddConjunctions
+
+  test conj size [32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m
+
+[31m[0m[33m[0m[31m
+1189 total assertions[0m
+
+--- PASS: TestDocument_AddConjunctions (0.00s)
+=== RUN   TestDefaultEntriesHolder_CompressedMode
+--- PASS: TestDefaultEntriesHolder_CompressedMode (0.00s)
+=== RUN   TestDefaultEntriesHolder_LoadData
+--- PASS: TestDefaultEntriesHolder_LoadData (0.00s)
+=== RUN   TestEntries_Less
+
+  test entries sort [1 1 2 3 4 8 9 10 10]
+[32m✔[0m
+
+[31m[0m[33m[0m[31m
+1190 total assertions[0m
+
+--- PASS: TestEntries_Less (0.00s)
+=== RUN   TestNewConjID
+
+  test conjunction id [32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m
+
+[31m[0m[33m[0m[31m
+1211 total assertions[0m
+
+--- PASS: TestNewConjID (0.00s)
+=== RUN   TestEntriesCursor_SkipTo
+
+  test skip to [32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m
+
+[31m[0m[33m[0m[31m
+1215 total assertions[0m
+
+
+  skipto test [32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0mscg: &{{age 2} [1 2 3 10 10 10 11 12 15 15 22 111 111] 2 3 13}
+[32m✔[0mscg: &{{age 2} [1 2 3 10 10 10 11 12 15 15 22 111 111] 3 10 13}
+[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m
+
+[31m[0m[33m[0m[31m
+1234 total assertions[0m
+
+
+  test SkipTo with only one element scg: &{{age 0} [28] 0 28 1} &{{age 10} [28 29] 0 28 2} &{{age 0} [28] 0 28 1}
+scg: &{{age 0} [28] 1 18446744073709551615 1} &{{age 10} [28 29] 2 18446744073709551615 2} &{{age 10} [28 29] 2 18446744073709551615 2}
+[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m
+
+[31m[0m[33m[0m[31m
+1240 total assertions[0m
+
+
+  rand test verify [32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m
+
+[31m[0m[33m[0m[31m
+3895 total assertions[0m
+
+--- PASS: TestEntriesCursor_SkipTo (0.01s)
+=== RUN   TestEntriesCursor_DumpEntries
+[age,18],idx:00,EID:^2#1,4#1,5#1,6#0,9#1,10#0,16#0,0#0,3#1,7#0...another 10
+[age,18],idx:01,EID:2#1,^4#1,5#1,6#0,9#1,10#0,16#0,0#0,3#1,7#0,8#1...another 9
+[age,18],idx:02,EID:2#1,4#1,^5#1,6#0,9#1,10#0,16#0,0#0,3#1,7#0,8#1,11#1...another 8
+[age,18],idx:03,EID:...,4#1,5#1,^6#0,9#1,10#0,16#0,0#0,3#1,7#0,8#1,11#1,12#0...another 7
+[age,18],idx:04,EID:...,5#1,6#0,^9#1,10#0,16#0,0#0,3#1,7#0,8#1,11#1,12#0,14#0...another 6
+[age,18],idx:05,EID:...,6#0,9#1,^10#0,16#0,0#0,3#1,7#0,8#1,11#1,12#0,14#0,17#1...another 5
+[age,18],idx:06,EID:...,9#1,10#0,^16#0,0#0,3#1,7#0,8#1,11#1,12#0,14#0,17#1,1#1...another 4
+[age,18],idx:07,EID:...,10#0,16#0,^0#0,3#1,7#0,8#1,11#1,12#0,14#0,17#1,1#1,13#0...another 3
+[age,18],idx:08,EID:...,16#0,0#0,^3#1,7#0,8#1,11#1,12#0,14#0,17#1,1#1,13#0,15#0...another 2
+[age,18],idx:09,EID:...,0#0,3#1,^7#0,8#1,11#1,12#0,14#0,17#1,1#1,13#0,15#0,18#0...another 1
+[age,18],idx:10,EID:...,3#1,7#0,^8#1,11#1,12#0,14#0,17#1,1#1,13#0,15#0,18#0,nil
+[age,18],idx:11,EID:...,7#0,8#1,^11#1,12#0,14#0,17#1,1#1,13#0,15#0,18#0,nil
+[age,18],idx:12,EID:...,8#1,11#1,^12#0,14#0,17#1,1#1,13#0,15#0,18#0,nil
+[age,18],idx:13,EID:...,11#1,12#0,^14#0,17#1,1#1,13#0,15#0,18#0,nil
+[age,18],idx:14,EID:...,12#0,14#0,^17#1,1#1,13#0,15#0,18#0,nil
+[age,18],idx:15,EID:...,14#0,17#1,^1#1,13#0,15#0,18#0,nil
+[age,18],idx:16,EID:...,17#1,1#1,^13#0,15#0,18#0,nil
+[age,18],idx:17,EID:...,1#1,13#0,^15#0,18#0,nil
+[age,18],idx:18,EID:...,13#0,15#0,^18#0,nil
+[age,18],idx:19,EID:...,15#0,18#0,^nil
+============== Field Cursors ==============
+ [age,18],idx:10,EID:...,3#1,7#0,^8#1,11#1,12#0,14#0,17#1,1#1,13#0,15#0,18#0,nil
+>[age,25],idx:00,EID:^0#0,2#0,4#1,6#0,8#1,10#0,12#0,14#0,16#1,18#0...another 1
+
+--- PASS: TestEntriesCursor_DumpEntries (0.00s)
+=== RUN   TestDocIDCollector_Add
+mapcost: [1 60 447 4741]
+bitcost: [6 63 773 8372]
+--- PASS: TestDocIDCollector_Add (0.02s)
+=== RUN   TestRoaringIterator_SkipTo
+
+  test roaring iterator skip to [32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m
+
+[31m[0m[33m[0m[31m
+3904 total assertions[0m
+
+
+  test roaring iterator empty [32m✔[0m[32m✔[0m
+
+[31m[0m[33m[0m[31m
+3906 total assertions[0m
+
+--- PASS: TestRoaringIterator_SkipTo (0.00s)
+=== RUN   TestSegmentBuilderAndReader
+--- PASS: TestSegmentBuilderAndReader (0.00s)
+=== RUN   TestTermDictionary
+
+  Test TermDictionary 
+    Test TermDictionaryBuilder and DefaultTermDict [32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m
+
+[31m[0m[33m[0m[31m
+3919 total assertions[0m
+
+--- PASS: TestTermDictionary (0.00s)
+=== RUN   TestMemSegmentBuilder_Flush_Phase2
+
+  Test MemSegmentBuilder produces Phase 2 format [32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m[32m✔[0m
+
+[31m[0m[33m[0m[31m
+3925 total assertions[0m
+
+--- PASS: TestMemSegmentBuilder_Flush_Phase2 (0.00s)
+=== RUN   TestTwoPhaseCommit_DataConsistency
+
+  test two-phase commit ensures data consistency configure field:age, fieldID:0
+
+configure field:city, fieldID:1
+
+[32m✔[0m<age,[18]> fetch 1 posting list
+
+<city,[beijing]> fetch 1 posting list
+
+<age,[18]> nothing matched from entries holder
+
+<city,[beijing]> nothing matched from entries holder
+
+<age,[18]> nothing matched from entries holder
+
+<city,[beijing]> nothing matched from entries holder
+
+[32m✔[0m[32m✔[0m<age,[30]> fetch 1 posting list
+
+<city,[shanghai]> fetch 1 posting list
+
+<age,[30]> nothing matched from entries holder
+
+<city,[shanghai]> nothing matched from entries holder
+
+<city,[shanghai]> nothing matched from entries holder
+
+<age,[30]> nothing matched from entries holder
+
+[32m✔[0m[32m✔[0m<age,[35]> fetch 1 posting list
+
+<city,[guangzhou]> fetch 1 posting list
+
+<age,[35]> nothing matched from entries holder
+
+<city,[guangzhou]> nothing matched from entries holder
+
+<city,[guangzhou]> nothing matched from entries holder
+
+<age,[35]> nothing matched from entries holder
+
+[32m✔[0m[32m✔[0m
+
+[31m[0m[33m[0m[31m
+3932 total assertions[0m
+
+--- PASS: TestTwoPhaseCommit_DataConsistency (0.00s)
+=== RUN   TestTwoPhaseCommit_Atomicity
+
+  test two-phase commit atomicity - skip bad conjunction configure field:age, fieldID:0
+
+configure field:city, fieldID:1
+
+[32m✔[0m<age,[18]> fetch 1 posting list
+
+<city,[beijing]> fetch 1 posting list
+
+<city,[beijing]> nothing matched from entries holder
+
+<age,[18]> nothing matched from entries holder
+
+<age,[18]> nothing matched from entries holder
+
+<city,[beijing]> nothing matched from entries holder
+
+[32m✔[0m[32m✔[0m
+
+[31m[0m[33m[0m[31m
+3935 total assertions[0m
+
+--- PASS: TestTwoPhaseCommit_Atomicity (0.00s)
+FAIL
+FAIL	github.com/echoface/be_indexer	20.811s
+FAIL

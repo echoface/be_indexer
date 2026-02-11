@@ -1,4 +1,4 @@
-package be_indexer
+package core
 
 import (
 	"encoding/json"
@@ -8,7 +8,7 @@ import (
 )
 
 type (
-	BEField string
+	BEField = string
 
 	// ValueOpt value数值的描述符; 注意这里将其与最终的bool逻辑运算符区分开;
 	// 描述一个值: >5 代表了所有数值空间中[5, *)所有的值; 结合布尔描述
@@ -17,18 +17,18 @@ type (
 
 	Values interface{}
 
-	// BoolValues expression a bool logic like: (in) [15,16,17], (not in) [shanghai,yz]
+	// ValueExpr expression a bool logic like: (in) [15,16,17], (not in) [shanghai,yz]
 	// 默认opt: ValueOptEQ
 	// 包含: [5, *)  的布尔描述等同于 "排除: (-*, 5)"
-	BoolValues struct {
+	ValueExpr struct {
 		Incl     bool     `json:"inc"`                // include: true exclude: false
 		Value    Values   `json:"value"`              // values can be parser parse to id
 		Operator ValueOpt `json:"operator,omitempty"` // value对应数值空间的描述符, 默认: EQ
 	}
 
-	// BooleanExpr expression a bool logic like: age (in) [15,16,17], city (not in) [shanghai,yz]
-	BooleanExpr struct {
-		BoolValues
+	// Predicate expression a bool logic like: age (in) [15,16,17], city (not in) [shanghai,yz]
+	Predicate struct {
+		ValueExpr
 		Field BEField `json:"field"`
 	}
 
@@ -53,14 +53,14 @@ func (ass Assignments) Size() (size int) {
 	return size
 }
 
-func NewBoolExpr2(field BEField, expr BoolValues) *BooleanExpr {
-	return &BooleanExpr{expr, field}
+func NewPredicate2(field BEField, expr ValueExpr) *Predicate {
+	return &Predicate{expr, field}
 }
 
-func NewBoolExpr(field BEField, inc bool, v Values) *BooleanExpr {
-	expr := &BooleanExpr{
+func NewPredicate(field BEField, inc bool, v Values) *Predicate {
+	expr := &Predicate{
 		Field: field,
-		BoolValues: BoolValues{
+		ValueExpr: ValueExpr{
 			Value: v,
 			Incl:  inc,
 		},
@@ -84,34 +84,34 @@ func NewStrValues(v string, ss ...string) Values {
 	return append([]string{v}, ss...)
 }
 
-func NewGTBoolValue(value int64) BoolValues {
-	return NewBoolValue(ValueOptGT, value, true)
+func NewGTValueExpr(value int64) ValueExpr {
+	return NewValueExpr(ValueOptGT, value, true)
 }
 
-func NewLTBoolValue(value int64) BoolValues {
-	return NewBoolValue(ValueOptLT, value, true)
+func NewLTValueExpr(value int64) ValueExpr {
+	return NewValueExpr(ValueOptLT, value, true)
 }
 
-func NewBoolValue(op ValueOpt, value Values, incl bool) BoolValues {
-	return BoolValues{
+func NewValueExpr(op ValueOpt, value Values, incl bool) ValueExpr {
+	return ValueExpr{
 		Operator: op,
 		Incl:     incl,
 		Value:    value,
 	}
 }
 
-func (v *BoolValues) booleanToken() string {
+func (v *ValueExpr) BooleanToken() string {
 	if v.Incl {
 		return "in"
 	}
 	return "not"
 }
 
-func (v *BoolValues) String() string {
-	return fmt.Sprintf("%s %s%v", v.booleanToken(), v.operatorName(), v.Value)
+func (v *ValueExpr) String() string {
+	return fmt.Sprintf("%s %s%v", v.BooleanToken(), v.OperatorName(), v.Value)
 }
 
-func (v *BoolValues) operatorName() string {
+func (v *ValueExpr) OperatorName() string {
 	switch v.Operator {
 	case ValueOptGT:
 		return ">"
@@ -125,7 +125,7 @@ func (v *BoolValues) operatorName() string {
 	return ""
 }
 
-func (v *BoolValues) JSONString() string {
+func (v *ValueExpr) JSONString() string {
 	data, _ := json.Marshal(v)
 	return string(data)
 }

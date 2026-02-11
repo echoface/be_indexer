@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/echoface/be_indexer/core"
 	"bufio"
 	"fmt"
 	"io"
@@ -9,12 +10,11 @@ import (
 	"os"
 	"strings"
 
-	"github.com/echoface/be_indexer"
 	"github.com/echoface/be_indexer/util"
 )
 
 type (
-	docBuilder func(doc *be_indexer.Document)
+	docBuilder func(doc *core.Document)
 )
 
 func createTestIndexer(data *benchmarkContext, docFn docBuilder) {
@@ -40,7 +40,7 @@ func createTestIndexer(data *benchmarkContext, docFn docBuilder) {
 
 	fmt.Println("start create test document .........")
 	for i := 1; i <= data.docCount; i++ {
-		doc := be_indexer.NewDocument(be_indexer.DocID(i))
+		doc := core.NewDocument(core.DocID(i))
 		rn := rand.Intn(100)
 
 		if rn < 50 { // keywords
@@ -49,14 +49,14 @@ func createTestIndexer(data *benchmarkContext, docFn docBuilder) {
 
 			field := fmt.Sprintf("ac_%d", rand.Intn(data.acFieldCnt))
 			values := keywords[start : wordsCnt+start]
-			doc.AddConjunction(be_indexer.NewConjunction().AddExpression3(field, rn < 25, values))
+			doc.AddConjunction(core.NewConjunction().AddPredicate3(field, rn < 25, values))
 		} else { // number
 			wordsCnt := rand.Intn(99) + 1
 			start := rand.Intn(numCnt - wordsCnt)
 
 			field := fmt.Sprintf("number_%d", rand.Intn(data.numFieldCnt))
 			values := numbers[start : wordsCnt+start]
-			doc.AddConjunction(be_indexer.NewConjunction().AddExpression3(field, rn > 75, values))
+			doc.AddConjunction(core.NewConjunction().AddPredicate3(field, rn > 75, values))
 		}
 
 		docFn(doc)
@@ -64,7 +64,7 @@ func createTestIndexer(data *benchmarkContext, docFn docBuilder) {
 
 	fmt.Println("start build query assigns .........")
 	for i := 0; i < data.queryCnt; i++ {
-		q := be_indexer.Assignments{}
+		q := core.Assignments{}
 		for n := 0; n < data.numFieldCnt; n++ {
 			cnt := rand.Intn(2)
 			if cnt == 0 {
@@ -74,7 +74,7 @@ func createTestIndexer(data *benchmarkContext, docFn docBuilder) {
 			end := start + cnt
 
 			fieldName := fmt.Sprintf("number_%d", n)
-			q[be_indexer.BEField(fieldName)] = numbers[start:end]
+			q[core.BEField(fieldName)] = numbers[start:end]
 		}
 		for k := 0; k < data.acFieldCnt; k++ {
 			cnt := rand.Intn(2)
@@ -86,7 +86,7 @@ func createTestIndexer(data *benchmarkContext, docFn docBuilder) {
 			fieldName := fmt.Sprintf("ac_%d", k)
 			queryStr := strings.Join(keywords[start:end], "")
 
-			q[be_indexer.BEField(fieldName)] = be_indexer.NewStrValues(queryStr)
+			q[core.BEField(fieldName)] = core.NewStrValues(queryStr)
 		}
 
 		data.queries = append(data.queries, q)

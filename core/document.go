@@ -1,4 +1,4 @@
-package be_indexer
+package core
 
 import (
 	"encoding/json"
@@ -11,7 +11,7 @@ type (
 	DocIDList []DocID
 
 	Conjunction struct { // 每个conjunction 内的field 逻辑为且， 参考DNF定义
-		Expressions map[BEField][]*BoolValues `json:"exprs"` // 同一个Conj内不允许重复的Field
+		Predicates map[BEField][]*ValueExpr `json:"predicates"` // 同一个Conj内不允许重复的Field
 	}
 
 	Document struct {
@@ -95,72 +95,72 @@ func (doc *Document) String() string {
 
 func NewConjunction() *Conjunction {
 	return &Conjunction{
-		Expressions: make(map[BEField][]*BoolValues),
+		Predicates: make(map[BEField][]*ValueExpr),
 	}
 }
 
 // In any value in values is a **true** expression
 func (conj *Conjunction) In(field BEField, values Values) *Conjunction {
-	conj.addExpression(field, NewBoolValue(ValueOptEQ, values, true))
+	conj.addPredicate(field, NewValueExpr(ValueOptEQ, values, true))
 	return conj
 }
 
 // NotIn any value in values is a **false** expression
 func (conj *Conjunction) NotIn(field BEField, values Values) *Conjunction {
-	conj.addExpression(field, NewBoolValue(ValueOptEQ, values, false))
+	conj.addPredicate(field, NewValueExpr(ValueOptEQ, values, false))
 	return conj
 }
 
 func (conj *Conjunction) Include(field BEField, values Values) *Conjunction {
-	conj.addExpression(field, NewBoolValue(ValueOptEQ, values, true))
+	conj.addPredicate(field, NewValueExpr(ValueOptEQ, values, true))
 	return conj
 }
 
 func (conj *Conjunction) Exclude(field BEField, values Values) *Conjunction {
-	conj.addExpression(field, NewBoolValue(ValueOptEQ, values, false))
+	conj.addPredicate(field, NewValueExpr(ValueOptEQ, values, false))
 	return conj
 }
 
 func (conj *Conjunction) GreaterThan(field BEField, value int64) *Conjunction {
-	conj.AddBoolExprs(&BooleanExpr{
+	conj.AddPredicates(&Predicate{
 		Field:      field,
-		BoolValues: NewGTBoolValue(value),
+		ValueExpr: NewGTValueExpr(value),
 	})
 	return conj
 }
 
 func (conj *Conjunction) LessThan(field BEField, value int64) *Conjunction {
-	conj.AddBoolExprs(&BooleanExpr{
+	conj.AddPredicates(&Predicate{
 		Field:      field,
-		BoolValues: NewLTBoolValue(value),
+		ValueExpr: NewLTValueExpr(value),
 	})
 	return conj
 }
 
 func (conj *Conjunction) Between(field BEField, l, h int64) *Conjunction {
-	conj.AddBoolExprs(&BooleanExpr{
+	conj.AddPredicates(&Predicate{
 		Field:      field,
-		BoolValues: NewBoolValue(ValueOptBetween, []int64{l, h}, true),
+		ValueExpr: NewValueExpr(ValueOptBetween, []int64{l, h}, true),
 	})
 	return conj
 }
 
-// AddBoolExprs append boolean expression,
+// AddPredicates append boolean expression,
 // don't allow same field added twice in one conjunction
-func (conj *Conjunction) AddBoolExprs(exprs ...*BooleanExpr) *Conjunction {
+func (conj *Conjunction) AddPredicates(exprs ...*Predicate) *Conjunction {
 	for _, expr := range exprs {
-		conj.addExpression(expr.Field, expr.BoolValues)
+		conj.addPredicate(expr.Field, expr.ValueExpr)
 	}
 	return conj
 }
 
-func (conj *Conjunction) AddExpression3(field string, include bool, values Values) *Conjunction {
-	conj.addExpression(BEField(field), NewBoolValue(ValueOptEQ, values, include))
+func (conj *Conjunction) AddPredicate3(field string, include bool, values Values) *Conjunction {
+	conj.addPredicate(BEField(field), NewValueExpr(ValueOptEQ, values, include))
 	return conj
 }
 
-func (conj *Conjunction) addExpression(field BEField, boolValues BoolValues) {
-	conj.Expressions[field] = append(conj.Expressions[field], &boolValues)
+func (conj *Conjunction) addPredicate(field BEField, boolValues ValueExpr) {
+	conj.Predicates[field] = append(conj.Predicates[field], &boolValues)
 }
 
 func (conj *Conjunction) JSONString() string {
@@ -171,8 +171,8 @@ func (conj *Conjunction) JSONString() string {
 func (conj *Conjunction) String() string {
 	strBuilder := strings.Builder{}
 	strBuilder.WriteString("{")
-	cnt := len(conj.Expressions)
-	for field, exprs := range conj.Expressions {
+	cnt := len(conj.Predicates)
+	for field, exprs := range conj.Predicates {
 		strBuilder.WriteString(fmt.Sprintf("%s (", field))
 		for i, expr := range exprs {
 			if i != 0 {
@@ -192,7 +192,7 @@ func (conj *Conjunction) String() string {
 }
 
 func (conj *Conjunction) CalcConjSize() (size int) {
-	for _, bvs := range conj.Expressions {
+	for _, bvs := range conj.Predicates {
 	EXPR:
 		for _, expr := range bvs {
 			if expr.Incl {
@@ -204,6 +204,6 @@ func (conj *Conjunction) CalcConjSize() (size int) {
 	return size
 }
 
-func (conj *Conjunction) ExpressionCount() (size int) {
-	return len(conj.Expressions)
+func (conj *Conjunction) PredicateCount() (size int) {
+	return len(conj.Predicates)
 }

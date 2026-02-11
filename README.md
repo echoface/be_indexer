@@ -106,6 +106,22 @@ Conjunction因提供的值不能被Parser/Holder 正确的解析成所需要的�
 文档不被索引到; 可以通过`WithBadConjBehavior(Panic)` 指定具体的行为`ERR(default), Skip, Panic`
 暴露此类问题或者检测对应的日志;
 
+## 术语表 (Glossary)
+
+为了与 VLDB 09 论文《Indexing Boolean Expressions》保持一致，本项目采用以下术语：
+
+| 论文 (VLDB 09) 术语 | 代码实现 (Go Struct/Type) | 说明 |
+| :--- | :--- | :--- |
+| **Boolean Expression** | **`Document`** | 用户提交的一个完整的布尔规则 (DNF)，包含多个 Conjunction (OR 关系)。 |
+| **Conjunction** | **`Conjunction`** | DNF 中的一个子句，由多个 Predicate 组成 (AND 关系)。 |
+| **Predicate** | **`Predicate`** | 单个逻辑条件，由字段 (Field) 和值表达式 (ValueExpr) 组成。例如 `age > 18`。 |
+| **-** | **`ValueExpr`** | 描述 Predicate 中的具体约束，包含值 (Value)、操作符 (Operator) 和包含/排除逻辑 (Incl/Excl)。 |
+| **Assignment** | **`Assignments`** | 查询时输入的属性值集合，例如 `{age: 20, city: "bj"}`。 |
+| **K** (Size) | **`Size` / `K`** | 一个 Conjunction 中包含的 Predicate 数量。用于索引分层。 |
+| **K-Index** | **`KGroupsBEIndex`** | 按照 K 值分组存储的倒排索引结构。 |
+| **Entry ID** | **`EntryID`** | 唯一标识一个 Conjunction 的 ID。包含 `DocID`、`Size`、`Index` 等信息。 |
+| **Posting List** | **`EntriesHolder`** | 倒排链，存储满足特定 Predicate 的所有 EntryID。 |
+
 ### 增量索引构建 (推荐用于广告/规则引擎场景)
 
 对于数据更新频繁但变更比例低的场景（如广告定向），推荐使用增量索引构建：

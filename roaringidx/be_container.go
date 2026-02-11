@@ -1,7 +1,7 @@
 package roaringidx
 
 import (
-	"github.com/echoface/be_indexer"
+	"github.com/echoface/be_indexer/core"
 	"github.com/echoface/be_indexer/util"
 )
 
@@ -11,13 +11,13 @@ type (
 
 		AddWildcard(id ConjunctionID)
 
-		Retrieve(values be_indexer.Values, inout *PostingList) error
+		Retrieve(values core.Values, inout *PostingList) error
 	}
 
 	BEContainerBuilder interface {
 		EncodeWildcard(id ConjunctionID) // equal to: EncodeExpr(id ConjunctionID, nil)
 
-		EncodeExpr(id ConjunctionID, expr *be_indexer.BooleanExpr) error
+		EncodeExpr(id ConjunctionID, expr *core.Predicate) error
 
 		BuildBEContainer() (BEContainer, error)
 	}
@@ -72,7 +72,7 @@ func (c *DefaultBEContainer) AddExclude(value BEValue, id ConjunctionID) {
 	// c.AddWildcard(id)
 }
 
-func (c *DefaultBEContainer) Retrieve(values be_indexer.Values, inout *PostingList) error {
+func (c *DefaultBEContainer) Retrieve(values core.Values, inout *PostingList) error {
 	inout.Or(c.wc.Bitmap)
 
 	if util.NilInterface(values) {
@@ -100,12 +100,12 @@ func (c *DefaultBEContainer) EncodeWildcard(id ConjunctionID) {
 	c.AddWildcard(id)
 }
 
-func (c *DefaultBEContainer) EncodeExpr(id ConjunctionID, expr *be_indexer.BooleanExpr) error {
+func (c *DefaultBEContainer) EncodeExpr(id ConjunctionID, expr *core.Predicate) error {
 	if expr == nil {
 		return nil
 		// c.EncodeWildcard(id)
 	}
-	util.PanicIf(expr.Operator != be_indexer.ValueOptEQ, "default container support EQ operator only")
+	util.PanicIf(expr.Operator != core.ValueOptEQ, "default container support EQ operator only")
 
 	valueIDs, err := c.meta.Parser.ParseValue(expr.Value)
 	if err != nil {

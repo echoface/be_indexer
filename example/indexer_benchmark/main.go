@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/echoface/be_indexer/core"
 	"flag"
 	"fmt"
 	"log"
@@ -22,7 +23,7 @@ type (
 		numFieldCnt int
 		docCount    int
 		queryCnt    int
-		queries     []be_indexer.Assignments
+		queries     []core.Assignments
 	}
 )
 
@@ -82,7 +83,7 @@ func (ctx *benchmarkContext) RunRoaringBench() {
 			Container: "ac_matcher",
 		})
 	}
-	createTestIndexer(ctx, func(doc *be_indexer.Document) {
+	createTestIndexer(ctx, func(doc *core.Document) {
 		_ = builder.AddDocument(doc)
 	})
 
@@ -110,29 +111,27 @@ func (ctx *benchmarkContext) RunRoaringBench() {
 }
 
 func (ctx *benchmarkContext) RunKGroupIndexBench() {
-	be_indexer.RegisterEntriesHolder(be_indexer.HolderNameDefault, func() be_indexer.EntriesHolder {
-		return be_indexer.NewDefaultEntriesHolder()
-	})
 	builder := be_indexer.NewIndexerBuilder()
 	for i := 0; i < ctx.numFieldCnt; i++ {
 		fieldName := fmt.Sprintf("number_%d", i)
-		builder.ConfigField(be_indexer.BEField(fieldName), be_indexer.FieldOption{
+		builder.ConfigField(core.BEField(fieldName), core.FieldOption{
 			Container: be_indexer.HolderNameDefault,
 		})
 	}
 	for i := 0; i < ctx.acFieldCnt; i++ {
 		fieldName := fmt.Sprintf("ac_%d", i)
-		builder.ConfigField(be_indexer.BEField(fieldName), be_indexer.FieldOption{
+		builder.ConfigField(core.BEField(fieldName), core.FieldOption{
 			Container: be_indexer.HolderNameACMatcher,
 		})
 	}
 	var err error
-	createTestIndexer(ctx, func(doc *be_indexer.Document) {
+	createTestIndexer(ctx, func(doc *core.Document) {
 		err = builder.AddDocument(doc)
 		util.PanicIfErr(err, "kgroup indexer resolve doc fail")
 	})
 
-	indexer := builder.BuildIndex()
+	indexer, err := builder.BuildIndex()
+	util.PanicIfErr(err, "build kgroup index fail")
 	be_indexer.PrintIndexInfo(indexer)
 
 	util.PanicIf(len(ctx.queries) != ctx.queryCnt, "query cnt not match")
@@ -152,31 +151,28 @@ func (ctx *benchmarkContext) RunKGroupIndexBench() {
 }
 
 func (ctx *benchmarkContext) RunCompactIndexBench() {
-	be_indexer.RegisterEntriesHolder(be_indexer.HolderNameDefault, func() be_indexer.EntriesHolder {
-		return be_indexer.NewDefaultEntriesHolder()
-	})
-
 	builder := be_indexer.NewCompactIndexerBuilder()
 
 	for i := 0; i < ctx.numFieldCnt; i++ {
 		fieldName := fmt.Sprintf("number_%d", i)
-		builder.ConfigField(be_indexer.BEField(fieldName), be_indexer.FieldOption{
+		builder.ConfigField(core.BEField(fieldName), core.FieldOption{
 			Container: be_indexer.HolderNameDefault,
 		})
 	}
 	for i := 0; i < ctx.acFieldCnt; i++ {
 		fieldName := fmt.Sprintf("ac_%d", i)
-		builder.ConfigField(be_indexer.BEField(fieldName), be_indexer.FieldOption{
+		builder.ConfigField(core.BEField(fieldName), core.FieldOption{
 			Container: be_indexer.HolderNameACMatcher,
 		})
 	}
 	var err error
-	createTestIndexer(ctx, func(doc *be_indexer.Document) {
+	createTestIndexer(ctx, func(doc *core.Document) {
 		err = builder.AddDocument(doc)
 		util.PanicIfErr(err, "kgroup indexer resolve doc fail")
 	})
 
-	indexer := builder.BuildIndex()
+	indexer, err := builder.BuildIndex()
+	util.PanicIfErr(err, "build compact index fail")
 	util.PanicIf(len(ctx.queries) != ctx.queryCnt, "query cnt not match")
 	runtime.GC()
 	be_indexer.PrintIndexInfo(indexer)

@@ -1,7 +1,7 @@
 package roaringidx
 
 import (
-	"github.com/echoface/be_indexer"
+	"github.com/echoface/be_indexer/core"
 	"github.com/echoface/be_indexer/parser"
 )
 
@@ -15,18 +15,18 @@ type (
 	FieldMeta struct {
 		FieldSetting
 
-		field be_indexer.BEField
+		field core.BEField
 	}
 
 	IvtBEIndexer struct {
 		docMaxConjSize int
-		data           map[be_indexer.BEField]BEContainer
+		data           map[core.BEField]BEContainer
 	}
 )
 
 func NewIvtBEIndexer() *IvtBEIndexer {
 	return &IvtBEIndexer{
-		data: make(map[be_indexer.BEField]BEContainer),
+		data: make(map[core.BEField]BEContainer),
 	}
 }
 

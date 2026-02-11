@@ -1,10 +1,10 @@
 package be_indexer
 
 import (
+	"github.com/echoface/be_indexer/core"
 	"fmt"
 	"math/rand"
 	"sort"
-	"strings"
 	"testing"
 	"time"
 
@@ -17,20 +17,22 @@ func TestEntriesCursor_SkipTo(t *testing.T) {
 
 	convey.Convey("test skip to", t, func() {
 		scg := NewFieldCursor(
-			NewEntriesCursor(NewQKey("", nil), []EntryID{17, 32, 37}),
-			NewEntriesCursor(NewQKey("", nil), []EntryID{17, 33}),
-			NewEntriesCursor(NewQKey("", nil), []EntryID{19, 60}),
-			NewEntriesCursor(NewQKey("", nil), []EntryID{53, 54}),
+			NewSliceIterator(NewTerm("", nil), []core.EntryID{17, 32, 37}),
+			NewSliceIterator(NewTerm("", nil), []core.EntryID{17, 33}),
+			NewSliceIterator(NewTerm("", nil), []core.EntryID{19, 60}),
+			NewSliceIterator(NewTerm("", nil), []core.EntryID{53, 54}),
 		)
 		scg.SkipTo(19)
-		convey.So(scg.current, convey.ShouldEqual, &scg.cursorGroup[2])
+		convey.So(scg.current, convey.ShouldEqual, scg.cursorGroup[2])
 		convey.So(scg.GetCurEntryID(), convey.ShouldEqual, 19)
-		convey.So(scg.current.cursor, convey.ShouldEqual, 0)
+		cur, ok := scg.current.(*SliceIterator)
+		convey.So(ok, convey.ShouldBeTrue)
+		convey.So(cur.cursor, convey.ShouldEqual, 0)
 	})
 
 	convey.Convey("skipto test", t, func() {
-		entries := []EntryID{1, 2, 3, 10, 10, 10, 11, 12, 15, 15, 22, 111, 111}
-		scanner := NewEntriesCursor(NewQKey("age", 2), entries)
+		entries := []core.EntryID{1, 2, 3, 10, 10, 10, 11, 12, 15, 15, 22, 111, 111}
+		scanner := NewSliceIterator(NewTerm("age", 2), entries)
 		convey.So(scanner.SkipTo(0), convey.ShouldEqual, 1)
 		convey.So(scanner.cursor, convey.ShouldEqual, 0)
 		convey.So(scanner.curEID, convey.ShouldEqual, 1)
@@ -51,47 +53,49 @@ func TestEntriesCursor_SkipTo(t *testing.T) {
 
 		convey.So(scanner.SkipTo(111), convey.ShouldEqual, 111)
 		convey.So(scanner.cursor, convey.ShouldEqual, len(scanner.entries)-2)
-		convey.So(scanner.SkipTo(1000), convey.ShouldEqual, NULLENTRY)
+		convey.So(scanner.SkipTo(1000), convey.ShouldEqual, core.NULLENTRY)
 
-		scanner = NewEntriesCursor(NewQKey("age", 2), entries)
+		scanner = NewSliceIterator(NewTerm("age", 2), entries)
 		convey.So(scanner.SkipTo(22), convey.ShouldEqual, 22)
 		convey.So(scanner.cursor, convey.ShouldEqual, len(scanner.entries)-3)
 
-		scanner = NewEntriesCursor(NewQKey("age", 2), entries)
+		scanner = NewSliceIterator(NewTerm("age", 2), entries)
 		convey.So(scanner.SkipTo(23), convey.ShouldEqual, 111)
 		convey.So(scanner.SkipTo(23), convey.ShouldEqual, 111)
 		convey.So(scanner.cursor, convey.ShouldEqual, len(scanner.entries)-2)
 	})
 	convey.Convey("test SkipTo with only one element", t, func() {
 		scg := NewFieldCursor(
-			NewEntriesCursor(NewQKey("age", 0), []EntryID{28}),
-			NewEntriesCursor(NewQKey("age", 10), []EntryID{28, 29}),
+			NewSliceIterator(NewTerm("age", 0), []core.EntryID{28}),
+			NewSliceIterator(NewTerm("age", 10), []core.EntryID{28, 29}),
 		)
-		fmt.Println("scg:", scg.cursorGroup[0], scg.cursorGroup[1], *scg.current)
+		fmt.Println("scg:", scg.cursorGroup[0], scg.cursorGroup[1], scg.current)
 		scg.SkipTo(32)
-		fmt.Println("scg:", scg.cursorGroup[0], scg.cursorGroup[1], *scg.current)
+		fmt.Println("scg:", scg.cursorGroup[0], scg.cursorGroup[1], scg.current)
 		convey.So(scg.ReachEnd(), convey.ShouldBeTrue)
-		convey.So(scg.GetCurEntryID(), convey.ShouldEqual, NULLENTRY)
+		convey.So(scg.GetCurEntryID(), convey.ShouldEqual, core.NULLENTRY)
 		for _, cs := range scg.cursorGroup {
-			convey.So(cs.curEID, convey.ShouldEqual, NULLENTRY)
+			raw, ok := cs.(*SliceIterator)
+			convey.So(ok, convey.ShouldBeTrue)
+			convey.So(raw.curEID, convey.ShouldEqual, core.NULLENTRY)
 		}
 	})
 
 	convey.Convey("rand test verify", t, func() {
-		var entries Entries
+		var entries core.Entries
 		for i := 0; i < 10000; i++ {
-			entries = append(entries, EntryID(rand.Int63n(7000)))
+			entries = append(entries, core.EntryID(rand.Int63n(7000)))
 		}
 		sort.Sort(entries)
 		for i := 0; i < 1000; i++ {
-			scanner := NewEntriesCursor(NewQKey("ut", 0), entries)
+			scanner := NewSliceIterator(NewTerm("ut", 0), entries)
 
-			randV := EntryID(rand.Int63n(20000))
+			randV := core.EntryID(rand.Int63n(20000))
 
 			result := scanner.SkipTo(randV)
 			if randV > entries[len(entries)-1] {
-				convey.So(result, convey.ShouldEqual, NULLENTRY)
-				convey.So(scanner.curEID, convey.ShouldEqual, NULLENTRY)
+				convey.So(result, convey.ShouldEqual, core.NULLENTRY)
+				convey.So(scanner.curEID, convey.ShouldEqual, core.NULLENTRY)
 				convey.So(scanner.cursor, convey.ShouldBeGreaterThanOrEqualTo, len(entries))
 			} else { // <= last value
 				convey.So(entries[scanner.cursor] >= randV, convey.ShouldBeTrue)
@@ -101,43 +105,6 @@ func TestEntriesCursor_SkipTo(t *testing.T) {
 			}
 		}
 	})
-}
-
-func TestEntriesCursor_DumpEntries(t *testing.T) {
-	cursor := NewEntriesCursor(NewQKey("age", 18), nil)
-	cursor2 := NewEntriesCursor(NewQKey("age", 25), nil)
-	testIDCnt := 20
-	for i := 0; i < testIDCnt-1; i++ {
-		conjID := NewConjID(DocID(i), rand.Intn(3), 3)
-		cursor.entries = append(cursor.entries, NewEntryID(conjID, rand.Intn(10) < 5))
-		if i%2 == 0 {
-			cursor2.entries = append(cursor2.entries, NewEntryID(conjID, rand.Intn(10) < 5))
-		}
-	}
-	cursor.entries = append(cursor.entries, NULLENTRY)
-	cursor.idSize = len(cursor.entries)
-	cursor2.entries = append(cursor2.entries, NULLENTRY)
-	cursor2.idSize = len(cursor2.entries)
-
-	sort.Sort(cursor.entries)
-
-	for cur := 0; cur < testIDCnt; cur++ {
-		cursor.cursor = cur
-		sb := &strings.Builder{}
-		cursor.DumpEntries(sb)
-		fmt.Println(sb.String())
-	}
-
-	cursor.cursor = testIDCnt / 2
-	fc := &FieldCursor{
-		current:     &cursor2,
-		cursorGroup: EntriesCursors{cursor, cursor2},
-	}
-
-	sb := &strings.Builder{}
-	fc.DumpEntries(sb)
-
-	fmt.Println(sb.String())
 }
 
 func TestDocIDCollector_Add(t *testing.T) {
@@ -173,4 +140,43 @@ func TestDocIDCollector_Add(t *testing.T) {
 	}
 	fmt.Println("mapcost:", mapCost)
 	fmt.Println("bitcost:", bitCost)
+}
+
+func TestRoaringIterator_SkipTo(t *testing.T) {
+	convey.Convey("test roaring iterator skip to", t, func() {
+		bm := roaring64.New()
+		entries := []uint64{1, 2, 3, 10, 11, 12, 15, 22, 111}
+		for _, v := range entries {
+			bm.Add(v)
+		}
+
+		iter := NewRoaringIterator(NewTerm("age", 1), bm)
+
+		convey.So(iter.Current(), convey.ShouldEqual, 1)
+		
+		// Skip to existing
+		convey.So(iter.SkipTo(3), convey.ShouldEqual, 3)
+		convey.So(iter.Current(), convey.ShouldEqual, 3)
+
+		// Skip to non-existing (gap)
+		convey.So(iter.SkipTo(5), convey.ShouldEqual, 10)
+		convey.So(iter.Current(), convey.ShouldEqual, 10)
+
+		// Skip to same
+		convey.So(iter.SkipTo(10), convey.ShouldEqual, 10)
+
+		// Skip to far
+		convey.So(iter.SkipTo(100), convey.ShouldEqual, 111)
+
+		// Skip to end
+		convey.So(iter.SkipTo(200), convey.ShouldEqual, core.NULLENTRY)
+		convey.So(iter.Current(), convey.ShouldEqual, core.NULLENTRY)
+	})
+
+	convey.Convey("test roaring iterator empty", t, func() {
+		bm := roaring64.New()
+		iter := NewRoaringIterator(NewTerm("age", 1), bm)
+		convey.So(iter.Current(), convey.ShouldEqual, core.NULLENTRY)
+		convey.So(iter.SkipTo(10), convey.ShouldEqual, core.NULLENTRY)
+	})
 }

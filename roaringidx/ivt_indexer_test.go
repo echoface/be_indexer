@@ -1,11 +1,11 @@
 package roaringidx
 
 import (
+	"github.com/echoface/be_indexer/core"
 	"testing"
 
 	"github.com/echoface/be_indexer/parser"
 
-	"github.com/echoface/be_indexer"
 	"github.com/smartystreets/goconvey/convey"
 )
 
@@ -50,27 +50,27 @@ func TestIvtBEIndexer_AddDocument(t *testing.T) {
 			Parser:    parser.NewStrHashParser(),
 		})
 
-		doc1 := be_indexer.NewDocument(1)
-		doc1.AddConjunction(be_indexer.NewConjunction().
-			Include("ad_id", be_indexer.NewIntValues(100, 101, 108)).
-			Include("package", be_indexer.NewStrValues("com.echoface.be")))
-		doc1.AddConjunction(be_indexer.NewConjunction().
-			Include("package", be_indexer.NewStrValues("com.echoface.x")))
+		doc1 := core.NewDocument(1)
+		doc1.AddConjunction(core.NewConjunction().
+			Include("ad_id", core.NewIntValues(100, 101, 108)).
+			Include("package", core.NewStrValues("com.echoface.be")))
+		doc1.AddConjunction(core.NewConjunction().
+			Include("package", core.NewStrValues("com.echoface.x")))
 
-		doc2 := be_indexer.NewDocument(5)
-		doc2.AddConjunction(be_indexer.NewConjunction().
-			Include("ad_id", be_indexer.NewIntValues(100, 101, 108)).
-			Include("package", be_indexer.NewStrValues("com.echoface.be")))
-		doc2.AddConjunction(be_indexer.NewConjunction().
-			Exclude("package", be_indexer.NewStrValues("com.echoface.not")))
+		doc2 := core.NewDocument(5)
+		doc2.AddConjunction(core.NewConjunction().
+			Include("ad_id", core.NewIntValues(100, 101, 108)).
+			Include("package", core.NewStrValues("com.echoface.be")))
+		doc2.AddConjunction(core.NewConjunction().
+			Exclude("package", core.NewStrValues("com.echoface.not")))
 
-		doc3 := be_indexer.NewDocument(20)
-		doc3.AddConjunctions(be_indexer.NewConjunction())
+		doc3 := core.NewDocument(20)
+		doc3.AddConjunctions(core.NewConjunction())
 
-		doc4 := be_indexer.NewDocument(50)
-		doc4.AddConjunction(be_indexer.NewConjunction().
-			Exclude("ad_id", be_indexer.NewIntValues(100, 108)).
-			Include("package", be_indexer.NewStrValues("com.echoface.be")))
+		doc4 := core.NewDocument(50)
+		doc4.AddConjunction(core.NewConjunction().
+			Exclude("ad_id", core.NewIntValues(100, 108)).
+			Include("package", core.NewStrValues("com.echoface.be")))
 
 		err := builder.AddDocuments(doc1, doc2, doc3, doc4)
 		convey.So(err, convey.ShouldBeNil)

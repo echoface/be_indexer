@@ -2,12 +2,13 @@ package main
 
 import (
 	"github.com/echoface/be_indexer"
+	"github.com/echoface/be_indexer/core"
 	"github.com/echoface/be_indexer/parser"
 	"github.com/echoface/be_indexer/util"
 )
 
 func main() {
-	be_indexer.RegisterEntriesHolder(be_indexer.HolderNameDefault, func() be_indexer.EntriesHolder {
+	be_indexer.RegisterFieldBuilder(core.HolderNameDefault, func() core.FieldIndexBuilder {
 		holder := be_indexer.NewDefaultEntriesHolder()
 		holder.RegisterFieldTokenizer("tag", parser.NewNumberParser())
 		holder.RegisterFieldTokenizer("geo", parser.NewGeoHashParser(nil))
@@ -15,41 +16,41 @@ func main() {
 	})
 
 	// tag in (1,5) && geo in (经纬度半径一公里内) && kws != "adult av")
-	conj := be_indexer.NewConjunction().
+	conj := core.NewConjunction().
 		In("tag", []int64{1, 5}).
 		NotIn("kws", []string{"adult"}).
 		In("geo", "31.21275902:121.53779984:1000")
-	doc := be_indexer.NewDocument(1)
+	doc := core.NewDocument(1)
 	doc.AddConjunction(conj)
 
 	b := be_indexer.NewCompactIndexerBuilder()
 	err := b.AddDocument(doc)
 	util.PanicIfErr(err, "add doc fail:%v", err)
 
-	index := b.BuildIndex()
+	index, err := b.BuildIndex()
+	util.PanicIfErr(err, "build index fail")
 
 	be_indexer.PrintIndexInfo(index)
-	be_indexer.PrintIndexEntries(index)
 
-	results, err := index.Retrieve(map[be_indexer.BEField]be_indexer.Values{
+	results, err := index.Retrieve(map[core.BEField]core.Values{
 		"tag": 1000,
 		"geo": [2]float64{31.21275902, 121.53779984},
-	}, be_indexer.WithStepDetail(), be_indexer.WithDumpEntries())
+	}, be_indexer.WithStepDetail())
 	util.PanicIfErr(err, "failed retrieve")
 	util.PanicIf(results.Len() > 0, "need empty result") // tag:1000 不满足
 
-	results, err = index.Retrieve(map[be_indexer.BEField]be_indexer.Values{
+	results, err = index.Retrieve(map[core.BEField]core.Values{
 		"tag": 100,
 		"kws": "adult",
 		"geo": [2]float64{31.21275902, 121.53779984},
-	}, be_indexer.WithStepDetail(), be_indexer.WithDumpEntries())
+	}, be_indexer.WithStepDetail())
 	util.PanicIfErr(err, "failed retrieve")
 	util.PanicIf(results.Len() > 0, "need empty result") // kws:adult 不满足
 
-	results, err = index.Retrieve(map[be_indexer.BEField]be_indexer.Values{
+	results, err = index.Retrieve(map[core.BEField]core.Values{
 		"tag": 1,
 		"geo": [2]float64{31.21275902, 121.53779984},
-	}, be_indexer.WithStepDetail(), be_indexer.WithDumpEntries())
+	}, be_indexer.WithStepDetail())
 	util.PanicIfErr(err, "failed retrieve")
 	util.PanicIf(!results.Contain(1), "need has result:1") // 满足
 }

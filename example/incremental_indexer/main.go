@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/echoface/be_indexer/core"
 	"fmt"
 	"time"
 
@@ -55,17 +56,17 @@ func main() {
 	builder1 := be_indexer.NewIndexerBuilder(
 		be_indexer.WithDocLevelCache(cache),
 	)
-	builder1.ConfigField("age", be_indexer.FieldOption{
-		Container: be_indexer.HolderNameDefault,
+	builder1.ConfigField("age", core.FieldOption{
+		Container: core.HolderNameDefault,
 	})
-	builder1.ConfigField("city", be_indexer.FieldOption{
-		Container: be_indexer.HolderNameDefault,
+	builder1.ConfigField("city", core.FieldOption{
+		Container: core.HolderNameDefault,
 	})
 
 	for _, ad := range ads {
-		doc := be_indexer.NewDocument(be_indexer.DocID(ad.ID))
+		doc := core.NewDocument(core.DocID(ad.ID))
 		doc.Version = uint64(ad.UpdateTime.Unix()) // 使用时间戳作为版本
-		doc.AddConjunction(be_indexer.NewConjunction().
+		doc.AddConjunction(core.NewConjunction().
 			In("age", ad.TargetAge).
 			In("city", ad.TargetCity))
 
@@ -74,48 +75,54 @@ func main() {
 			continue
 		}
 	}
-
-	index1 := builder1.BuildIndex()
+	
+	index1, err := builder1.BuildIndex()
+	if err != nil {
+		panic(err)
+	}
 	fmt.Printf("第一次构建耗时: %v\n", time.Since(start))
 	fmt.Printf("缓存条目数: %d\n", len(cache.data))
-
+	
 	// 模拟增量更新：只有 ad 2 发生变化
 	fmt.Println("\n=== 第二次构建（增量） ===")
 	ads[1].UpdateTime = time.Now() // 更新 ad 2 的时间戳
 	// ad 1 和 ad 3 保持不变
-
+	
 	start = time.Now()
-
+	
 	builder2 := be_indexer.NewIndexerBuilder(
 		be_indexer.WithDocLevelCache(cache),
 	)
-	builder2.ConfigField("age", be_indexer.FieldOption{
-		Container: be_indexer.HolderNameDefault,
+	builder2.ConfigField("age", core.FieldOption{
+		Container: core.HolderNameDefault,
 	})
-	builder2.ConfigField("city", be_indexer.FieldOption{
-		Container: be_indexer.HolderNameDefault,
+	builder2.ConfigField("city", core.FieldOption{
+		Container: core.HolderNameDefault,
 	})
-
+	
 	for _, ad := range ads {
-		doc := be_indexer.NewDocument(be_indexer.DocID(ad.ID))
+		doc := core.NewDocument(core.DocID(ad.ID))
 		doc.Version = uint64(ad.UpdateTime.Unix())
-		doc.AddConjunction(be_indexer.NewConjunction().
+		doc.AddConjunction(core.NewConjunction().
 			In("age", ad.TargetAge).
 			In("city", ad.TargetCity))
-
+		
 		if err := builder2.AddDocument(doc); err != nil {
 			fmt.Printf("add document failed: %v\n", err)
 			continue
 		}
 	}
-
-	index2 := builder2.BuildIndex()
+	
+	index2, err := builder2.BuildIndex()
+	if err != nil {
+		panic(err)
+	}
 	fmt.Printf("第二次构建耗时: %v\n", time.Since(start))
 	fmt.Printf("缓存条目数: %d\n", len(cache.data))
 
 	// 验证检索结果一致性
 	fmt.Println("\n=== 验证检索结果 ===")
-	queries := []be_indexer.Assignments{
+	queries := []core.Assignments{
 		{"age": []int{25}, "city": []string{"shanghai"}},
 		{"age": []int{18}, "city": []string{"beijing"}},
 		{"age": []int{30}},

@@ -717,44 +717,42 @@ import (
 )
 
 // 自定义前缀匹配容器
-type PrefixMatcherHolder struct {
+type PrefixMatcherBuilder struct {
     patterns map[string][]be_indexer.EntryID
 }
 
-func (h *PrefixMatcherHolder) Name() string {
-    return "prefix_matcher"
-}
-
-func (h *PrefixMatcherHolder) CreateHolder(desc *be_indexer.FieldDesc) be_indexer.EntriesHolder {
-    return &PrefixMatcherHolder{
-        patterns: make(map[string][]be_indexer.EntryID),
-    }
-}
-
-func (h *PrefixMatcherHolder) IndexingBETx(desc *be_indexer.FieldDesc, expr *be_indexer.BoolValues) (be_indexer.TxData, error) {
+func (h *PrefixMatcherBuilder) BuildFieldIndexingData(field *be_indexer.FieldDesc, bv *be_indexer.ValueExpr) (be_indexer.IndexingData, error) {
     // 实现索引逻辑
-    return be_indexer.TxData{}, nil
+    return nil, nil
 }
 
-func (h *PrefixMatcherHolder) DecodeTxData(data []byte) (be_indexer.TxData, error) {
+func (h *PrefixMatcherBuilder) DecodeFieldIndexingData(data []byte) (be_indexer.IndexingData, error) {
     // 实现解码逻辑
-    return be_indexer.TxData{}, nil
+    return nil, nil
 }
 
-func (h *PrefixMatcherHolder) Query(prefix string) []be_indexer.EntryID {
-    var results []be_indexer.EntryID
-    for pattern, entries := range h.patterns {
-        if strings.HasPrefix(pattern, prefix) {
-            results = append(results, entries...)
-        }
-    }
-    return results
+func (h *PrefixMatcherBuilder) CommitFieldIndexingData(tx be_indexer.FieldIndexingData) error {
+    // 提交数据逻辑
+    return nil
 }
+
+func (h *PrefixMatcherBuilder) CompileEntries() (be_indexer.FieldIndex, error) {
+    // 编译逻辑，返回 FieldIndex
+    return &PrefixMatcherIndex{}, nil
+}
+
+type PrefixMatcherIndex struct {}
+func (i *PrefixMatcherIndex) DumpInfo(buffer *strings.Builder) {}
+func (i *PrefixMatcherIndex) GetEntries(field *be_indexer.FieldDesc, assigns be_indexer.Values) ([]be_indexer.PostingIterator, error) { return nil, nil }
+func (i *PrefixMatcherIndex) Serialize() ([]byte, error) { return nil, nil }
+func (i *PrefixMatcherIndex) Deserialize(data []byte) error { return nil }
 
 func main() {
     // 注册自定义容器
-    be_indexer.RegisterEntriesHolder("prefix_matcher", func() be_indexer.EntriesHolder {
-        return &PrefixMatcherHolder{}
+    be_indexer.RegisterFieldBuilder("prefix_matcher", func() be_indexer.FieldIndexBuilder {
+        return &PrefixMatcherBuilder{
+            patterns: make(map[string][]be_indexer.EntryID),
+        }
     })
 
     builder := be_indexer.NewIndexerBuilder()

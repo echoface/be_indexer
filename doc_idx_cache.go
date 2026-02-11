@@ -1,14 +1,16 @@
 package be_indexer
 
+import "github.com/echoface/be_indexer/core"
+
 // DocCacheKey 文档缓存键
 type DocCacheKey struct {
-	DocID   DocID
+	DocID   core.DocID
 	Version uint64
 }
 
 // DocIdxCache 文档级缓存条目
 type DocIdxCache struct {
-	DocID         DocID
+	DocID         core.DocID
 	Version       uint64
 	SchemaHash    uint64         // 字段配置哈希，用于校验
 	ConjIdxCaches []ConjIdxCache // 每个 Conjunction 的结果
@@ -18,19 +20,19 @@ type DocIdxCache struct {
 type ConjIdxCache struct {
 	ConjIdx       int
 	ConjSize      int
-	WildcardEID   EntryID        // 0 表示没有 wildcard
+	WildcardEID   core.EntryID        // 0 表示没有 wildcard
 	FieldCacheIdx []FieldIndexes // 每个字段的 Transactions
 }
 
 // FieldIndexes 字段级别的 Transaction 缓存
 type FieldIndexes struct {
-	Field   BEField
+	Field   core.BEField
 	Entries []IdxCacheEntry
 }
 
 // IdxCacheEntry 单个 Transaction 缓存条目
 type IdxCacheEntry struct {
-	EID       EntryID
+	EID       core.EntryID
 	DataBytes []byte // TxData.Encode() 序列化结果
 }
 
@@ -48,7 +50,7 @@ type DocLevelCache interface {
 }
 
 // NewDocCacheKey 创建缓存键
-func NewDocCacheKey(docID DocID, version uint64) DocCacheKey {
+func NewDocCacheKey(docID core.DocID, version uint64) DocCacheKey {
 	return DocCacheKey{
 		DocID:   docID,
 		Version: version,

@@ -600,10 +600,10 @@ type FieldValueParser = ValueIDGenerator  // Deprecated: 使用 ValueIDGenerator
 
 ```go
 // 创建通用字符串解析器
-func NewCommonStrParser() parser.FieldValueParser
+func NewCommonStrParser() parser.ValueIDGenerator
 
 // 创建通用数值解析器
-func NewCommonNumberParser(f2i bool) parser.FieldValueParser
+func NewCommonNumberParser(f2i bool) parser.ValueIDGenerator
     // f2i: 是否将浮点数转换为整数
 ```
 
@@ -688,7 +688,7 @@ func (p *GeoHashParser) ParseValue(v interface{}) ([]uint64, error)
 import "github.com/echoface/be_indexer/parser"
 
 // 示例 1: 在 DefaultEntriesHolder 中使用 (使用 ValueTokenizer 接口)
-be_indexer.RegisterEntriesHolder(be_indexer.HolderNameDefault, func() be_indexer.EntriesHolder {
+be_indexer.RegisterFieldBuilder(be_indexer.HolderNameDefault, func() core.FieldIndexBuilder {
     holder := be_indexer.NewDefaultEntriesHolder()
     holder.RegisterFieldTokenizer("geo", parser.NewGeoHashParser(nil))
     return holder
@@ -727,32 +727,32 @@ func ParseIntergers(v interface{}, f2i bool) (res []int64, err error)
 
 ## 容器类型
 
-### EntriesHolder
+### FieldIndexBuilder
 
-条目容器接口。
+条目容器构建器接口。
 
 ```go
-type EntriesHolder interface {
-    Name() string
-    CreateHolder(desc *FieldDesc) EntriesHolder
-    IndexingBETx(desc *FieldDesc, expr *BoolValues) (TxData, error)
-    DecodeTxData(data []byte) (TxData, error)
+type FieldIndexBuilder interface {
+    BuildFieldIndexingData(field *FieldDesc, bv *ValueExpr) (IndexingData, error)
+    DecodeFieldIndexingData(data []byte) (IndexingData, error)
+    CommitFieldIndexingData(tx FieldIndexingData) error
+    CompileEntries() (FieldIndex, error)
 }
 ```
 
 ### 容器注册
 
 ```go
-type HolderBuilder func() EntriesHolder
+type FieldBuilderFactory func() FieldIndexBuilder
 
 // 创建容器实例
-func NewEntriesHolder(name string) EntriesHolder
+func NewFieldBuilder(name string) FieldIndexBuilder
 
 // 检查容器是否存在
-func HasHolderBuilder(name string) bool
+func HasFieldBuilder(name string) bool
 
 // 注册自定义容器
-func RegisterEntriesHolder(name string, builder HolderBuilder)
+func RegisterFieldBuilder(name string, builder FieldBuilderFactory)
 ```
 
 ### 内置容器
@@ -761,7 +761,7 @@ func RegisterEntriesHolder(name string, builder HolderBuilder)
 
 ```go
 // 创建默认容器
-func NewDefaultEntriesHolder() EntriesHolder
+func NewDefaultEntriesHolder() *CompressedKVBuilder
 
 // 使用示例
 builder.ConfigField("age", be_indexer.FieldOption{
@@ -774,9 +774,6 @@ builder.ConfigField("age", be_indexer.FieldOption{
 AC自动机匹配容器，用于字符串模式匹配。
 
 ```go
-// 创建AC匹配器容器
-func NewAhoCorasickMatcherHolder() EntriesHolder
-
 // 使用示例
 builder.ConfigField("keyword", be_indexer.FieldOption{
     Container: be_indexer.HolderNameACMatcher,
@@ -788,9 +785,6 @@ builder.ConfigField("keyword", be_indexer.FieldOption{
 扩展范围容器。
 
 ```go
-// 创建扩展范围容器
-func NewExtendRangeHolder() EntriesHolder
-
 // 使用示例
 builder.ConfigField("score", be_indexer.FieldOption{
     Container: HolderNameExtendRange,

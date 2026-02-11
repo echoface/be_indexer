@@ -1,13 +1,15 @@
 package main
 
 import (
+	"github.com/echoface/be_indexer/core"
 	"fmt"
 
 	"github.com/echoface/be_indexer"
+	"github.com/echoface/be_indexer/util"
 )
 
-func buildTestDoc() []*be_indexer.Document {
-	return []*be_indexer.Document{}
+func buildTestDoc() []*core.Document {
+	return []*core.Document{}
 }
 
 func main() {
@@ -19,25 +21,25 @@ func main() {
 
 	// optional special a holder/container for field
 	// dever can also register customized container: see: entries_holder_factory.go
-	builder.ConfigField("keyword", be_indexer.FieldOption{
-		Container: be_indexer.HolderNameACMatcher,
+	builder.ConfigField("keyword", core.FieldOption{
+		Container: core.HolderNameACMatcher,
 	})
 
 	for _, doc := range buildTestDoc() {
 		_ = builder.AddDocument(doc)
 	}
 
-	indexer := builder.BuildIndex()
+	indexer, err := builder.BuildIndex()
+	util.PanicIfErr(err, "build index fail")
 
 	// indexing satisfied docs
-	assigns := map[be_indexer.BEField]be_indexer.Values{
-		"age":  be_indexer.NewIntValues(1),
-		"city": be_indexer.NewStrValues("sh", "bj"),
-		"tag":  be_indexer.NewStrValues("tag1", "tagn"),
+	assigns := map[core.BEField]core.Values{
+		"age":  core.NewIntValues(1),
+		"city": core.NewStrValues("sh", "bj"),
+		"tag":  core.NewStrValues("tag1", "tagn"),
 	}
 
 	result, e := indexer.Retrieve(assigns,
-		be_indexer.WithStepDetail(),
-		be_indexer.WithDumpEntries())
+		be_indexer.WithStepDetail())
 	fmt.Println(e, result)
 }

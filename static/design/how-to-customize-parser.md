@@ -38,9 +38,6 @@ type ValueIDGenerator interface {
     ParseAssign(v interface{}) ([]uint64, error)
     ParseValue(v interface{}) ([]uint64, error)
 }
-
-// 向后兼容别名
-type FieldValueParser = ValueIDGenerator
 ```
 
 ## 为 DefaultEntriesHolder 配置自定义 Parser
@@ -49,7 +46,7 @@ DefaultEntriesHolder 通过 `RegisterFieldTokenizer` 方法注册字段级 parse
 
 ```go
 func init() {
-    be_indexer.RegisterEntriesHolder(be_indexer.HolderNameDefault, func() be_indexer.EntriesHolder {
+    be_indexer.RegisterFieldBuilder(be_indexer.HolderNameDefault, func() core.FieldIndexBuilder {
         holder := be_indexer.NewDefaultEntriesHolder()
         
         // 为 age 字段注册范围解析器
@@ -197,11 +194,12 @@ package main
 import (
     "github.com/echoface/be_indexer"
     "github.com/echoface/be_indexer/parser"
+    "github.com/echoface/be_indexer/core"
 )
 
 func main() {
     // 注册自定义 holder，配置 geohash parser
-    be_indexer.RegisterEntriesHolder(be_indexer.HolderNameDefault, func() be_indexer.EntriesHolder {
+    be_indexer.RegisterFieldBuilder(be_indexer.HolderNameDefault, func() core.FieldIndexBuilder {
         holder := be_indexer.NewDefaultEntriesHolder()
         holder.RegisterFieldTokenizer("geo", parser.NewGeoHashParser(nil))
         holder.RegisterFieldTokenizer("tag", parser.NewNumberParser())

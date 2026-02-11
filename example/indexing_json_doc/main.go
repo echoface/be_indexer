@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/echoface/be_indexer/core"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -13,13 +14,10 @@ import (
 
 func main() {
 	// 使用默认的 DefaultEntriesHolder，它使用简单的 string 转换作为 parser
-	be_indexer.RegisterEntriesHolder(be_indexer.HolderNameDefault, func() be_indexer.EntriesHolder {
-		return be_indexer.NewDefaultEntriesHolder()
-	})
 	builder := be_indexer.NewIndexerBuilder()
 	be_indexer.LogLevel = be_indexer.DebugLevel
 
-	var docs []*be_indexer.Document
+	var docs []*core.Document
 	_ = filepath.Walk("./docs", func(path string, info os.FileInfo, err error) error {
 		if err != nil || info.IsDir() || !strings.HasSuffix(path, ".json") {
 			return nil
@@ -27,7 +25,7 @@ func main() {
 		content, e := os.ReadFile(path)
 		util.PanicIfErr(e, "open file:%s fail", path)
 
-		doc := &be_indexer.Document{}
+		doc := &core.Document{}
 		e = json.Unmarshal(content, &doc)
 		util.PanicIfErr(e, "decode document:%s fail, content:%s", path, string(content))
 
@@ -40,14 +38,14 @@ func main() {
 		util.PanicIfErr(err, "should not fail")
 	}
 
-	indexer := builder.BuildIndex()
+	indexer, err := builder.BuildIndex()
+	util.PanicIfErr(err, "build index fail")
 	be_indexer.PrintIndexInfo(indexer)
-	be_indexer.PrintIndexEntries(indexer)
 
-	res, _ := indexer.Retrieve(map[be_indexer.BEField]be_indexer.Values{
+	res, _ := indexer.Retrieve(map[core.BEField]core.Values{
 		"age":  19,
 		"city": "gz",
-	}, be_indexer.WithDumpEntries(), be_indexer.WithStepDetail())
+	}, be_indexer.WithStepDetail())
 	fmt.Println("result:", res)
 	if !res.Contain(1) {
 		panic(fmt.Errorf("should has result 1"))

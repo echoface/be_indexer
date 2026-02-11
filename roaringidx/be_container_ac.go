@@ -1,13 +1,13 @@
 package roaringidx
 
 import (
+	"github.com/echoface/be_indexer/core"
 	"fmt"
 	"strings"
 
 	"github.com/echoface/be_indexer/holder/ahoholder"
 
 	aho "github.com/anknown/ahocorasick"
-	"github.com/echoface/be_indexer"
 	"github.com/echoface/be_indexer/util"
 )
 
@@ -72,7 +72,7 @@ func (c *ACBEContainer) AddExcludeID(key string, id ConjunctionID) {
 	pl.Add(uint64(id))
 }
 
-func (c *ACBEContainer) buildPatternQueryContent(v be_indexer.Values) ([]rune, error) {
+func (c *ACBEContainer) buildPatternQueryContent(v core.Values) ([]rune, error) {
 	data := make([]rune, 0, 64)
 	switch tv := v.(type) {
 	case string:
@@ -99,7 +99,7 @@ func (c *ACBEContainer) buildPatternQueryContent(v be_indexer.Values) ([]rune, e
 	return data, nil
 }
 
-func (c *ACBEContainer) Retrieve(values be_indexer.Values, inout *PostingList) error {
+func (c *ACBEContainer) Retrieve(values core.Values, inout *PostingList) error {
 	inout.Or(c.wc.Bitmap)
 
 	if util.NilInterface(values) { // empty assign
@@ -133,12 +133,12 @@ func (c *ACBEContainer) EncodeWildcard(id ConjunctionID) {
 	c.AddWildcard(id)
 }
 
-func (c *ACBEContainer) EncodeExpr(id ConjunctionID, expr *be_indexer.BooleanExpr) error {
+func (c *ACBEContainer) EncodeExpr(id ConjunctionID, expr *core.Predicate) error {
 	if expr == nil || util.NilInterface(expr.Value) {
 		// c.AddWildcard(id)
 		return nil
 	}
-	util.PanicIf(expr.Operator != be_indexer.ValueOptEQ, "ac_match support EQ operator only")
+	util.PanicIf(expr.Operator != core.ValueOptEQ, "ac_match support EQ operator only")
 
 	keys, err := ahoholder.ParseAcMatchDict(expr.Value)
 	if err != nil {

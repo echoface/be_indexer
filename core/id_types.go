@@ -1,4 +1,4 @@
-package be_indexer
+package core
 
 import (
 	"fmt"
@@ -11,11 +11,12 @@ const (
 )
 
 type (
-	// ConjID max support 60bit len
-	// |--[ reserved(4bit) | size(8bit) | index(8bit)  | negSign(1bit) | docID(43bit)]
+	// ConjID bits layout
+	// [ reserved(4bit) | size(8bit) | index(8bit)  | negSign(1bit) | docID(43bit) ]
 	ConjID uint64
 
-	// EntryID [--ConjID(60bit)--|--empty(3bit)--|--incl/excl(1bit)--]
+	// EntryID
+	// [--ConjID(60bit)--|--empty(3bit)--|--incl/excl(1bit)--]
 	EntryID uint64
 
 	// Entries a type define for sort option
@@ -25,12 +26,13 @@ type (
 func ValidDocID(id DocID) bool {
 	return (id <= MaxDocID) && (id >= -MaxDocID)
 }
+
 func ValidIdxOrSize(v int) bool {
 	return v >= 0 && v < 256
 }
 
-// NewConjID
-// |--[ reserved(4bit) | size(8bit) | index(8bit)  | negSign(1bit) | docID(43bit)]
+// NewConjID:
+// [ reserved(4bit) | size(8bit) | index(8bit)  | negSign(1bit) | docID(43bit) ]
 func NewConjID(docID DocID, index, size int) ConjID {
 	if !ValidDocID(docID) || !ValidIdxOrSize(index) || !ValidIdxOrSize(size) {
 		panic(fmt.Errorf("id overflow, id:%d, idx:%d size:%d", docID, index, size))
@@ -65,8 +67,7 @@ func (id ConjID) String() string {
 }
 
 // NewEntryID encode entry id
-// |--          		         ConjID(60bit)                  --|-- empty(3bit) --|--incl/excl(1bit) --|
-// |--[ size(8bit) | index(8bit) | negSign(1bit) | docID(43bit)]--|-- empty(3bit) --|--incl/excl(1bit) --|
+// [--ConjID(60bit)--|--empty(3bit)--|--incl/excl(1bit)--]
 func NewEntryID(id ConjID, incl bool) EntryID {
 	if !incl {
 		return EntryID(id << 4)

@@ -1,10 +1,10 @@
 package roaringidx
 
 import (
+	"github.com/echoface/be_indexer/core"
 	"fmt"
 	"testing"
 
-	"github.com/echoface/be_indexer"
 	"github.com/echoface/be_indexer/parser"
 	"github.com/smartystreets/goconvey/convey"
 )
@@ -24,27 +24,27 @@ func TestIvtScanner_Retrieve(t *testing.T) {
 			Parser:    parser.NewStrHashParser(),
 		})
 
-		doc1 := be_indexer.NewDocument(1)
-		doc1.AddConjunction(be_indexer.NewConjunction().
-			Include("ad_id", be_indexer.NewIntValues(100, 101, 108)).
-			Include("package", be_indexer.NewStrValues("com.echoface.be")))
-		doc1.AddConjunction(be_indexer.NewConjunction().
-			Include("package", be_indexer.NewStrValues("com.echoface.x")))
+		doc1 := core.NewDocument(1)
+		doc1.AddConjunction(core.NewConjunction().
+			Include("ad_id", core.NewIntValues(100, 101, 108)).
+			Include("package", core.NewStrValues("com.echoface.be")))
+		doc1.AddConjunction(core.NewConjunction().
+			Include("package", core.NewStrValues("com.echoface.x")))
 
-		doc2 := be_indexer.NewDocument(5)
-		doc2.AddConjunction(be_indexer.NewConjunction().
-			Include("ad_id", be_indexer.NewIntValues(100, 101, 108)).
-			Include("package", be_indexer.NewStrValues("com.echoface.be")))
-		doc2.AddConjunction(be_indexer.NewConjunction().
-			Exclude("package", be_indexer.NewStrValues("com.echoface.not")))
+		doc2 := core.NewDocument(5)
+		doc2.AddConjunction(core.NewConjunction().
+			Include("ad_id", core.NewIntValues(100, 101, 108)).
+			Include("package", core.NewStrValues("com.echoface.be")))
+		doc2.AddConjunction(core.NewConjunction().
+			Exclude("package", core.NewStrValues("com.echoface.not")))
 
-		doc3 := be_indexer.NewDocument(20)
-		doc3.AddConjunctions(be_indexer.NewConjunction())
+		doc3 := core.NewDocument(20)
+		doc3.AddConjunctions(core.NewConjunction())
 
-		doc4 := be_indexer.NewDocument(50)
-		doc4.AddConjunction(be_indexer.NewConjunction().
-			Exclude("ad_id", be_indexer.NewIntValues(100, 108)).
-			Include("package", be_indexer.NewStrValues("com.echoface.be")))
+		doc4 := core.NewDocument(50)
+		doc4.AddConjunction(core.NewConjunction().
+			Exclude("ad_id", core.NewIntValues(100, 108)).
+			Include("package", core.NewStrValues("com.echoface.be")))
 
 		builder.AddDocuments(doc1, doc2, doc3, doc4)
 
@@ -53,7 +53,7 @@ func TestIvtScanner_Retrieve(t *testing.T) {
 		convey.So(indexer, convey.ShouldNotBeNil)
 
 		scanner := NewScanner(indexer)
-		docs, err := scanner.Retrieve(map[be_indexer.BEField]be_indexer.Values{
+		docs, err := scanner.Retrieve(map[core.BEField]core.Values{
 			"ad_id":   []interface{}{100, 102},
 			"package": []interface{}{"com.echoface.be", "com.echoface.not"},
 		})
@@ -61,7 +61,7 @@ func TestIvtScanner_Retrieve(t *testing.T) {
 		convey.So(docs, convey.ShouldResemble, []uint64{1, 5, 20})
 
 		scanner.Reset()
-		docs, err = scanner.Retrieve(map[be_indexer.BEField]be_indexer.Values{
+		docs, err = scanner.Retrieve(map[core.BEField]core.Values{
 			"package": []interface{}{"com.echoface.not"},
 		})
 		convey.So(err, convey.ShouldBeNil)
@@ -79,20 +79,20 @@ func TestIvtScanner_Retrieve2(t *testing.T) {
 			Container: "ac_matcher",
 		})
 
-		doc1 := be_indexer.NewDocument(1)
-		doc1.AddConjunction(be_indexer.NewConjunction().
-			Include("keywords", be_indexer.NewStrValues("红包", "色情")))
+		doc1 := core.NewDocument(1)
+		doc1.AddConjunction(core.NewConjunction().
+			Include("keywords", core.NewStrValues("红包", "色情")))
 
-		doc2 := be_indexer.NewDocument(5)
-		doc2.AddConjunction(be_indexer.NewConjunction().
-			Include("keywords", be_indexer.NewStrValues("红包", "舒淇")))
+		doc2 := core.NewDocument(5)
+		doc2.AddConjunction(core.NewConjunction().
+			Include("keywords", core.NewStrValues("红包", "舒淇")))
 
-		doc3 := be_indexer.NewDocument(10)
-		doc3.AddConjunctions(be_indexer.NewConjunction())
+		doc3 := core.NewDocument(10)
+		doc3.AddConjunctions(core.NewConjunction())
 
-		doc4 := be_indexer.NewDocument(20)
-		doc4.AddConjunction(be_indexer.NewConjunction().
-			Exclude("keywords", be_indexer.NewStrValues("色情", "在线视频")))
+		doc4 := core.NewDocument(20)
+		doc4.AddConjunction(core.NewConjunction().
+			Exclude("keywords", core.NewStrValues("色情", "在线视频")))
 
 		_ = builder.AddDocuments(doc1, doc2, doc3, doc4)
 
@@ -101,7 +101,7 @@ func TestIvtScanner_Retrieve2(t *testing.T) {
 		convey.So(indexer, convey.ShouldNotBeNil)
 
 		scanner := NewScanner(indexer)
-		docs, err := scanner.Retrieve(map[be_indexer.BEField]be_indexer.Values{
+		docs, err := scanner.Retrieve(map[core.BEField]core.Values{
 			"keywords": []interface{}{"恭喜发财红包拿来", "坚决查处色情娱乐场所"},
 		})
 		convey.So(err, convey.ShouldBeNil)
@@ -109,7 +109,7 @@ func TestIvtScanner_Retrieve2(t *testing.T) {
 		fmt.Println("result:", FormatBitMapResult(scanner.GetRawResult().ToArray()))
 
 		scanner.Reset()
-		docs, err = scanner.Retrieve(map[be_indexer.BEField]be_indexer.Values{
+		docs, err = scanner.Retrieve(map[core.BEField]core.Values{
 			"package": []interface{}{"恭喜发财红包拿来"},
 		})
 		convey.So(err, convey.ShouldBeNil)
@@ -117,7 +117,7 @@ func TestIvtScanner_Retrieve2(t *testing.T) {
 		fmt.Println("result:", FormatBitMapResult(scanner.GetRawResult().ToArray()))
 
 		scanner.Reset()
-		docs, err = scanner.Retrieve(map[be_indexer.BEField]be_indexer.Values{
+		docs, err = scanner.Retrieve(map[core.BEField]core.Values{
 			"package": []interface{}{"坚决查处色情娱乐场所"},
 		})
 		convey.So(err, convey.ShouldBeNil)
@@ -141,12 +141,12 @@ func TestIvtScanner_Retrieve3(t *testing.T) {
 			Parser:    parser.NewStrHashParser(),
 		})
 
-		doc1 := be_indexer.NewDocument(1)
-		doc1.AddConjunction(be_indexer.NewConjunction().
-			Include("ad_id", be_indexer.NewIntValues(100, 101, 108)).
-			Include("package", be_indexer.NewStrValues("com.echoface.be")))
-		doc1.AddConjunction(be_indexer.NewConjunction().
-			Include("package", be_indexer.NewStrValues("com.echoface.x")))
+		doc1 := core.NewDocument(1)
+		doc1.AddConjunction(core.NewConjunction().
+			Include("ad_id", core.NewIntValues(100, 101, 108)).
+			Include("package", core.NewStrValues("com.echoface.be")))
+		doc1.AddConjunction(core.NewConjunction().
+			Include("package", core.NewStrValues("com.echoface.x")))
 
 		_ = builder.AddDocuments(doc1)
 
@@ -155,7 +155,7 @@ func TestIvtScanner_Retrieve3(t *testing.T) {
 		convey.So(indexer, convey.ShouldNotBeNil)
 
 		scanner := NewScanner(indexer)
-		docs, err := scanner.Retrieve(map[be_indexer.BEField]be_indexer.Values{
+		docs, err := scanner.Retrieve(map[core.BEField]core.Values{
 			"ad_id":   []interface{}{100, 102},
 			"package": []interface{}{"com.echoface.be", "com.echoface.x"},
 		})
@@ -180,19 +180,19 @@ func TestIvtScanner_Retrieve4(t *testing.T) {
 			Parser:    parser.NewStrHashParser(),
 		})
 
-		doc1 := be_indexer.NewDocument(1)
-		doc1.AddConjunction(be_indexer.NewConjunction().
-			Include("ad_id", be_indexer.NewIntValues(100, 101, 108)).
-			Include("package", be_indexer.NewStrValues("com.echoface.be")))
-		doc1.AddConjunction(be_indexer.NewConjunction().
-			Include("package", be_indexer.NewStrValues("com.echoface.x")))
+		doc1 := core.NewDocument(1)
+		doc1.AddConjunction(core.NewConjunction().
+			Include("ad_id", core.NewIntValues(100, 101, 108)).
+			Include("package", core.NewStrValues("com.echoface.be")))
+		doc1.AddConjunction(core.NewConjunction().
+			Include("package", core.NewStrValues("com.echoface.x")))
 		_ = builder.AddDocument(doc1)
 
 		indexer, err := builder.BuildIndexer()
 		convey.So(err, convey.ShouldBeNil)
 
 		scanner := NewScanner(indexer)
-		docs, err := scanner.Retrieve(map[be_indexer.BEField]be_indexer.Values{
+		docs, err := scanner.Retrieve(map[core.BEField]core.Values{
 			"ad_id":   []interface{}{100, 102},
 			"package": []interface{}{"com.echoface.be", "com.echoface.x"},
 		})
@@ -203,7 +203,7 @@ func TestIvtScanner_Retrieve4(t *testing.T) {
 		scanner.Reset()
 		scanner.SetDebug(true)
 		scanner.WithHint(1, 2, 3)
-		docs, err = scanner.Retrieve(map[be_indexer.BEField]be_indexer.Values{
+		docs, err = scanner.Retrieve(map[core.BEField]core.Values{
 			"ad_id":   []interface{}{100, 102},
 			"package": []interface{}{"com.echoface.be", "com.echoface.x"},
 		})

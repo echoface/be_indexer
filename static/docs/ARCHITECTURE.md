@@ -242,14 +242,14 @@ func (bi *indexBase) compileIndexer() error {
 
 ## 容器系统
 
-### EntriesHolder接口
+### FieldIndexBuilder 接口
 
 ```go
-type EntriesHolder interface {
-    Name() string
-    CreateHolder(desc *FieldDesc) EntriesHolder
-    IndexingBETx(desc *FieldDesc, expr *BoolValues) (TxData, error)
-    DecodeTxData(data []byte) (TxData, error)
+type FieldIndexBuilder interface {
+    BuildFieldIndexingData(field *FieldDesc, bv *ValueExpr) (IndexingData, error)
+    DecodeFieldIndexingData(data []byte) (IndexingData, error)
+    CommitFieldIndexingData(tx FieldIndexingData) error
+    CompileEntries() (FieldIndex, error)
 }
 ```
 
@@ -316,8 +316,8 @@ type AhoCorasickMatcherHolder struct {
 
 ```go
 // 注册自定义容器
-be_indexer.RegisterEntriesHolder("my_custom_holder", func() be_indexer.EntriesHolder {
-    return NewMyCustomHolder()
+be_indexer.RegisterFieldBuilder("my_custom_holder", func() be_indexer.FieldIndexBuilder {
+    return NewMyCustomBuilder()
 })
 
 // 使用自定义容器

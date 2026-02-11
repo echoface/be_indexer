@@ -1,9 +1,8 @@
 package roaringidx
 
 import (
+	"github.com/echoface/be_indexer/core"
 	"fmt"
-
-	"github.com/echoface/be_indexer"
 )
 
 const (
@@ -21,7 +20,7 @@ func ValidRoaringIdxDocID(id int64) bool {
 }
 
 func NewConjunctionID(idx int, doc int64) (ConjunctionID, error) {
-	if !be_indexer.ValidIdxOrSize(idx) || !ValidRoaringIdxDocID(doc) {
+	if !core.ValidIdxOrSize(idx) || !ValidRoaringIdxDocID(doc) {
 		return 0, fmt.Errorf("id:%d,%d overflow, doc:[%d,%d] idx:[0,255] ", doc, idx, -MaxDocumentID, MaxDocumentID)
 	}
 	return ConjunctionID(uint64(doc<<8) | uint64(idx)), nil

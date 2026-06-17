@@ -5,7 +5,7 @@ import (
 	"encoding/gob"
 	"errors"
 
-	"git.ushareit.me/corekit/adindex_v2/be_indexer/parser"
+	"github.com/hankji/be_indexer/parser"
 )
 
 // indexBaseExported 是一个辅助结构体，用于包装 indexBase 的数据

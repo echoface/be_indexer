@@ -5,7 +5,7 @@ import (
 	"container/list"
 	"encoding/gob"
 
-	. "git.ushareit.me/corekit/adindex_v2/be_indexer"
+	. "github.com/hankji/be_indexer"
 )
 
 func init() {

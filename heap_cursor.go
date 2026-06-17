@@ -1,5 +1,6 @@
 // === 新增文件: heap_cursor.go ===
 // 优化kgroups检索方法性能
+package be_indexer
 
 import "container/heap"
 

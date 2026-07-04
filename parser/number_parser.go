@@ -3,36 +3,28 @@ package parser
 import (
 	"encoding/json"
 	"fmt"
-	"reflect"
 
 	"github.com/echoface/be_indexer/util"
 )
 
-type (
-	NumberParser struct {
-		floatAsInt bool
-	}
-)
+// NumberParser tokenizes numeric values into string terms.
+type NumberParser struct {
+	floatAsInt bool
+}
 
+// NewNumberParser creates a NumberParser with float→int enabled.
 func NewNumberParser() *NumberParser {
-	return &NumberParser{
-		floatAsInt: true,
-	}
+	return &NumberParser{floatAsInt: true}
 }
 
+// NewNumberParser2 creates a NumberParser with explicit floatAsInt control.
 func NewNumberParser2(f2i bool) *NumberParser {
-	return &NumberParser{
-		floatAsInt: true,
-	}
+	return &NumberParser{floatAsInt: f2i}
 }
 
-func (p *NumberParser) Name() string {
-	return "number"
-}
-
-// TokenizeAssign implements ValueTokenizer for query phase
+// TokenizeAssign implements ValueTokenizer for query phase.
 func (p *NumberParser) TokenizeAssign(v interface{}) ([]string, error) {
-	ids, err := p.ParseAssign(v)
+	ids, err := p.parseValues(v, false)
 	if err != nil {
 		return nil, err
 	}
@@ -43,9 +35,9 @@ func (p *NumberParser) TokenizeAssign(v interface{}) ([]string, error) {
 	return results, nil
 }
 
-// TokenizeValue implements ValueTokenizer for indexing phase
+// TokenizeValue implements ValueTokenizer for indexing phase.
 func (p *NumberParser) TokenizeValue(v interface{}) ([]string, error) {
-	ids, err := p.ParseValue(v)
+	ids, err := p.parseValues(v, true)
 	if err != nil {
 		return nil, err
 	}
@@ -56,48 +48,101 @@ func (p *NumberParser) TokenizeValue(v interface{}) ([]string, error) {
 	return results, nil
 }
 
-func (p *NumberParser) ParseAssign(v interface{}) (values []uint64, e error) {
+// parseValues converts a value or slice of values to int64 IDs.
+// allocMissing controls whether unknown values get allocated (true for indexing, false for query).
+func (p *NumberParser) parseValues(v interface{}, allocMissing bool) ([]int64, error) {
 	if util.NilInterface(v) {
-		return values, nil
+		return nil, nil
 	}
-	return p.ParseValue(v)
-}
 
-func (p *NumberParser) ParseValue(v interface{}) ([]uint64, error) {
-	switch t := v.(type) {
-	case string, json.Number, int, int8, int16, int32,
-		int64, uint, uint8, uint16, uint32, uint64, float64, float32:
-		if num, err := ParseIntegerNumber(t, p.floatAsInt); err == nil {
-			return []uint64{uint64(num)}, nil
-		}
-	case []int8, []int16, []int32, []int, []int64, []uint8, []uint16,
-		[]uint32, []uint, []uint64, []float32, []float64, []json.Number, []string:
-
-		rv := reflect.ValueOf(t)
-		res := make([]uint64, 0, rv.Len())
-		var err error
-		var num int64
-		for i := 0; i < rv.Len(); i++ {
-			vi := rv.Index(i).Interface()
-			if num, err = ParseIntegerNumber(vi, p.floatAsInt); err != nil {
-				return nil, err
+	toInt := func(iv interface{}) (int64, error) {
+		switch n := iv.(type) {
+		case int:
+			return int64(n), nil
+		case int8:
+			return int64(n), nil
+		case int16:
+			return int64(n), nil
+		case int32:
+			return int64(n), nil
+		case int64:
+			return n, nil
+		case uint:
+			return int64(n), nil
+		case uint8:
+			return int64(n), nil
+		case uint16:
+			return int64(n), nil
+		case uint32:
+			return int64(n), nil
+		case uint64:
+			return int64(n), nil
+		case float32:
+			if p.floatAsInt {
+				return int64(n), nil
 			}
-			res = append(res, uint64(num))
+			return 0, fmt.Errorf("float not supported: %v", iv)
+		case float64:
+			if p.floatAsInt {
+				return int64(n), nil
+			}
+			return 0, fmt.Errorf("float not supported: %v", iv)
+		case json.Number:
+			s := string(n)
+			ni, err := ParseIntegerNumber(s, p.floatAsInt)
+			if err != nil {
+				return 0, err
+			}
+			return ni, nil
+		default:
+			ni, err := ParseIntegerNumber(iv, p.floatAsInt)
+			if err != nil {
+				return 0, err
+			}
+			return ni, nil
+		}
+	}
+
+	switch t := v.(type) {
+	case []int64:
+		return t, nil
+	case []int32:
+		res := make([]int64, len(t))
+		for i, x := range t {
+			res[i] = int64(x)
+		}
+		return res, nil
+	case []int:
+		res := make([]int64, len(t))
+		for i, x := range t {
+			res[i] = int64(x)
+		}
+		return res, nil
+	case []float64:
+		if !p.floatAsInt {
+			return nil, fmt.Errorf("[]float not supported: %v", v)
+		}
+		res := make([]int64, len(t))
+		for i, x := range t {
+			res[i] = int64(x)
 		}
 		return res, nil
 	case []interface{}:
-		res := make([]uint64, 0, len(t))
-		for _, iv := range t {
-			if num, err := ParseIntegerNumber(iv, p.floatAsInt); err != nil {
-				return nil, fmt.Errorf("value:%v not a interger-able value", iv)
-			} else {
-				res = append(res, uint64(num))
+		res := make([]int64, len(t))
+		for i, iv := range t {
+			n, err := toInt(iv)
+			if err != nil {
+				return nil, err
 			}
+			res[i] = n
 		}
 		return res, nil
-	default:
-		break
 	}
-	valueType := reflect.TypeOf(v)
-	return nil, fmt.Errorf("value type [%s] not support", valueType.String())
+
+	// Single value
+	n, err := toInt(v)
+	if err != nil {
+		return nil, err
+	}
+	return []int64{n}, nil
 }

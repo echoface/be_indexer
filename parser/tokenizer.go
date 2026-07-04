@@ -6,6 +6,31 @@ import (
 	"reflect"
 )
 
+var tokenizerFactory = map[string]func() ValueTokenizer{}
+
+func init() {
+	RegisterValueTokenizer("default", func() ValueTokenizer { return NewDefaultTokenizer() })
+	RegisterValueTokenizer("number", func() ValueTokenizer { return NewNumberParser() })
+	RegisterValueTokenizer("geohash", func() ValueTokenizer { return NewGeoHashParser(nil) })
+}
+
+func RegisterValueTokenizer(name string, factory func() ValueTokenizer) {
+	tokenizerFactory[name] = factory
+}
+
+func HasValueTokenizer(name string) bool {
+	_, ok := tokenizerFactory[name]
+	return ok
+}
+
+func NewValueTokenizer(name string) (ValueTokenizer, bool) {
+	factory, ok := tokenizerFactory[name]
+	if !ok || factory == nil {
+		return nil, false
+	}
+	return factory(), true
+}
+
 // funcTokenizer 是一个适配器，将函数转换为 ValueTokenizer 接口
 // 双向解析使用相同逻辑
 type funcTokenizer func(v interface{}) ([]string, error)

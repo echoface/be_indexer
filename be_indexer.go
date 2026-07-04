@@ -1,154 +1,273 @@
+// Package be_indexer is a high-performance Boolean Expression Indexing library
+// based on the VLDB 09 paper "Indexing Boolean Expressions."
+//
+// It provides:
+//   - Index building: convert DNF documents into memory-mappable binary segments
+//   - Online retrieval: zero-copy mmap-based query evaluation via K-Groups algorithm
+//   - Multi-segment: split large document sets across multiple segments
+//
+// Quick start:
+//
+//	// Build
+//	buf := new(bytes.Buffer)
+//	wildcards, err := be_indexer.BuildSegment(buf, fields, docs)
+//	if err != nil { ... }
+//
+//	// Query
+//	reader, _ := be_indexer.NewSegmentReader(buf.Bytes())
+//	engine := be_indexer.NewEngine(fields, wildcards, reader)
+//	results, _ := engine.Retrieve(be_indexer.Assignments{"age": 25})
+//
+// For multi-segment builds (large document sets):
+//
+//	wildcards, _, err := be_indexer.BuildSegments(writerFn, fields, docs, be_indexer.BuildOptions{MaxDocsPerSegment: 100000})
 package be_indexer
 
 import (
-	"fmt"
-	"strings"
-	"sync"
+	"io"
+
+	"github.com/echoface/be_indexer/builder"
+	"github.com/echoface/be_indexer/compact"
+	"github.com/echoface/be_indexer/core"
+	"github.com/echoface/be_indexer/engine"
+	"github.com/echoface/be_indexer/loader"
+	"github.com/echoface/be_indexer/manifest"
+	"github.com/echoface/be_indexer/segment"
 )
 
+// --------------------------------------------------------------------------------
+// Type Re-exports from core
+// --------------------------------------------------------------------------------
+
+type (
+	DocID       = core.DocID
+	DocIDList   = core.DocIDList
+	BEField     = core.BEField
+	Values      = core.Values
+	ValueOpt    = core.ValueOpt
+	Assignments = core.Assignments
+
+	Document    = core.Document
+	Conjunction = core.Conjunction
+	Predicate   = core.Predicate
+	ValueExpr   = core.ValueExpr
+
+	ConjID  = core.ConjID
+	EntryID = core.EntryID
+
+	FieldMeta   = core.FieldMeta
+	FieldOption = core.FieldOption
+
+	LiveDocs       = core.LiveDocs
+	DocIDCollector = core.DocIDCollector
+
+	ResultCollector = core.ResultCollector
+	RetrieveContext = core.RetrieveContext
+	IndexOpt        = core.IndexOpt
+
+	RetrieveObserver = core.RetrieveObserver
+
+	Term            = core.Term
+	TermIterator    = core.TermIterator
+	PostingIterator = core.PostingIterator
+
+	BEIndexLogger = core.BEIndexLogger
+
+	DocSet          = engine.DocSet
+	BitmapDocSet    = engine.BitmapDocSet
+	IndexSnapshot   = engine.IndexSnapshot
+	CompositeEngine = engine.CompositeEngine
+
+	MutationOp = builder.MutationOp
+	Mutation   = builder.Mutation
+	DeltaPlan  = builder.DeltaPlan
+
+	BuildDirectoryOptions   = builder.BuildDirectoryOptions
+	BuildSegmentOptions     = builder.BuildSegmentFromDocsOptions
+	DocumentIterator        = builder.DocumentIterator
+	DocumentIteratorFunc    = builder.DocumentIteratorFunc
+	FullBuildRequest        = builder.FullBuildRequest
+	FullStreamBuildRequest  = builder.FullStreamBuildRequest
+	DeltaBuildRequest       = builder.DeltaBuildRequest
+	SnapshotManifestRequest = builder.SnapshotManifestRequest
+
+	Manifest             = manifest.Manifest
+	SegmentDescriptor    = manifest.SegmentDescriptor
+	FullIndexDescriptor  = manifest.FullIndexDescriptor
+	DeltaIndexDescriptor = manifest.DeltaIndexDescriptor
+
+	LoaderOptions = loader.Options
+	IndexHolder   = loader.Holder
+
+	CompactDecision           = compact.Decision
+	CompactStats              = compact.Stats
+	CompactPolicy             = compact.Policy
+	CompactRuntimeObservation = compact.RuntimeObservation
+	CompactOptions            = compact.Options
+	CompactReason             = compact.Reason
+	CompactRecommendation     = compact.Recommendation
+)
+
+// Re-exported constants and errors.
 const (
-	WildcardFieldName = BEField("_Z_")
+	IndexNameDefault     = core.IndexNameDefault
+	IndexNameACMatcher   = core.IndexNameACMatcher
+	IndexNameExtendRange = core.IndexNameExtendRange
+	SegmentVersionV3     = segment.SegmentVersionV3
+
+	FormatVersionSegmentV2 = manifest.FormatVersionSegmentV2
+
+	CompactDecisionNone  = compact.DecisionNone
+	CompactDecisionMinor = compact.DecisionMinor
+	CompactDecisionMajor = compact.DecisionMajor
 )
 
 var (
-	wildcardQKey = NewQKey(WildcardFieldName, 0)
+	ErrFieldNotConfigured     = core.ErrFieldNotConfigured
+	ErrUnknownQueryField      = core.ErrUnknownQueryField
+	ErrFieldIndexMissing      = core.ErrFieldIndexMissing
+	ErrUnsupportedPredicate   = core.ErrUnsupportedPredicate
+	ErrTokenizerNotConfigured = core.ErrTokenizerNotConfigured
 )
 
-type (
-	FieldOption struct {
-		Container string // specify Entries holder for all tokenized value Entries
-	}
+// Factory functions from core.
+var (
+	NewDocument       = core.NewDocument
+	NewConjunction    = core.NewConjunction
+	NewLiveDocs       = core.NewLiveDocs
+	NewDocIDCollector = core.NewDocIDCollector
+	PickCollector     = core.PickCollector
+	PutCollector      = core.PutCollector
 
-	IndexerSettings struct {
-		FieldConfig map[BEField]FieldOption
-	}
-
-	BEIndex interface {
-		// addWildcardEID interface used by builder
-		addWildcardEID(id EntryID)
-
-		// set fields desc/settings
-		setFieldDesc(fieldsData map[BEField]*FieldDesc)
-
-		// newContainer indexer need return a valid Container for k size
-		newContainer(k int) *EntriesContainer
-
-		// compileIndexer prepare indexer and optimize index data
-		compileIndexer() error
-
-		// Retrieve scan index data and retrieve satisfied document
-		Retrieve(queries Assignments, opt ...IndexOpt) (DocIDList, error)
-
-		// RetrieveWithCollector scan index data and retrieve satisfied document
-		RetrieveWithCollector(Assignments, ResultCollector, ...IndexOpt) error
-
-		// DumpEntries debug api
-		DumpEntries(sb *strings.Builder)
-
-		DumpIndexInfo(sb *strings.Builder)
-	}
-
-	FieldDesc struct {
-		FieldOption
-
-		ID    uint64
-		Field BEField
-	}
-
-	indexBase struct {
-		// fieldsData a field settings and resource, if not configured, it will use default parser and container
-		// for expression values;
-		fieldsData map[BEField]*FieldDesc
-
-		// wildcardEntries hold all entry id that conjunction size is zero;
-		wildcardEntries Entries
-	}
+	NewIntValues   = core.NewIntValues
+	NewInt32Values = core.NewInt32Values
+	NewInt64Values = core.NewInt64Values
+	NewStrValues   = core.NewStrValues
 )
 
-func (bi *indexBase) setFieldDesc(fieldsData map[BEField]*FieldDesc) {
-	bi.fieldsData = fieldsData
+// --------------------------------------------------------------------------------
+// Engine Re-exports
+// --------------------------------------------------------------------------------
+
+// NewEngine creates a BooleanEngine from fields, wildcard entries, and segments.
+var NewEngine = engine.NewBooleanEngine
+
+// NewCompositeEngine creates a full+delta CompositeEngine from an immutable snapshot.
+var NewCompositeEngine = engine.NewCompositeEngine
+
+// NewBitmapDocSet creates a compact DocID set used by CompositeEngine snapshots.
+var NewBitmapDocSet = engine.NewBitmapDocSet
+
+// BuildDeltaPlan compacts mutation events by DocID and keeps the latest version.
+var BuildDeltaPlan = builder.BuildDeltaPlan
+
+// BuildFullIndexDir builds full index segment and sidecar files under index root.
+var BuildFullIndexDir = builder.BuildFullIndexDir
+
+// BuildFullIndexDirFromIterator builds full index files from a streaming iterator.
+var BuildFullIndexDirFromIterator = builder.BuildFullIndexDirFromIterator
+
+// BuildDeltaIndexDir builds delta index segment and sidecar files under index root.
+var BuildDeltaIndexDir = builder.BuildDeltaIndexDir
+
+// NewSnapshotManifest creates a validated publishable snapshot manifest.
+var NewSnapshotManifest = builder.NewSnapshotManifest
+
+// OpenIndex loads an index_root/CURRENT manifest into a CompositeEngine.
+var OpenIndex = loader.OpenIndex
+
+// LoadSnapshot loads an index_root/CURRENT manifest into an immutable snapshot.
+var LoadSnapshot = loader.LoadSnapshot
+
+// NewIndexHolder loads and owns a reloadable index holder.
+var NewIndexHolder = loader.NewHolder
+
+// PublishManifest writes manifests/<name> and atomically switches CURRENT.
+var PublishManifest = manifest.PublishManifest
+
+// PublishCurrent atomically switches CURRENT to a manifest reference.
+var PublishCurrent = manifest.PublishCurrent
+
+// WriteEntriesSidecar writes wildcard/Z-list entries and returns checksum metadata.
+var WriteEntriesSidecar = manifest.WriteEntriesSidecar
+
+// WriteDocIDsSidecar writes DocID sidecars and returns checksum metadata.
+var WriteDocIDsSidecar = manifest.WriteDocIDsSidecar
+
+// CollectCompactStats summarizes manifest-level compact statistics.
+var CollectCompactStats = compact.CollectStats
+
+// DefaultCompactPolicy returns default compact policy thresholds.
+var DefaultCompactPolicy = compact.DefaultPolicy
+
+// DecideCompact computes compact recommendation from a manifest.
+var DecideCompact = compact.Decide
+
+// DecideCompactStats computes compact recommendation from pre-collected stats.
+var DecideCompactStats = compact.DecideStats
+
+// Engine is the online query engine.
+type Engine = engine.BooleanEngine
+
+// --------------------------------------------------------------------------------
+// Builder Re-exports
+// --------------------------------------------------------------------------------
+
+// BuildOptions controls segment splitting during build.
+type BuildOptions = builder.BuildSegmentsFromDocsOptions
+
+// BuildSegment builds a single segment from documents.
+// Returns wildcard EntryIDs that must be passed to NewEngine.
+func BuildSegment(w io.Writer, fields map[BEField]*FieldMeta, docs []*Document) (Entries, error) {
+	return builder.BuildSegmentFromDocs(w, fields, docs)
 }
 
-// addWildcardEID append wildcard entry id to Z set
-func (bi *indexBase) addWildcardEID(id EntryID) {
-	bi.wildcardEntries = append(bi.wildcardEntries, id)
+// BuildSegmentWithOptions builds a single segment with optional physical format
+// features such as segment v2 embedded Z-list, schema hash and block checksums.
+func BuildSegmentWithOptions(w io.Writer, fields map[BEField]*FieldMeta, docs []*Document, opts BuildSegmentOptions) (Entries, error) {
+	return builder.BuildSegmentFromDocsWithOptions(w, fields, docs, opts)
 }
 
-// collectorPool default collect pool
-var collectorPool = sync.Pool{
-	New: func() interface{} {
-		return NewDocIDCollector()
-	},
+// BuildSegments builds one or more segments from documents, splitting when
+// MaxDocsPerSegment is exceeded. newWriter is called once per segment (segIdx starts at 0).
+// Returns wildcard entries for all segments and the segment count.
+func BuildSegments(
+	newWriter func(segIdx int) (io.Writer, error),
+	fields map[BEField]*FieldMeta,
+	docs []*Document,
+	opts BuildOptions,
+) (Entries, int, error) {
+	return builder.BuildSegmentsFromDocs(newWriter, fields, docs, opts)
 }
 
-func PickCollector() *DocIDCollector {
-	return collectorPool.Get().(*DocIDCollector)
-}
+// --------------------------------------------------------------------------------
+// Segment Re-exports
+// --------------------------------------------------------------------------------
 
-func PutCollector(c *DocIDCollector) {
-	if c == nil {
-		return
+// NewSegmentReader parses an in-memory segment byte slice for query.
+var NewSegmentReader = segment.NewSegmentReader
+
+// OpenSegmentFile memory-maps a segment file read-only for zero-copy serving.
+// Call SegmentReader.Close to unmap when done.
+var OpenSegmentFile = segment.OpenSegmentFile
+
+// SegmentReader serves queries from a segment, backed by mmap or memory.
+type SegmentReader = segment.SegmentReader
+
+// --------------------------------------------------------------------------------
+// Convenience Types
+// --------------------------------------------------------------------------------
+
+// Entries is a slice of EntryIDs (used for wildcard entries).
+type Entries = core.Entries
+
+// --------------------------------------------------------------------------------
+// Observability
+// --------------------------------------------------------------------------------
+
+// WithObserver returns an IndexOpt that attaches an observer to retrieval.
+func WithObserver(obs RetrieveObserver) IndexOpt {
+	return func(ctx *RetrieveContext) {
+		ctx.Observer = obs
 	}
-	c.Reset()
-	collectorPool.Put(c)
-}
-
-type (
-	retrieveContext struct {
-		dumpStepInfo bool
-
-		dumpEntriesDetail bool
-
-		collector ResultCollector
-
-		assigns Assignments
-	}
-
-	IndexOpt func(ctx *retrieveContext)
-)
-
-func WithStepDetail() IndexOpt {
-	return func(ctx *retrieveContext) {
-		ctx.dumpStepInfo = true
-	}
-}
-
-func WithDumpEntries() IndexOpt {
-	return func(ctx *retrieveContext) {
-		ctx.dumpEntriesDetail = true
-	}
-}
-
-// WithCollector specify a user defined collector
-func WithCollector(fn ResultCollector) IndexOpt {
-	return func(ctx *retrieveContext) {
-		ctx.collector = fn
-	}
-}
-
-func newRetrieveCtx(ass Assignments, opts ...IndexOpt) retrieveContext {
-	ctx := retrieveContext{}
-	ctx.assigns = ass
-	for _, fn := range opts {
-		fn(&ctx)
-	}
-	return ctx
-}
-
-func PrintIndexInfo(index BEIndex) {
-	if index == nil {
-		fmt.Println("nil indexer")
-	}
-	sb := &strings.Builder{}
-	index.DumpIndexInfo(sb)
-	fmt.Println(sb.String())
-}
-
-func PrintIndexEntries(index BEIndex) {
-	if index == nil {
-		fmt.Println("nil indexer")
-	}
-	sb := &strings.Builder{}
-	index.DumpEntries(sb)
-	fmt.Println(sb.String())
 }

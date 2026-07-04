@@ -63,11 +63,9 @@ func (p *GeoOption) InitDefault() {
 	p.CompressPrecisionCutoff = util.MinInt(p.CompressPrecisionCutoff, p.Precision)
 }
 
-func (p *GeoHashParser) Name() string {
-	return "geohash"
-}
 
 // lat:lon:radius
+
 func parseLatLonRadius(s string) (lat, lon, r float64, err error) {
 	ss := strings.Split(s, ":")
 	if len(ss) != 3 {
@@ -123,20 +121,6 @@ func (p *GeoHashParser) TokenizeAssign(v interface{}) ([]string, error) {
 	return p.genQueryAssignGeoHash(lat, lon), nil
 }
 
-// ParseAssign implements ValueIDGenerator for query phase
-// Parses query coordinates like [30.5, 98.2] into geohash ids
-func (p *GeoHashParser) ParseAssign(v interface{}) ([]uint64, error) {
-	codes, err := p.TokenizeAssign(v)
-	if err != nil {
-		return nil, err
-	}
-	results := make([]uint64, len(codes))
-	for i, code := range codes {
-		id, _ := geohash.ConvertStringToInt(code)
-		results[i] = id
-	}
-	return results, nil
-}
 
 // TokenizeValue implements ValueTokenizer for indexing phase
 // Parses range strings like "30:90:1000" into multiple geohash strings
@@ -171,19 +155,4 @@ func (p *GeoHashParser) TokenizeValue(v interface{}) ([]string, error) {
 	default:
 	}
 	return nil, fmt.Errorf("unsupported geohash type")
-}
-
-// ParseValue implements ValueIDGenerator for indexing phase
-// Parses range strings like "30:90:1000" into multiple geohash ids
-func (p *GeoHashParser) ParseValue(v interface{}) ([]uint64, error) {
-	codes, err := p.TokenizeValue(v)
-	if err != nil {
-		return nil, err
-	}
-	results := make([]uint64, len(codes))
-	for i, code := range codes {
-		id, _ := geohash.ConvertStringToInt(code)
-		results[i] = id
-	}
-	return results, nil
 }

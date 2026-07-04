@@ -2,7 +2,37 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased] - 2026-02-10
+## [Unreleased] - 2026-04-17
+
+### Changed (Major Architecture Refactoring)
+
+完全重构了 `be_indexer` 的架构，从基于堆内存的索引结构升级为读写分离、零拷贝 (mmap) 的物理段架构。
+
+**主要变更：**
+
+1. **强类型的领域包划分**
+   - 移除庞杂的根目录 API，拆分为 `core`、`builder`、`segment`、`engine` 四个核心包。
+   - `builder`: 提供 `BuildSegmentFromDocs` 方法，将 DNF 规则文档编译为高度优化的物理段文件 (.seg)。
+   - `segment`: 引入 `Builder` 进行位元对齐写入，引入 `MmapReader` 通过 `syscall.Mmap` 提供 Zero-Copy 的加载能力。
+   - `engine`: 引入 `BooleanEngine`，基于抽象的 `FieldCursor` 执行 K-Groups 短路求交算法。
+
+2. **零拷贝底层数据结构**
+   - `FlatPostingList`: 原生的基于切片映射的变长倒排链。
+   - `FlatDict`: 极度紧凑的字符串到 Offset 的扁平哈希字典。
+   - `ACMatcher`: 将 Aho-Corasick 树扁平化为可直接映射的 Double-Array Trie (DAT)。
+
+3. **极致的编码与短路求交算法**
+   - 将 Size(K)、Index、DocID 压缩为 64-bit 的 `ConjID`。
+   - 在 K-Groups 算法 ( `retrieveK` ) 中提供了针对 `NOT IN` (Exclude) 规则的原生 First-Class 支持 (Z-Entry 短路排异机制)。
+
+4. **移除冗余与过时代码**
+   - 彻底移除了 `roaringidx` 包（被基于 K 隔离的扁平结构取代）。
+   - 移除了 `incremental_indexer`（因为段文件是 Immutable 的，生命周期交由 `LiveDocs` 和段合并管理）。
+   - 删除了兼容性的老旧 `FieldHolder` 体系和冗长的包装器。
+
+---
+
+## [2026-02-10]
 
 ### Added
 

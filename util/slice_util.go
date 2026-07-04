@@ -79,13 +79,17 @@ func DistinctInteger[T Integer](vs []T) (res []T) {
 	return res
 }
 
+// DistinctString removes duplicates while preserving first-seen order. Stable
+// ordering keeps encoder output (and therefore built segment bytes) deterministic
+// for the same input.
 func DistinctString(vs []string) (res []string) {
-	m := map[string]struct{}{}
+	seen := make(map[string]struct{}, len(vs))
+	res = make([]string, 0, len(vs))
 	for _, v := range vs {
-		m[v] = struct{}{}
-	}
-	res = make([]string, 0, len(m))
-	for v := range m {
+		if _, ok := seen[v]; ok {
+			continue
+		}
+		seen[v] = struct{}{}
 		res = append(res, v)
 	}
 	return res

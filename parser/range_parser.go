@@ -1,134 +1,106 @@
 package parser
 
 import (
-	"encoding/json"
 	"fmt"
-	"reflect"
-	"strconv"
-	"strings"
+	"math"
 
-	"github.com/echoface/be_indexer/util"
+	"github.com/echoface/be_indexer/core"
 )
 
-var ErrBadRangeValue = fmt.Errorf("NumberRangeParser need:'start:end:step'")
-
-/*
-NumberRangeParser parse syntax like format: start:end:step
-step ist optional, it will generate start, start+step, start+2*stem ....
-*/
-type (
-	// NumberRangeParser format: start:end:step; the `step` is optional
-	NumberRangeParser struct{}
-
-	RangeDesc struct {
-		start int64
-		end   int64
-		step  int64
-	}
-)
-
-func NewNumRangeParser() ValueIDGenerator {
-	return &NumberRangeParser{}
+// IntInterval is a closed integer interval [Lo, Hi].
+type IntInterval struct {
+	Lo int64
+	Hi int64
 }
 
-func NewRangeDesc(v string) *RangeDesc {
-	opt := RangeDesc{step: 1}
-	vs := strings.Split(v, ":")
-	if len(vs) < 2 { // min len is 4 bz fmt:"x:x"
-		return nil
-	}
-	var err error
-	if opt.end, err = strconv.ParseInt(vs[1], 10, 64); err != nil {
-		return nil
-	}
-	if opt.start, err = strconv.ParseInt(vs[0], 10, 64); err != nil {
-		return nil
-	}
-	if len(vs) <= 2 {
-		return &opt
-	}
-	if opt.step, err = strconv.ParseInt(vs[2], 10, 64); err != nil {
-		return nil
-	}
-	return &opt
-}
-
-func (rgd *RangeDesc) Values() (start, end, stepLen int64) {
-	return rgd.start, rgd.end, rgd.start
-}
-
-func (p *NumberRangeParser) Name() string {
-	return "number_range"
-}
-
-// ParseAssign only single number supported, float will round into integer
-func (p *NumberRangeParser) ParseAssign(v interface{}) (res []uint64, err error) {
-	if util.NilInterface(v) {
-		return res, err
-	}
-
-	switch val := v.(type) {
-	case int8, int16, int32, int, int64, uint8, uint16, uint32, uint, uint64, float64, float32, json.Number:
-		var num int64
-		if num, err = ParseIntegerNumber(v, true); err != nil {
+// ParseRangeExpr converts a boolean range predicate (operator + value) into one
+// or more closed integer intervals that the ext_range segment-tree container
+// indexes. It is the build-side counterpart that finally honours
+// core.ValueExpr.Operator, which the EQ-only tokenizer path ignores.
+//
+// Semantics (all clamped to the int64 domain):
+//
+//	EQ      v / [a,b,...]  -> one [x,x] interval per distinct value
+//	GT      v              -> [v+1, MaxInt64]   (strictly greater)
+//	LT      v              -> [MinInt64, v-1]   (strictly less)
+//	Between [lo, hi]       -> [lo, hi]
+//
+// GT(MaxInt64) and LT(MinInt64) yield the empty set (no interval), which is the
+// correct degenerate semantics (nothing is strictly greater than the max).
+func ParseRangeExpr(op core.ValueOpt, value interface{}) ([]IntInterval, error) {
+	switch op {
+	case core.ValueOptEQ:
+		vals, err := ParseIntegers(value, true)
+		if err != nil {
 			return nil, err
 		}
-		return []uint64{uint64(num)}, nil
+		intervals := make([]IntInterval, 0, len(vals))
+		for _, v := range vals {
+			intervals = append(intervals, IntInterval{Lo: v, Hi: v})
+		}
+		return intervals, nil
+
+	case core.ValueOptGT:
+		v, err := singleInt(value)
+		if err != nil {
+			return nil, err
+		}
+		if v == math.MaxInt64 {
+			return nil, nil // nothing is strictly greater than MaxInt64
+		}
+		return []IntInterval{{Lo: v + 1, Hi: math.MaxInt64}}, nil
+
+	case core.ValueOptLT:
+		v, err := singleInt(value)
+		if err != nil {
+			return nil, err
+		}
+		if v == math.MinInt64 {
+			return nil, nil // nothing is strictly less than MinInt64
+		}
+		return []IntInterval{{Lo: math.MinInt64, Hi: v - 1}}, nil
+
+	case core.ValueOptBetween:
+		lo, hi, err := pairInt(value)
+		if err != nil {
+			return nil, err
+		}
+		if lo > hi {
+			return nil, fmt.Errorf("between bounds out of order: [%d,%d]", lo, hi)
+		}
+		return []IntInterval{{Lo: lo, Hi: hi}}, nil
+
 	default:
-		rt := reflect.TypeOf(val)
-		if rt.Kind() != reflect.Slice {
-			break
-		}
-		rv := reflect.ValueOf(val)
-		for i := 0; i < rv.Len(); i++ {
-			var num int64
-			if num, err = ParseIntegerNumber(rv.Index(i).Interface(), true); err != nil {
-				return nil, err
-			}
-			res = append(res, uint64(num))
-		}
+		return nil, fmt.Errorf("unsupported range operator: %d", op)
 	}
-	return nil, fmt.Errorf("not suppoted type:%+v", v)
 }
 
-func (p *NumberRangeParser) ParseValue(v interface{}) (res []uint64, err error) {
-	switch value := v.(type) {
-	case string:
-		opt := NewRangeDesc(value)
-		if opt == nil {
-			return nil, ErrBadRangeValue
-		}
-		for s := opt.start; s <= opt.end; s += opt.step {
-			res = append(res, uint64(s))
-		}
-		return res, nil
-	case []string:
-		for _, s := range value {
-			opt := NewRangeDesc(s)
-			if opt == nil {
-				return nil, ErrBadRangeValue
-			}
-			for s := opt.start; s <= opt.end; s += opt.step {
-				res = append(res, uint64(s))
-			}
-		}
-	case []interface{}:
-		for _, si := range value {
-			sv, ok := si.(string)
-			if !ok {
-				return nil, ErrBadRangeValue
-			}
-			var desc *RangeDesc
-			if desc = NewRangeDesc(sv); desc == nil {
-				return nil, ErrBadRangeValue
-			}
-
-			for s := desc.start; s <= desc.end; s += desc.step {
-				res = append(res, uint64(s))
-			}
-		}
-	default:
-		return nil, ErrBadRangeValue
+// singleInt extracts exactly one int64 from a scalar or single-element slice.
+func singleInt(value interface{}) (int64, error) {
+	vals, err := ParseIntegers(value, true)
+	if err != nil {
+		return 0, err
 	}
-	return res, nil
+	if len(vals) != 1 {
+		return 0, fmt.Errorf("expected a single value, got %d", len(vals))
+	}
+	return vals[0], nil
+}
+
+// pairInt extracts exactly two int64 (lo, hi) for between.
+func pairInt(value interface{}) (int64, int64, error) {
+	vals, err := ParseIntegers(value, true)
+	if err != nil {
+		return 0, 0, err
+	}
+	if len(vals) != 2 {
+		return 0, 0, fmt.Errorf("between expects two values, got %d", len(vals))
+	}
+	return vals[0], vals[1], nil
+}
+
+// ParseRangePoint parses a query assignment value into a single int64 point for
+// stabbing the ext_range container.
+func ParseRangePoint(value interface{}) (int64, error) {
+	return singleInt(value)
 }

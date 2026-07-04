@@ -1,0 +1,209 @@
+package core
+
+import (
+	"encoding/json"
+	"fmt"
+	"strings"
+)
+
+type (
+	DocID     int64
+	DocIDList []DocID
+
+	Conjunction struct { // 每个conjunction 内的field 逻辑为且， 参考DNF定义
+		Predicates map[BEField][]*ValueExpr `json:"predicates"` // 同一个Conj内不允许重复的Field
+	}
+
+	Document struct {
+		ID      DocID          `json:"id"`      // 只支持2^43最大值个Doc
+		Version uint64         `json:"version"` // 【增量缓存】业务提供的文档版本号，0表示不使用缓存
+		Cons    []*Conjunction `json:"cons"`    // conjunction之间的关系是或，具体描述可以看论文的表述
+	}
+)
+
+func NewDocument(id DocID) *Document {
+	return &Document{
+		ID:      id,
+		Version: 0, // 默认为0，表示不使用缓存
+		Cons:    make([]*Conjunction, 0),
+	}
+}
+
+func (s DocIDList) Contain(id DocID) bool {
+	for _, v := range s {
+		if v == id {
+			return true
+		}
+	}
+	return false
+}
+
+func (s DocIDList) Sub(other DocIDList) (r DocIDList) {
+BASE:
+	for _, v := range s {
+		for _, c := range other {
+			if v == c {
+				continue BASE
+			}
+		}
+		r = append(r, v)
+	}
+	return
+}
+
+// Len sort API
+func (s DocIDList) Len() int           { return len(s) }
+func (s DocIDList) Swap(i, j int)      { s[i], s[j] = s[j], s[i] }
+func (s DocIDList) Less(i, j int) bool { return s[i] < s[j] }
+
+// AddConjunction 一组完整的expression， 必须是完整一个描述文档的DNF Bool表达的条件组合*/
+func (doc *Document) AddConjunction(cons ...*Conjunction) *Document {
+	for _, conj := range cons {
+		doc.Cons = append(doc.Cons, conj)
+	}
+	return doc
+}
+
+func (doc *Document) AddConjunctions(conj *Conjunction, others ...*Conjunction) *Document {
+	doc.Cons = append(doc.Cons, conj)
+	for _, conj := range others {
+		doc.Cons = append(doc.Cons, conj)
+	}
+	return doc
+}
+
+func (doc *Document) JSONString() string {
+	data, _ := json.Marshal(doc)
+	return string(data)
+}
+
+// String a more compacted string
+func (doc *Document) String() string {
+	strBuilder := strings.Builder{}
+	strBuilder.WriteString(fmt.Sprintf("doc:%d, cons:[\n", doc.ID))
+	cnt := len(doc.Cons)
+	for i, conj := range doc.Cons {
+		strBuilder.WriteString(fmt.Sprintf("\t%d:%s", i, conj.String()))
+		cnt--
+		if cnt > 0 {
+			strBuilder.WriteString(",\n")
+		}
+	}
+	strBuilder.WriteString("\n]")
+	return strBuilder.String()
+}
+
+func NewConjunction() *Conjunction {
+	return &Conjunction{
+		Predicates: make(map[BEField][]*ValueExpr),
+	}
+}
+
+// In any value in values is a **true** expression
+func (conj *Conjunction) In(field BEField, values Values) *Conjunction {
+	conj.addPredicate(field, NewValueExpr(ValueOptEQ, values, true))
+	return conj
+}
+
+// NotIn any value in values is a **false** expression
+func (conj *Conjunction) NotIn(field BEField, values Values) *Conjunction {
+	conj.addPredicate(field, NewValueExpr(ValueOptEQ, values, false))
+	return conj
+}
+
+func (conj *Conjunction) Include(field BEField, values Values) *Conjunction {
+	conj.addPredicate(field, NewValueExpr(ValueOptEQ, values, true))
+	return conj
+}
+
+func (conj *Conjunction) Exclude(field BEField, values Values) *Conjunction {
+	conj.addPredicate(field, NewValueExpr(ValueOptEQ, values, false))
+	return conj
+}
+
+func (conj *Conjunction) GreaterThan(field BEField, value int64) *Conjunction {
+	conj.AddPredicates(&Predicate{
+		Field:      field,
+		ValueExpr: NewGTValueExpr(value),
+	})
+	return conj
+}
+
+func (conj *Conjunction) LessThan(field BEField, value int64) *Conjunction {
+	conj.AddPredicates(&Predicate{
+		Field:      field,
+		ValueExpr: NewLTValueExpr(value),
+	})
+	return conj
+}
+
+func (conj *Conjunction) Between(field BEField, l, h int64) *Conjunction {
+	conj.AddPredicates(&Predicate{
+		Field:      field,
+		ValueExpr: NewValueExpr(ValueOptBetween, []int64{l, h}, true),
+	})
+	return conj
+}
+
+// AddPredicates append boolean expression,
+// don't allow same field added twice in one conjunction
+func (conj *Conjunction) AddPredicates(exprs ...*Predicate) *Conjunction {
+	for _, expr := range exprs {
+		conj.addPredicate(expr.Field, expr.ValueExpr)
+	}
+	return conj
+}
+
+func (conj *Conjunction) AddPredicate3(field string, include bool, values Values) *Conjunction {
+	conj.addPredicate(BEField(field), NewValueExpr(ValueOptEQ, values, include))
+	return conj
+}
+
+func (conj *Conjunction) addPredicate(field BEField, boolValues ValueExpr) {
+	conj.Predicates[field] = append(conj.Predicates[field], &boolValues)
+}
+
+func (conj *Conjunction) JSONString() string {
+	data, _ := json.Marshal(conj)
+	return string(data)
+}
+
+func (conj *Conjunction) String() string {
+	strBuilder := strings.Builder{}
+	strBuilder.WriteString("{")
+	cnt := len(conj.Predicates)
+	for field, exprs := range conj.Predicates {
+		strBuilder.WriteString(fmt.Sprintf("%s (", field))
+		for i, expr := range exprs {
+			if i != 0 {
+				strBuilder.WriteString(",")
+			}
+			strBuilder.WriteString(expr.String())
+		}
+		cnt--
+		if cnt > 0 {
+			strBuilder.WriteString(") and ")
+		} else {
+			strBuilder.WriteString(")")
+		}
+	}
+	strBuilder.WriteString("}")
+	return strBuilder.String()
+}
+
+func (conj *Conjunction) CalcConjSize() (size int) {
+	for _, bvs := range conj.Predicates {
+	EXPR:
+		for _, expr := range bvs {
+			if expr.Incl {
+				size++
+				break EXPR
+			}
+		}
+	}
+	return size
+}
+
+func (conj *Conjunction) PredicateCount() (size int) {
+	return len(conj.Predicates)
+}

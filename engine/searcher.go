@@ -98,7 +98,7 @@ func (e *BooleanEngine) RetrieveWithCollector(
 	maxK := len(queries)
 	for k := maxK; k >= 0; k-- {
 		fCursors := e.initCursors(k, encoded, ctx.Observer)
-		if len(fCursors) == 0 {
+		if fCursors.Len() == 0 {
 			continue
 		}
 		needMatchCnt := k
@@ -138,19 +138,20 @@ func (e *BooleanEngine) encodeQueries(queries core.Assignments) []encodedField {
 }
 
 // retrieveK performs the K-Groups multiway merge algorithm from VLDB 09.
+// FieldCursors is maintained as a min-heap: Peek/AdvanceFirst are O(k log n)
+// instead of the previous O(n log n) sort.Slice per iteration.
 func (e *BooleanEngine) retrieveK(
-	ctx *core.RetrieveContext, fieldCursors core.FieldCursors, needMatchCnt int,
+	ctx *core.RetrieveContext, fieldCursors *core.FieldCursors, needMatchCnt int,
 ) {
-	if len(fieldCursors) < needMatchCnt {
+	if fieldCursors.Len() < needMatchCnt {
 		return
 	}
-	fieldCursors.Sort()
 
 	obs := ctx.Observer
 
-	for !fieldCursors[needMatchCnt-1].GetCurEntryID().IsNULLEntry() {
-		eid := fieldCursors[0].GetCurEntryID()
-		endEID := fieldCursors[needMatchCnt-1].GetCurEntryID()
+	for !fieldCursors.PeekAt(needMatchCnt - 1).IsNULLEntry() {
+		eid := fieldCursors.Peek()
+		endEID := fieldCursors.PeekAt(needMatchCnt - 1)
 
 		conjID := eid.GetConjID()
 		endConjID := endEID.GetConjID()
@@ -168,22 +169,14 @@ func (e *BooleanEngine) retrieveK(
 					}
 				}
 			} else {
-				// exclude — short-circuit remaining cursors
 				if obs != nil {
 					obs.OnExcludeSkip(conjID.DocID())
 				}
-				for i := needMatchCnt; i < len(fieldCursors); i++ {
-					if fieldCursors[i].GetCurEntryID() < nextID {
-						fieldCursors[i].SkipTo(nextID)
-					}
-				}
+				fieldCursors.ShortCircuitAfter(needMatchCnt, nextID)
 			}
 		}
 
-		for i := 0; i < needMatchCnt; i++ {
-			fieldCursors[i].SkipTo(nextID)
-		}
-		fieldCursors.Sort()
+		fieldCursors.AdvanceFirst(needMatchCnt, nextID)
 	}
 }
 
@@ -192,8 +185,8 @@ func (e *BooleanEngine) retrieveK(
 // therefore cannot fail; unknown encoded kinds are defensively skipped.
 func (e *BooleanEngine) initCursors(
 	k int, encoded []encodedField, obs core.RetrieveObserver,
-) core.FieldCursors {
-	fCursors := make(core.FieldCursors, 0, len(encoded)+1)
+) *core.FieldCursors {
+	fCursors := core.NewFieldCursors(len(encoded) + 1)
 
 	if k == 0 && len(e.wildcardEntries) > 0 {
 		var kWildcards []core.EntryID
@@ -204,7 +197,7 @@ func (e *BooleanEngine) initCursors(
 		}
 		if len(kWildcards) > 0 {
 			pl := core.NewSliceIterator(core.WildcardTerm, kWildcards)
-			fCursors = append(fCursors, core.NewFieldCursor(pl))
+			fCursors.Append(core.NewFieldCursor(pl))
 		}
 	}
 
@@ -236,10 +229,12 @@ func (e *BooleanEngine) initCursors(
 		}
 
 		if len(iterators) > 0 {
-			fCursors = append(fCursors, core.NewFieldCursor(iterators...))
+			fCursors.Append(core.NewFieldCursor(iterators...))
 			fieldCount++
 		}
 	}
+
+	fCursors.Sort()
 
 	if obs != nil && fieldCount > 0 {
 		obs.OnCursorInit(k, fieldCount)

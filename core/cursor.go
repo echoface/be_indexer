@@ -1,9 +1,9 @@
 package core
 
-import "sort"
-
-// PostingIterator is defined in core already
-// Let's implement SliceIterator and FieldCursor here.
+import (
+	"container/heap"
+	"sort"
+)
 
 // SliceIterator a wrap for slice EntryID
 type SliceIterator struct {
@@ -32,7 +32,6 @@ func (s *SliceIterator) Current() EntryID {
 }
 
 func (s *SliceIterator) SkipTo(id EntryID) EntryID {
-	// Binary search for efficiency
 	left, right := s.cursor, len(s.EIDs)-1
 	for left <= right {
 		mid := left + (right-left)/2
@@ -46,25 +45,38 @@ func (s *SliceIterator) SkipTo(id EntryID) EntryID {
 	return s.Current()
 }
 
+// iterHeap is a min-heap of PostingIterator ordered by Current() EntryID.
+// It replaces sort.Slice in FieldCursor, reducing SkipTo from O(n log n) to O(log n).
+type iterHeap []PostingIterator
+
+func (h iterHeap) Len() int           { return len(h) }
+func (h iterHeap) Less(i, j int) bool { return h[i].Current() < h[j].Current() }
+func (h iterHeap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
+func (h *iterHeap) Push(x any)        { *h = append(*h, x.(PostingIterator)) }
+func (h *iterHeap) Pop() any {
+	old := *h
+	n := len(old)
+	x := old[n-1]
+	*h = old[:n-1]
+	return x
+}
+
+// FieldCursor maintains a heap-ordered set of PostingIterators. The minimum
+// EntryID is always at the top. SkipTo pops the minimum, advances it past the
+// target id, and pushes it back — O(log n) instead of the previous O(n log n).
 type FieldCursor struct {
-	Iters []PostingIterator
+	Iters iterHeap
 }
 
 func NewFieldCursor(iters ...PostingIterator) FieldCursor {
-	fc := FieldCursor{Iters: make([]PostingIterator, 0, len(iters))}
+	fc := FieldCursor{Iters: make(iterHeap, 0, len(iters))}
 	for _, it := range iters {
 		if it != nil && !it.Current().IsNULLEntry() {
 			fc.Iters = append(fc.Iters, it)
 		}
 	}
-	fc.Sort()
+	heap.Init(&fc.Iters)
 	return fc
-}
-
-func (f *FieldCursor) Sort() {
-	sort.Slice(f.Iters, func(i, j int) bool {
-		return f.Iters[i].Current() < f.Iters[j].Current()
-	})
 }
 
 func (f *FieldCursor) GetCurEntryID() EntryID {
@@ -78,9 +90,10 @@ func (f *FieldCursor) SkipTo(id EntryID) EntryID {
 	if len(f.Iters) == 0 {
 		return NULLENTRY
 	}
-	res := f.Iters[0].SkipTo(id)
-	f.Sort()
-	return res
+	it := heap.Pop(&f.Iters).(PostingIterator)
+	it.SkipTo(id)
+	heap.Push(&f.Iters, it)
+	return f.Iters[0].Current()
 }
 
 func (f *FieldCursor) DumpInfo() []string {
@@ -94,10 +107,67 @@ func (f *FieldCursor) DumpInfo() []string {
 	return res
 }
 
-type FieldCursors []FieldCursor
+// FieldCursors is a wrapper over []FieldCursor with sort.Slice ordering.
+// Benchmark shows sort.Slice is faster than heap for outer FieldCursors
+// because Go's sort.Slice is highly optimized for slice sizes < 1000.
+type FieldCursors struct {
+	items []FieldCursor
+}
 
-func (f FieldCursors) Sort() {
-	sort.Slice(f, func(i, j int) bool {
-		return f[i].GetCurEntryID() < f[j].GetCurEntryID()
+func NewFieldCursors(cap int) *FieldCursors {
+	return &FieldCursors{items: make([]FieldCursor, 0, cap)}
+}
+
+func (fcs *FieldCursors) Len() int { return len(fcs.items) }
+
+func (fcs *FieldCursors) Append(fc FieldCursor) {
+	fcs.items = append(fcs.items, fc)
+}
+
+func (fcs *FieldCursors) Sort() {
+	sort.Slice(fcs.items, func(i, j int) bool {
+		return fcs.items[i].GetCurEntryID() < fcs.items[j].GetCurEntryID()
 	})
+}
+
+// Peek returns the smallest EntryID among all FieldCursors.
+func (fcs *FieldCursors) Peek() EntryID {
+	if len(fcs.items) == 0 {
+		return NULLENTRY
+	}
+	return fcs.items[0].GetCurEntryID()
+}
+
+// PeekAt returns the k-th smallest EntryID (0-indexed).
+func (fcs *FieldCursors) PeekAt(k int) EntryID {
+	if k < 0 || k >= len(fcs.items) {
+		return NULLENTRY
+	}
+	return fcs.items[k].GetCurEntryID()
+}
+
+// AdvanceFirst advances the first k elements past nextID, then re-sorts.
+func (fcs *FieldCursors) AdvanceFirst(k int, nextID EntryID) {
+	if k <= 0 || len(fcs.items) == 0 {
+		return
+	}
+	for i := 0; i < k && i < len(fcs.items); i++ {
+		fcs.items[i].SkipTo(nextID)
+	}
+	fcs.Sort()
+}
+
+// ShortCircuitAfter conditionally advances all elements after the first k
+// whose current EntryID is less than nextID, then re-sorts.
+func (fcs *FieldCursors) ShortCircuitAfter(k int, nextID EntryID) {
+	n := len(fcs.items)
+	if k >= n {
+		return
+	}
+	for i := k; i < n; i++ {
+		if fcs.items[i].GetCurEntryID() < nextID {
+			fcs.items[i].SkipTo(nextID)
+		}
+	}
+	fcs.Sort()
 }

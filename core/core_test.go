@@ -584,7 +584,7 @@ func TestFieldCursor_Empty(t *testing.T) {
 	}
 }
 
-func TestFieldCursors_Sort(t *testing.T) {
+func TestFieldCursors_Heap(t *testing.T) {
 	fc1 := NewFieldCursor(NewSliceIterator(NewTerm("a", 0), []EntryID{
 		NewEntryID(NewConjID(10, 0, 1), true),
 	}))
@@ -592,10 +592,15 @@ func TestFieldCursors_Sort(t *testing.T) {
 		NewEntryID(NewConjID(5, 0, 1), true),
 	}))
 
-	fcs := FieldCursors{fc1, fc2}
+	fcs := NewFieldCursors(2)
+	fcs.Append(fc1)
+	fcs.Append(fc2)
 	fcs.Sort()
-	if fcs[0].GetCurEntryID() != NewEntryID(NewConjID(5, 0, 1), true) {
-		t.Error("Sorted FieldCursors: smallest should be first")
+	if fcs.Peek() != NewEntryID(NewConjID(5, 0, 1), true) {
+		t.Error("Heap FieldCursors: smallest should be first")
+	}
+	if fcs.Len() != 2 {
+		t.Error("Should have 2 elements")
 	}
 }
 

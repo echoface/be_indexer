@@ -160,7 +160,7 @@ func (ac *ACMmapReader) Retrieve(postingBlock []byte, field core.BEField, query 
 	}
 	iters := make([]core.PostingIterator, 0, len(refs))
 	for _, ref := range refs {
-		pl, err := newPostingListAt(postingBlock, ref)
+		pl, err := NewPostingListAt(postingBlock, ref)
 		if err != nil {
 			continue
 		}

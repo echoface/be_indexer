@@ -277,7 +277,7 @@ func (sr *SegmentReader) GetPostingsByTerm(field core.BEField, term string) (cor
 		return nil, nil
 	}
 
-	pl, err := newPostingListAt(blk.pl, ref)
+	pl, err := NewPostingListAt(blk.pl, ref)
 	if err != nil {
 		return nil, fmt.Errorf("field %s: %w", field, err)
 	}

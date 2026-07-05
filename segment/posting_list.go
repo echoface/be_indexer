@@ -47,11 +47,11 @@ type FlatPostingList struct {
 	data  []core.EntryID
 }
 
-// newPostingListAt maps the posting list of `count` EntryIDs whose header starts
+// NewPostingListAt maps the posting list of `count` EntryIDs whose header starts
 // at block-relative `offset` inside `block`. It trusts the count carried by the
 // caller (dict/AC ref), skipping the on-block count header read while still
 // validating bounds.
-func newPostingListAt(block []byte, ref PostingRef) (*FlatPostingList, error) {
+func NewPostingListAt(block []byte, ref PostingRef) (*FlatPostingList, error) {
 	if ref.Count == 0 {
 		return &FlatPostingList{count: 0}, nil
 	}

@@ -4,6 +4,8 @@ import (
 	"encoding/binary"
 	"fmt"
 	"unsafe"
+
+	"github.com/echoface/be_indexer/core"
 )
 
 type ACMmapReader struct {
@@ -143,4 +145,33 @@ func (ac *ACMmapReader) readOutputs(offset uint32, dst []PostingRef) []PostingRe
 		offset += 12
 	}
 	return dst
+}
+
+// Retrieve implements ContainerReader by performing AC matching against the
+// query text and returning posting cursors into the posting block.
+func (ac *ACMmapReader) Retrieve(postingBlock []byte, field core.BEField, query interface{}) ([]core.PostingIterator, error) {
+	text, ok := query.(string)
+	if !ok {
+		return nil, fmt.Errorf("ac container expects string query, got %T", query)
+	}
+	refs := ac.MatchPostingRefs(text)
+	if len(refs) == 0 {
+		return nil, nil
+	}
+	iters := make([]core.PostingIterator, 0, len(refs))
+	for _, ref := range refs {
+		pl, err := newPostingListAt(postingBlock, ref)
+		if err != nil {
+			continue
+		}
+		iters = append(iters, pl.NewPostingCursor(core.NewTerm(field, text)))
+	}
+	return iters, nil
+}
+
+func init() {
+	RegisterContainer(core.IndexNameACMatcher,
+		func(b []byte) (ContainerReader, error) { return NewACMmapReader(b) },
+		func() ContainerBuilder { return NewStaticACBuilder() },
+	)
 }

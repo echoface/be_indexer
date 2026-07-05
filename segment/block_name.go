@@ -9,5 +9,4 @@ func blockName(field string) string {
 
 func dictBlockName(field string) string  { return blockName(field) + "_dict" }
 func plBlockName(field string) string    { return blockName(field) + "_postings" }
-func acBlockName(field string) string    { return blockName(field) + "_ac" }
-func rangeBlockName(field string) string { return blockName(field) + "_range" }
+func containerBlockName(field, kind string) string { return blockName(field) + "_" + kind }

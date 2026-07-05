@@ -221,6 +221,11 @@ func (e *BooleanEngine) initCursors(
 					if err == nil && len(iters) > 0 {
 						iterators = append(iterators, iters...)
 					}
+				default:
+					iters, err := seg.ContainerQuery(field, string(q.Kind), q.Value)
+					if err == nil && len(iters) > 0 {
+						iterators = append(iterators, iters...)
+					}
 				}
 			}
 		}

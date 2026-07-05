@@ -272,7 +272,7 @@ func TestNewSegmentReaderRejectsSegmentV2ACChecksumMismatch(t *testing.T) {
 	if err := json.Unmarshal(data[metaOffset:len(data)-8], &meta); err != nil {
 		t.Fatal(err)
 	}
-	block := meta.BlockIndex[acBlockName("keyword")]
+	block := meta.BlockIndex[containerBlockName("keyword", BlockKindAC)]
 	data[block.Offset] ^= 0xff
 	_, err := NewSegmentReader(data)
 	if err == nil || !strings.Contains(err.Error(), "checksum mismatch") {

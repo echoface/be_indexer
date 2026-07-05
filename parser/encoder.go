@@ -44,6 +44,9 @@ type EncodedQuery struct {
 	Term  string
 	Point int64
 	Text  string
+	// Value carries the raw query payload for custom container types.
+	// The segment container's Retrieve receives this value directly.
+	Value any
 }
 
 // PredicateEncoder is the single translation boundary between business values

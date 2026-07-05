@@ -18,8 +18,8 @@ const (
 const (
 	BlockKindPostings  = "postings"
 	BlockKindDict      = "dict"
-	BlockKindAC        = "ac"
-	BlockKindRange     = "range"
+	BlockKindAC        = "ac_matcher"
+	BlockKindRange     = "ext_range"
 	BlockKindWildcards = "wildcards"
 )
 

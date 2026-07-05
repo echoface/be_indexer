@@ -364,3 +364,8 @@ func (b *StaticACBuilder) Compile() ([]byte, error) {
 
 	return buf, nil
 }
+
+// Build satisfies the ContainerBuilder interface by delegating to Compile.
+func (b *StaticACBuilder) Build() ([]byte, error) {
+	return b.Compile()
+}

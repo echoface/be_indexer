@@ -25,10 +25,9 @@ func makeBlockKey(fieldID uint16) blockKey {
 
 // blockLookup holds pre-resolved references for a field (all K values merged).
 type blockLookup struct {
-	dict *FlatDict
-	pl   []byte
-	ac   *ACMmapReader
-	rng  *RangeIndex
+	dict       *FlatDict
+	pl         []byte
+	containers map[string]ContainerReader
 }
 
 type BlockChecksumMode int
@@ -158,20 +157,15 @@ func NewSegmentReaderWithOptions(b []byte, opts ReaderOptions) (*SegmentReader, 
 			blk.dict = dict
 		case BlockKindPostings:
 			blk.pl = blockBytes
-		case BlockKindAC:
-			acReader, err := NewACMmapReader(blockBytes)
-			if err != nil {
-				return nil, fmt.Errorf("failed to parse AC matcher for %s: %w", name, err)
-			}
-			blk.ac = acReader
-		case BlockKindRange:
-			rngReader, err := NewRangeIndexReader(blockBytes)
-			if err != nil {
-				return nil, fmt.Errorf("failed to parse range index for %s: %w", name, err)
-			}
-			blk.rng = rngReader
 		default:
-			return nil, fmt.Errorf("block %s has unknown kind %q", name, def.Kind)
+			cr, err := NewContainerReader(def.Kind, blockBytes)
+			if err != nil {
+				return nil, fmt.Errorf("failed to load container %q for %s: %w", def.Kind, name, err)
+			}
+			if blk.containers == nil {
+				blk.containers = make(map[string]ContainerReader)
+			}
+			blk.containers[def.Kind] = cr
 		}
 	}
 
@@ -291,38 +285,30 @@ func (sr *SegmentReader) GetPostingsByTerm(field core.BEField, term string) (cor
 	return pl.NewPostingCursor(core.NewTerm(field, term)), nil
 }
 
+// ContainerQuery dispatches a query to a registered container and returns
+// posting iterators. kind is the container type (e.g. "ac_matcher", "ext_range").
+func (sr *SegmentReader) ContainerQuery(field core.BEField, kind string, query interface{}) ([]core.PostingIterator, error) {
+	blk, ok := sr.lookupBlock(field)
+	if !ok {
+		return nil, core.ErrUnknownQueryField
+	}
+	cr, ok := blk.containers[kind]
+	if !ok {
+		return nil, nil
+	}
+	return cr.Retrieve(blk.pl, field, query)
+}
+
 // MultiPatternSearch performs AC automaton matching on the input text and
 // returns posting iterators for all matched terms in the merged posting list.
 func (sr *SegmentReader) MultiPatternSearch(field core.BEField, text string) ([]core.PostingIterator, error) {
-	blk, ok := sr.lookupBlock(field)
-	if !ok || blk.ac == nil {
-		return nil, fmt.Errorf("AC matcher not configured for field %s", field)
-	}
-
-	refs := blk.ac.MatchPostingRefs(text)
-	if len(refs) == 0 {
-		return nil, nil
-	}
-
-	iterators := make([]core.PostingIterator, 0, len(refs))
-	for _, ref := range refs {
-		pl, err := newPostingListAt(blk.pl, ref)
-		if err != nil {
-			continue
-		}
-		iterators = append(iterators, pl.NewPostingCursor(core.NewTerm(field, text)))
-	}
-	return iterators, nil
+	return sr.ContainerQuery(field, BlockKindAC, text)
 }
 
 // GetRangePostings returns posting iterators for every interval that contains
 // the query point in an ext_range field, from the merged (all-K) posting list.
 func (sr *SegmentReader) GetRangePostings(field core.BEField, point int64) ([]core.PostingIterator, error) {
-	blk, ok := sr.lookupBlock(field)
-	if !ok || blk.rng == nil {
-		return nil, nil
-	}
-	return blk.rng.Stab(field, point)
+	return sr.ContainerQuery(field, BlockKindRange, point)
 }
 
 // SchemaHash returns the embedded schema hash for segment v4 files.

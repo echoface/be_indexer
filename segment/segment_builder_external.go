@@ -362,22 +362,21 @@ func (b *ExternalBuilder) writeMergedBlocks() (map[string]BlockDef, error) {
 		blockIndex[postingsBlockName] = BlockDef{Field: currentField, Kind: BlockKindPostings, Offset: postingsOffset, Size: postingsSize}
 
 		meta := b.fields[currentField]
-		if meta.Container == core.IndexNameACMatcher {
-			acBuilder := NewStaticACBuilder()
+		if cb, err := NewContainerBuilder(meta.Container); err == nil && cb != nil {
 			for _, item := range dict.items {
 				term := string(dict.terms[item.termStart : item.termStart+item.termLen])
-				acBuilder.Add(term, PostingRef{Offset: item.postingOff, Count: item.postingCount})
+				cb.Add(term, PostingRef{Offset: item.postingOff, Count: item.postingCount})
 			}
-			acBytes, err := acBuilder.Compile()
+			blockBytes, err := cb.Build()
 			if err != nil {
-				return fmt.Errorf("failed to compile AC automaton for field %s: %w", currentField, err)
+				return fmt.Errorf("failed to build container %q for field %s: %w", meta.Container, currentField, err)
 			}
-			acBlockName := acBlockName(currentField)
-			acOffset := b.offset
-			if err := b.writeChecksummedBlock(acBlockName, acBytes); err != nil {
+			containerBlockName := blockName(currentField) + "_" + meta.Container
+			containerOffset := b.offset
+			if err := b.writeChecksummedBlock(containerBlockName, blockBytes); err != nil {
 				return err
 			}
-			blockIndex[acBlockName] = BlockDef{Field: currentField, Kind: BlockKindAC, Offset: acOffset, Size: b.offset - acOffset}
+			blockIndex[containerBlockName] = BlockDef{Field: currentField, Kind: meta.Container, Offset: containerOffset, Size: b.offset - containerOffset}
 		}
 
 		dictOffset := b.offset
@@ -450,7 +449,7 @@ func (b *ExternalBuilder) writeRangeBlocks(blockIndex map[string]BlockDef) error
 		if err := b.alignTo8(); err != nil {
 			return err
 		}
-		name := rangeBlockName(field)
+		name := containerBlockName(field, BlockKindRange)
 		offset := b.offset
 		if err := b.writeChecksummedBlock(name, rangeBytes); err != nil {
 			return err

@@ -175,24 +175,28 @@ func (sw *InMemorySegmentBuilder) Write() error {
 		sw.finishBlock(postingsBlockName)
 		blockIndex[postingsBlockName] = BlockDef{Field: field, Kind: BlockKindPostings, Offset: postingsOffset, Size: postingsSize}
 
-		if meta.Container == core.IndexNameACMatcher {
-			acBuilder := NewStaticACBuilder()
-			for _, term := range terms {
-				acBuilder.Add(term, fd.Dict[term])
+		if meta.Container != "" && meta.Container != core.IndexNameDefault {
+			cb, err := NewContainerBuilder(meta.Container)
+			switch {
+			case err != nil:
+				// container not registered or has no builder — skip
+			case cb != nil:
+				for _, term := range terms {
+					cb.Add(term, fd.Dict[term])
+				}
+				blockBytes, err := cb.Build()
+				if err != nil {
+					return fmt.Errorf("failed to build container %q for field %s: %w", meta.Container, field, err)
+				}
+				containerBlockName := blockName(field) + "_" + meta.Container
+				containerOffset := sw.offset
+				sw.beginBlock()
+				if err := sw.writeBytes(blockBytes); err != nil {
+					return err
+				}
+				sw.finishBlock(containerBlockName)
+				blockIndex[containerBlockName] = BlockDef{Field: field, Kind: meta.Container, Offset: containerOffset, Size: sw.offset - containerOffset}
 			}
-			acBytes, err := acBuilder.Compile()
-			if err != nil {
-				return fmt.Errorf("failed to compile AC automaton for field %s: %w", field, err)
-			}
-			acBlockName := acBlockName(field)
-			acOffset := sw.offset
-			sw.beginBlock()
-			if err := sw.writeBytes(acBytes); err != nil {
-				return err
-			}
-			acSize := sw.offset - acOffset
-			sw.finishBlock(acBlockName)
-			blockIndex[acBlockName] = BlockDef{Field: field, Kind: BlockKindAC, Offset: acOffset, Size: acSize}
 		}
 
 		// B: Write Dictionary Block
@@ -220,7 +224,7 @@ func (sw *InMemorySegmentBuilder) Write() error {
 		if err != nil {
 			return fmt.Errorf("failed to build range index for field %s: %w", field, err)
 		}
-		name := rangeBlockName(field)
+		name := containerBlockName(field, BlockKindRange)
 		if err := sw.alignTo8(); err != nil {
 			return err
 		}

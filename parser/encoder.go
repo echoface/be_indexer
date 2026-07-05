@@ -32,10 +32,14 @@ const (
 
 // EncodedPosting is the build-side physical representation of one predicate.
 type EncodedPosting struct {
-	Kind PostingKind
-	Term string
-	Lo   int64
-	Hi   int64
+	Kind  PostingKind
+	Term  string
+	Lo    int64
+	Hi    int64
+	// Value carries container-specific build metadata. For built-in containers
+	// (term, ac, range) this is nil. Custom containers use it to pass
+	// configuration or auxiliary data from the encoder to the ContainerBuilder.
+	Value any
 }
 
 // EncodedQuery is the query-side physical representation of one assignment.

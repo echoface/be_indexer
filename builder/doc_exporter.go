@@ -201,7 +201,11 @@ func exportDocToSink(sink postingSink, codec *parser.SchemaCodec, doc *core.Docu
 							return nil, err
 						}
 					default:
-						return nil, fmt.Errorf("field %s unknown encoded posting kind %q", field, posting.Kind)
+						// Custom container: standard term→posting path. Container-specific
+						// metadata (posting.Value) is stored alongside for the builder.
+						if err := sink.AddPosting(incSize, string(field), posting.Term, []core.EntryID{eid}); err != nil {
+							return nil, err
+						}
 					}
 				}
 			}

@@ -20,9 +20,21 @@ type ContainerReader interface {
 // ContainerBuilder accumulates terms and their PostingRefs during segment
 // construction and compiles them into a serialized byte block. Build is called
 // once per field; after Build the builder is discarded.
+//
+// If the builder also implements ContainerMetaBuilder (an optional interface),
+// the segment writer will call AddMeta when the encoder produced a Value in
+// its EncodedPosting, allowing custom containers to receive per-term metadata.
 type ContainerBuilder interface {
 	Add(term string, ref PostingRef)
 	Build() ([]byte, error)
+}
+
+// ContainerMetaBuilder is an optional interface that ContainerBuilder
+// implementations may satisfy. When a PredicateEncoder includes a Value in
+// its EncodedPosting, the segment writer passes it through AddMeta so the
+// container can capture term-specific build metadata.
+type ContainerMetaBuilder interface {
+	AddMeta(term string, ref PostingRef, meta any)
 }
 
 // ContainerReaderFactory creates a ContainerReader from serialized block bytes.

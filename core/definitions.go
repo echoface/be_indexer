@@ -70,7 +70,7 @@ type RetrieveObserver interface {
 	OnRetrieveEnd(ctx *RetrieveContext)
 	OnMatch(docID DocID, conjID ConjID)
 	OnExcludeSkip(docID DocID)
-	OnCursorInit(k int, fieldCount int)
+	OnCursorInit(fieldCount int)
 }
 // --------------------------------------------------------------------------------
 // Retrieval Context

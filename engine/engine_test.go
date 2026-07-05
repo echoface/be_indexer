@@ -102,7 +102,7 @@ func (o *testObserver) OnRetrieveStart(*core.RetrieveContext)   { o.startCount++
 func (o *testObserver) OnRetrieveEnd(*core.RetrieveContext)     { o.endCount++ }
 func (o *testObserver) OnMatch(docID core.DocID, _ core.ConjID) { o.matchCount++ }
 func (o *testObserver) OnExcludeSkip(core.DocID)                { o.exclCount++ }
-func (o *testObserver) OnCursorInit(int, int)                   { o.cursorInit++ }
+func (o *testObserver) OnCursorInit(int)                   { o.cursorInit++ }
 
 // ==========================================================================
 func TestEngine_BasicQuery(t *testing.T) {

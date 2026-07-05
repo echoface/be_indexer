@@ -234,7 +234,7 @@ func (e *BooleanEngine) initCursorsOnce(
 	fCursors.Sort()
 
 	if obs != nil && fieldCount > 0 {
-		obs.OnCursorInit(0, fieldCount)
+		obs.OnCursorInit(fieldCount)
 	}
 
 	return fCursors

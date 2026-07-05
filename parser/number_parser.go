@@ -17,11 +17,6 @@ func NewNumberParser() *NumberParser {
 	return &NumberParser{floatAsInt: true}
 }
 
-// NewNumberParser2 creates a NumberParser with explicit floatAsInt control.
-func NewNumberParser2(f2i bool) *NumberParser {
-	return &NumberParser{floatAsInt: f2i}
-}
-
 // TokenizeAssign implements ValueTokenizer for query phase.
 func (p *NumberParser) TokenizeAssign(v interface{}) ([]string, error) {
 	ids, err := p.parseValues(v, false)

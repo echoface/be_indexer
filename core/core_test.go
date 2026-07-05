@@ -851,7 +851,7 @@ func (o *testObserver) OnRetrieveStart(ctx *RetrieveContext) { o.startCount++ }
 func (o *testObserver) OnRetrieveEnd(ctx *RetrieveContext)   { o.endCount++ }
 func (o *testObserver) OnMatch(docID DocID, conjID ConjID)   { o.matchCount++ }
 func (o *testObserver) OnExcludeSkip(docID DocID)            { o.exclCount++ }
-func (o *testObserver) OnCursorInit(k int, fieldCount int)   { o.cursorInit++ }
+func (o *testObserver) OnCursorInit(fieldCount int)   { o.cursorInit++ }
 
 // ---------------------------------------------------------------------------
 // FieldMeta & FieldOption

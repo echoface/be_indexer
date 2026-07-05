@@ -29,7 +29,8 @@ func NewDocument(id DocID) *Document {
 	}
 }
 
-func (s DocIDList) Contain(id DocID) bool {
+// Contains reports whether id is present in the list.
+func (s DocIDList) Contains(id DocID) bool {
 	for _, v := range s {
 		if v == id {
 			return true
@@ -100,15 +101,15 @@ func NewConjunction() *Conjunction {
 }
 
 // In any value in values is a **true** expression
+// In is an alias for Include. Prefer Include for clarity.
 func (conj *Conjunction) In(field BEField, values Values) *Conjunction {
-	conj.addPredicate(field, NewValueExpr(ValueOptEQ, values, true))
-	return conj
+	return conj.Include(field, values)
 }
 
 // NotIn any value in values is a **false** expression
+// NotIn is an alias for Exclude. Prefer Exclude for clarity.
 func (conj *Conjunction) NotIn(field BEField, values Values) *Conjunction {
-	conj.addPredicate(field, NewValueExpr(ValueOptEQ, values, false))
-	return conj
+	return conj.Exclude(field, values)
 }
 
 func (conj *Conjunction) Include(field BEField, values Values) *Conjunction {
@@ -154,7 +155,8 @@ func (conj *Conjunction) AddPredicates(exprs ...*Predicate) *Conjunction {
 	return conj
 }
 
-func (conj *Conjunction) AddPredicate3(field string, include bool, values Values) *Conjunction {
+// AddPredicateValues is a convenience that creates an EQ predicate from raw values.
+func (conj *Conjunction) AddPredicateValues(field string, include bool, values Values) *Conjunction {
 	conj.addPredicate(BEField(field), NewValueExpr(ValueOptEQ, values, include))
 	return conj
 }

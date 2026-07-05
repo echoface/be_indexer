@@ -43,7 +43,7 @@ func TestRangeShadowAgainstOracle(t *testing.T) {
 			// not-between (exclude range)
 			lo := int64(rng.Intn(60) + 1)
 			hi := lo + int64(rng.Intn(30))
-			conj.AddPredicates(core.NewPredicate2("age", core.NewValueExpr(core.ValueOptBetween, []int64{lo, hi}, false)))
+			conj.AddPredicates(core.NewPredicateWithExpr("age", core.NewValueExpr(core.ValueOptBetween, []int64{lo, hi}, false)))
 		case 4:
 			conj.Include("age", int64(rng.Intn(100)+1)) // exact EQ via range container
 		}

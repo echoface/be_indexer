@@ -53,7 +53,9 @@ func (ass Assignments) Size() (size int) {
 	return size
 }
 
-func NewPredicate2(field BEField, expr ValueExpr) *Predicate {
+// NewPredicateWithExpr creates a Predicate from a pre-built ValueExpr.
+// Prefer this when the expression is already constructed (e.g. range predicates).
+func NewPredicateWithExpr(field BEField, expr ValueExpr) *Predicate {
 	return &Predicate{expr, field}
 }
 

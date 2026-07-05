@@ -156,6 +156,9 @@ func (e *BooleanEngine) retrieveAll(ctx *core.RetrieveContext, fieldCursors *cor
 		nextID := core.NewEntryID(endConjID, false)
 
 		if conjID == endConjID {
+			// Advance past the current conjunction by computing nextID = (conjID << 4 | 1) + 1.
+			// The +1 pushes past the last EntryID for this ConjID (Include bit set to 1),
+			// so that subsequent SkipTo calls skip all entries belonging to this conjunction.
 			nextID = core.NewEntryID(endEID.GetConjID(), true) + 1
 
 			if eid.IsInclude() {
@@ -166,6 +169,9 @@ func (e *BooleanEngine) retrieveAll(ctx *core.RetrieveContext, fieldCursors *cor
 					}
 				}
 			} else {
+				// Exclude hit: skip ALL remaining cursors past this DocID.
+				// Without this optimization, cursors beyond needMatchCnt would
+				// still point to entries for this ConjID, causing false matches.
 				if obs != nil {
 					obs.OnExcludeSkip(conjID.DocID())
 				}

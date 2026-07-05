@@ -780,10 +780,10 @@ func TestConjunction_String(t *testing.T) {
 
 func TestDocIDList_Contain(t *testing.T) {
 	list := DocIDList{1, 3, 5, 7}
-	if !list.Contain(3) {
+	if !list.Contains(3) {
 		t.Error("Should contain 3")
 	}
-	if list.Contain(4) {
+	if list.Contains(4) {
 		t.Error("Should not contain 4")
 	}
 }
@@ -984,9 +984,9 @@ func TestNewStrValues(t *testing.T) {
 	}
 }
 
-func TestNewPredicate2(t *testing.T) {
+func TestNewPredicateWithExpr(t *testing.T) {
 	expr := NewValueExpr(ValueOptGT, 18, true)
-	p := NewPredicate2("age", expr)
+	p := NewPredicateWithExpr("age", expr)
 	if p.Field != "age" || p.Operator != ValueOptGT {
 		t.Errorf("NewPredicate2 not correct: %+v", p)
 	}
@@ -1227,8 +1227,8 @@ func TestConjunction_AddPredicates(t *testing.T) {
 	}
 }
 
-func TestConjunction_AddPredicate3(t *testing.T) {
-	conj := NewConjunction().AddPredicate3("age", true, NewIntValues(18, 25))
+func TestConjunction_AddPredicateValues(t *testing.T) {
+	conj := NewConjunction().AddPredicateValues("age", true, NewIntValues(18, 25))
 	preds := conj.Predicates["age"]
 	if len(preds) != 1 {
 		t.Fatalf("Should have 1 predicate, got %d", len(preds))

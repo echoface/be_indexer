@@ -23,7 +23,7 @@ func makeBlockKey(fieldID uint16) blockKey {
 	return blockKey(fieldID)
 }
 
-// blockLookup holds pre-resolved references for a (K, field) pair.
+// blockLookup holds pre-resolved references for a field (all K values merged).
 type blockLookup struct {
 	dict *FlatDict
 	pl   []byte
@@ -356,9 +356,12 @@ func (sr *SegmentReader) GetRangePostings(k int, field core.BEField, point int64
 	return filtered, nil
 }
 
-// Contains returns true if the DocID is present in this segment.
-func (sr *SegmentReader) Contains(id core.DocID) bool {
-	return true
+// SchemaHash returns the embedded schema hash for segment v4 files.
+func (sr *SegmentReader) SchemaHash() string {
+	if sr == nil || sr.meta == nil {
+		return ""
+	}
+	return sr.meta.SchemaHash
 }
 
 // Version returns the physical segment format version.
@@ -367,14 +370,6 @@ func (sr *SegmentReader) Version() int {
 		return 0
 	}
 	return sr.meta.Version
-}
-
-// SchemaHash returns the embedded schema hash for segment v2 files.
-func (sr *SegmentReader) SchemaHash() string {
-	if sr == nil || sr.meta == nil {
-		return ""
-	}
-	return sr.meta.SchemaHash
 }
 
 // Wildcards returns embedded Z-list entries for segment v2 files.

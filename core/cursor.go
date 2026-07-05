@@ -178,7 +178,7 @@ func (fcs *FieldCursors) AdvanceFirst(k int, nextID EntryID) {
 // ShortCircuitAfter conditionally advances all elements after the first k
 // whose current EntryID is less than nextID, then re-sorts.
 //
-// This optimizes the exclude path of retrieveAll: when the first k cursors
+// This optimizes the exclude path of mergeCursors: when the first k cursors
 // match an exclude EntryID, all remaining cursors that still point to a
 // position before the current conjunction are skipped forward. Without this
 // optimization they would stall on stale positions and cause false matches

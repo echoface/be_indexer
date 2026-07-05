@@ -20,7 +20,6 @@
 | **ConjID** | `ConjID` | 描述一个 Conjunction 身份的 64 位整数，编码了 K、DocID、子句 Index 和负号位。 |
 | **EntryID** | `EntryID` | 唯一标识一个倒排条目，基于 ConjID 增加了 Include/Exclude (1 bit) 信息。K 编码在 bits 56-63。 |
 | **Posting List** | `TermIterator` / `PostingIterator` | `core` 包中的倒排迭代器接口，`SliceIterator`（内存）和 `flatPostingCursor`（mmap）均实现此接口。`FieldCursor` 封装若干个 PostingIterator 做多路归并。 |
-| **AllK** | `segment.AllK = -1` | Sentinel 值，传给 `GetPostingsByTerm(k, ...)` 时返回全量 posting list（不按 K 过滤），供 `initCursorsOnce` 使用。 |
 
 ## Build & Test
 
@@ -52,7 +51,7 @@ go vet ./...
 该项目采用了强类型的读写分离架构，依赖关系单向向下，严禁反向依赖：
 - **`builder`**: 包含 `BuildSegmentFromDocs`，负责将 `Document` 打平解析并推入 Segment 构建器。
 - **`segment`**: 包含 `Builder` (用于二进制对齐序列化) 和 `MmapReader` (零拷贝反序列化)。通过 `FlatDict` 和 `FlatPostingList` 实现高密集度存储。针对文本匹配支持 DAT (Double-Array Trie) `ACMatcher`。
-- **`engine`**: 包含 `BooleanEngine` 和底层的 `retrieveK` 算法，在不触碰任何物理布局的情况下基于 `FieldCursor` 完成求交运算。
+- **`engine`**: 包含 `BooleanEngine` 和底层的 `mergeCursors` 算法，在不触碰任何物理布局的情况下基于 `FieldCursor` 完成求交运算。
 - **`core`**: 处于依赖最底层，定义基础类型、常数与 ID 位元结构。
 
 ### 3. Error Handling
@@ -73,7 +72,7 @@ go vet ./...
 ├── builder/                # 离线构建，汇聚成 Segment
 │   └── doc_exporter.go     # BuildSegmentFromDocs 逻辑
 ├── engine/                 # 在线查询，执行布尔表达式匹配
-│   └── searcher.go         # BooleanEngine 与 retrieveK 算法
+│   └── searcher.go         # BooleanEngine 与 mergeCursors 算法
 ├── segment/                # Mmap 存储结构管理
 │   ├── segment_writer.go   # Builder 二进制写入
 │   ├── segment_reader.go   # MmapReader 映射解析

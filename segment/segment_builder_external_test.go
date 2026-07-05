@@ -62,7 +62,7 @@ func TestExternalBuilderMatchesBuilderAcrossRuns(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	it, err := reader.GetPostingsByTerm(1, "a", "1")
+	it, err := reader.GetPostingsByTerm("a", "1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +106,7 @@ func TestExternalBuilderACMatcherAcrossRuns(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	iters, err := reader.MultiPatternSearch(1, "keyword", "I love apple and banana")
+	iters, err := reader.MultiPatternSearch("keyword", "I love apple and banana")
 	if err != nil {
 		t.Fatal(err)
 	}

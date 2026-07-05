@@ -98,7 +98,7 @@ func (e *BooleanEngine) RetrieveWithCollector(
 	if fCursors.Len() == 0 {
 		return nil
 	}
-	e.retrieveAll(&ctx, fCursors)
+	e.mergeCursors(&ctx, fCursors)
 	return nil
 }
 
@@ -129,11 +129,11 @@ func (e *BooleanEngine) encodeQueries(queries core.Assignments) []encodedField {
 	return encoded
 }
 
-// retrieveAll performs the K-Groups multiway merge without per-K grouping.
+// mergeCursors performs the K-Groups multiway merge without per-K grouping.
 // EntryID stores K in its high bits, so sorting by EntryID groups same-K
 // entries naturally. K is read dynamically from each EntryID via conjID.Size().
 // Exhausted cursors are compacted out to shrink the working set over time.
-func (e *BooleanEngine) retrieveAll(ctx *core.RetrieveContext, fieldCursors *core.FieldCursors) {
+func (e *BooleanEngine) mergeCursors(ctx *core.RetrieveContext, fieldCursors *core.FieldCursors) {
 	fieldCursors.Sort()
 	obs := ctx.Observer
 
@@ -185,9 +185,9 @@ func (e *BooleanEngine) retrieveAll(ctx *core.RetrieveContext, fieldCursors *cor
 }
 
 // initCursors builds FieldCursors for ALL K values in a single pass.
-// It requests full posting lists (k = segment.AllK) from each segment, so
-// each cursor contains entries for every K. The retrieveAll function then
-// reads K dynamically from EntryID as cursors are merged.
+// It requests full posting lists from each segment; each cursor contains
+// entries for every K. The mergeCursors function reads K dynamically from
+// EntryID as cursors are merged.
 func (e *BooleanEngine) initCursors(
 	encoded []encodedField, obs core.RetrieveObserver,
 ) *core.FieldCursors {
@@ -207,17 +207,17 @@ func (e *BooleanEngine) initCursors(
 			for _, q := range ef.queries {
 				switch q.Kind {
 				case parser.QueryKindTerm:
-					it, err := seg.GetPostingsByTerm(segment.AllK, field, q.Term)
+					it, err := seg.GetPostingsByTerm(field, q.Term)
 					if err == nil && it != nil {
 						iterators = append(iterators, it)
 					}
 				case parser.QueryKindRange:
-					iters, err := seg.GetRangePostings(segment.AllK, field, q.Point)
+					iters, err := seg.GetRangePostings(field, q.Point)
 					if err == nil && len(iters) > 0 {
 						iterators = append(iterators, iters...)
 					}
 				case parser.QueryKindAC:
-					iters, err := seg.MultiPatternSearch(segment.AllK, field, q.Text)
+					iters, err := seg.MultiPatternSearch(field, q.Text)
 					if err == nil && len(iters) > 0 {
 						iterators = append(iterators, iters...)
 					}

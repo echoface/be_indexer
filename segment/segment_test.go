@@ -39,7 +39,7 @@ func TestBuilderReader(t *testing.T) {
 	}
 
 	// Read existing term
-	pi, err := reader.GetPostingsByTerm(1, "age", "18")
+	pi, err := reader.GetPostingsByTerm("age", "18")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,7 +48,7 @@ func TestBuilderReader(t *testing.T) {
 	}
 
 	// Read another existing term
-	pi2, err := reader.GetPostingsByTerm(1, "age", "25")
+	pi2, err := reader.GetPostingsByTerm("age", "25")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,7 +57,7 @@ func TestBuilderReader(t *testing.T) {
 	}
 
 	// Read missing term
-	pi3, err := reader.GetPostingsByTerm(1, "age", "100")
+	pi3, err := reader.GetPostingsByTerm("age", "100")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,7 +66,7 @@ func TestBuilderReader(t *testing.T) {
 	}
 
 	// Read missing field
-	_, err = reader.GetPostingsByTerm(1, "unknown", "18")
+	_, err = reader.GetPostingsByTerm("unknown", "18")
 	if err != core.ErrUnknownQueryField {
 		t.Fatalf("expected ErrUnknownQueryField, got %v", err)
 	}
@@ -123,7 +123,7 @@ func TestBuilderRangeRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	collect := func(q int64) []core.EntryID {
-		iters, err := reader.GetRangePostings(1, "age", q)
+		iters, err := reader.GetRangePostings("age", q)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -185,7 +185,7 @@ func TestBuilderReaderSegmentV2MetadataWildcardsAndChecksum(t *testing.T) {
 	if len(gotWildcards) != 2 || gotWildcards[0] != 10 || gotWildcards[1] != 30 {
 		t.Fatalf("wildcards mismatch: %v", gotWildcards)
 	}
-	it, err := reader.GetPostingsByTerm(1, "age", "18")
+	it, err := reader.GetPostingsByTerm("age", "18")
 	if err != nil {
 		t.Fatal(err)
 	}

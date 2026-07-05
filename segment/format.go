@@ -7,10 +7,6 @@ var MagicNumber = []byte("BEIDX\x00\x00\x04")
 const (
 	SegmentVersionV4 = 4
 
-	// AllK sentinel: passed to GetPostingsByTerm/GetRangePostings/MultiPatternSearch
-	// to request the full posting list without K-range filtering.
-	AllK = -1
-
 	wildcardsBlockName = "__wildcards"
 	checksumPrefix     = "sha256:"
 

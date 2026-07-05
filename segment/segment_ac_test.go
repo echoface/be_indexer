@@ -30,7 +30,7 @@ func TestSegmentACMatcher(t *testing.T) {
 		t.Fatalf("Read failed: %v", err)
 	}
 
-	iterators, err := reader.MultiPatternSearch(1, "keyword", "I love apple and banana")
+	iterators, err := reader.MultiPatternSearch("keyword", "I love apple and banana")
 	if err != nil {
 		t.Fatalf("Search failed: %v", err)
 	}

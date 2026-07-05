@@ -269,11 +269,10 @@ func (sr *SegmentReader) lookupBlock(field core.BEField) (*blockLookup, bool) {
 	return blk, ok
 }
 
-// GetPostingsByTerm returns a posting iterator for an already encoded physical
-// term. When k >= 0 the posting list is filtered to only entries with that K
-// value (via zero-copy binary-search sub-view). When k == AllK (-1) the full
-// merged posting list across all K values is returned.
-func (sr *SegmentReader) GetPostingsByTerm(k int, field core.BEField, term string) (core.PostingIterator, error) {
+// GetPostingsByTerm returns a posting iterator for a physical term in the
+// merged (all-K) posting list. The engine performs K-range filtering
+// dynamically via EntryID inspection rather than at the segment layer.
+func (sr *SegmentReader) GetPostingsByTerm(field core.BEField, term string) (core.PostingIterator, error) {
 	blk, ok := sr.lookupBlock(field)
 	if !ok || blk.dict == nil {
 		return nil, core.ErrUnknownQueryField
@@ -289,20 +288,12 @@ func (sr *SegmentReader) GetPostingsByTerm(k int, field core.BEField, term strin
 		return nil, fmt.Errorf("field %s: %w", field, err)
 	}
 
-	if k >= 0 {
-		pl = pl.SubViewByK(k)
-		if pl.CountUint32() == 0 {
-			return nil, nil
-		}
-	}
-
 	return pl.NewPostingCursor(core.NewTerm(field, term)), nil
 }
 
-// MultiPatternSearch performs AC automaton matching on the input text
-// and returns posting iterators for all matched terms. When k >= 0 each
-// returned posting list is K-range filtered; k == AllK returns full lists.
-func (sr *SegmentReader) MultiPatternSearch(k int, field core.BEField, text string) ([]core.PostingIterator, error) {
+// MultiPatternSearch performs AC automaton matching on the input text and
+// returns posting iterators for all matched terms in the merged posting list.
+func (sr *SegmentReader) MultiPatternSearch(field core.BEField, text string) ([]core.PostingIterator, error) {
 	blk, ok := sr.lookupBlock(field)
 	if !ok || blk.ac == nil {
 		return nil, fmt.Errorf("AC matcher not configured for field %s", field)
@@ -319,41 +310,19 @@ func (sr *SegmentReader) MultiPatternSearch(k int, field core.BEField, text stri
 		if err != nil {
 			continue
 		}
-		if k >= 0 {
-			pl = pl.SubViewByK(k)
-			if pl.CountUint32() == 0 {
-				continue
-			}
-		}
 		iterators = append(iterators, pl.NewPostingCursor(core.NewTerm(field, text)))
 	}
 	return iterators, nil
 }
 
 // GetRangePostings returns posting iterators for every interval that contains
-// the query point in an ext_range field. When k >= 0 returned postings are
-// K-range filtered; k == AllK returns full lists.
-func (sr *SegmentReader) GetRangePostings(k int, field core.BEField, point int64) ([]core.PostingIterator, error) {
+// the query point in an ext_range field, from the merged (all-K) posting list.
+func (sr *SegmentReader) GetRangePostings(field core.BEField, point int64) ([]core.PostingIterator, error) {
 	blk, ok := sr.lookupBlock(field)
 	if !ok || blk.rng == nil {
 		return nil, nil
 	}
-	iters, err := blk.rng.Stab(field, point)
-	if err != nil {
-		return nil, err
-	}
-	if k < 0 || len(iters) == 0 {
-		return iters, nil
-	}
-	filtered := make([]core.PostingIterator, 0, len(iters))
-	for _, it := range iters {
-		pl := it.(*flatPostingCursor).pl
-		sub := pl.SubViewByK(k)
-		if sub.CountUint32() > 0 {
-			filtered = append(filtered, sub.NewPostingCursor(it.Term()))
-		}
-	}
-	return filtered, nil
+	return blk.rng.Stab(field, point)
 }
 
 // SchemaHash returns the embedded schema hash for segment v4 files.

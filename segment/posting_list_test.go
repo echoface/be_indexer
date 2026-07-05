@@ -59,9 +59,9 @@ func TestFlatPostingListAlignment(t *testing.T) {
 	buf := new(bytes.Buffer)
 	w := NewInMemorySegmentBuilder(buf)
 	w.AddField(core.FieldMeta{ID: 1, Field: "age"})
-	_ = w.AddPosting(1, "age", "18", []core.EntryID{10, 20, 30})
-	_ = w.AddPosting(1, "age", "19", []core.EntryID{11})
-	_ = w.AddPosting(1, "age", "20", []core.EntryID{12, 22})
+	_ = w.AddPosting(1, "age", "18", []core.EntryID{makeE(1, 10), makeE(1, 20), makeE(1, 30)})
+	_ = w.AddPosting(1, "age", "19", []core.EntryID{makeE(1, 11)})
+	_ = w.AddPosting(1, "age", "20", []core.EntryID{makeE(1, 12), makeE(1, 22)})
 	if err := w.Write(); err != nil {
 		t.Fatal(err)
 	}

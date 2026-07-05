@@ -90,23 +90,15 @@ func (e *BooleanEngine) RetrieveWithCollector(
 		}
 	}()
 
-	// Encode every assignment once, before the K loop. Query value encoding does
-	// not depend on K, so doing it inside initCursors would repeat the same
-	// tokenization (and its allocations) maxK+1 times per field.
+	// Encode every assignment once. All K values share the same query encoding;
+	// the segment layer filters by K internally when needed.
 	encoded := e.encodeQueries(queries)
 
-	maxK := len(queries)
-	for k := maxK; k >= 0; k-- {
-		fCursors := e.initCursors(k, encoded, ctx.Observer)
-		if fCursors.Len() == 0 {
-			continue
-		}
-		needMatchCnt := k
-		if needMatchCnt == 0 {
-			needMatchCnt = 1
-		}
-		e.retrieveK(&ctx, fCursors, needMatchCnt)
+	fCursors := e.initCursorsOnce(encoded, ctx.Observer)
+	if fCursors.Len() == 0 {
+		return nil
 	}
+	e.retrieveAll(&ctx, fCursors)
 	return nil
 }
 
@@ -137,23 +129,28 @@ func (e *BooleanEngine) encodeQueries(queries core.Assignments) []encodedField {
 	return encoded
 }
 
-// retrieveK performs the K-Groups multiway merge algorithm from VLDB 09.
-// FieldCursors is maintained as a min-heap: Peek/AdvanceFirst are O(k log n)
-// instead of the previous O(n log n) sort.Slice per iteration.
-func (e *BooleanEngine) retrieveK(
-	ctx *core.RetrieveContext, fieldCursors *core.FieldCursors, needMatchCnt int,
-) {
-	if fieldCursors.Len() < needMatchCnt {
-		return
-	}
-
+// retrieveAll performs the K-Groups multiway merge without per-K grouping.
+// EntryID stores K in its high bits, so sorting by EntryID groups same-K
+// entries naturally. K is read dynamically from each EntryID via conjID.Size().
+// Exhausted cursors are compacted out to shrink the working set over time.
+func (e *BooleanEngine) retrieveAll(ctx *core.RetrieveContext, fieldCursors *core.FieldCursors) {
+	fieldCursors.Sort()
 	obs := ctx.Observer
 
-	for !fieldCursors.PeekAt(needMatchCnt - 1).IsNULLEntry() {
+	for fieldCursors.Len() > 0 {
 		eid := fieldCursors.Peek()
-		endEID := fieldCursors.PeekAt(needMatchCnt - 1)
-
 		conjID := eid.GetConjID()
+		stepK := conjID.Size()
+		needMatchCnt := stepK
+		if needMatchCnt == 0 {
+			needMatchCnt = 1
+		}
+
+		if needMatchCnt > fieldCursors.Len() {
+			break
+		}
+
+		endEID := fieldCursors.PeekAt(needMatchCnt - 1)
 		endConjID := endEID.GetConjID()
 
 		nextID := core.NewEntryID(endConjID, false)
@@ -177,28 +174,22 @@ func (e *BooleanEngine) retrieveK(
 		}
 
 		fieldCursors.AdvanceFirst(needMatchCnt, nextID)
+		fieldCursors.CompactLast()
 	}
 }
 
-// initCursors builds the FieldCursors for a given K value from pre-encoded
-// query keys. It performs no value encoding (done once in encodeQueries) and
-// therefore cannot fail; unknown encoded kinds are defensively skipped.
-func (e *BooleanEngine) initCursors(
-	k int, encoded []encodedField, obs core.RetrieveObserver,
+// initCursorsOnce builds FieldCursors for ALL K values in a single pass.
+// It requests full posting lists (k = segment.AllK) from each segment, so
+// each cursor contains entries for every K. The retrieveAll function then
+// reads K dynamically from EntryID as cursors are merged.
+func (e *BooleanEngine) initCursorsOnce(
+	encoded []encodedField, obs core.RetrieveObserver,
 ) *core.FieldCursors {
 	fCursors := core.NewFieldCursors(len(encoded) + 1)
 
-	if k == 0 && len(e.wildcardEntries) > 0 {
-		var kWildcards []core.EntryID
-		for _, eid := range e.wildcardEntries {
-			if eid.GetConjID().Size() == 0 {
-				kWildcards = append(kWildcards, eid)
-			}
-		}
-		if len(kWildcards) > 0 {
-			pl := core.NewSliceIterator(core.WildcardTerm, kWildcards)
-			fCursors.Append(core.NewFieldCursor(pl))
-		}
+	if len(e.wildcardEntries) > 0 {
+		pl := core.NewSliceIterator(core.WildcardTerm, e.wildcardEntries)
+		fCursors.Append(core.NewFieldCursor(pl))
 	}
 
 	fieldCount := 0
@@ -210,17 +201,17 @@ func (e *BooleanEngine) initCursors(
 			for _, q := range ef.queries {
 				switch q.Kind {
 				case parser.QueryKindTerm:
-					it, err := seg.GetPostingsByTerm(k, field, q.Term)
+					it, err := seg.GetPostingsByTerm(segment.AllK, field, q.Term)
 					if err == nil && it != nil {
 						iterators = append(iterators, it)
 					}
 				case parser.QueryKindRange:
-					iters, err := seg.GetRangePostings(k, field, q.Point)
+					iters, err := seg.GetRangePostings(segment.AllK, field, q.Point)
 					if err == nil && len(iters) > 0 {
 						iterators = append(iterators, iters...)
 					}
 				case parser.QueryKindAC:
-					iters, err := seg.MultiPatternSearch(k, field, q.Text)
+					iters, err := seg.MultiPatternSearch(segment.AllK, field, q.Text)
 					if err == nil && len(iters) > 0 {
 						iterators = append(iterators, iters...)
 					}
@@ -237,7 +228,7 @@ func (e *BooleanEngine) initCursors(
 	fCursors.Sort()
 
 	if obs != nil && fieldCount > 0 {
-		obs.OnCursorInit(k, fieldCount)
+		obs.OnCursorInit(0, fieldCount)
 	}
 
 	return fCursors

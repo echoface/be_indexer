@@ -14,14 +14,13 @@ import (
 	"github.com/echoface/be_indexer/core"
 )
 
-// blockKey is the integer composite key for block lookup. The high 16 bits hold
-// K (a conjunction size, < 256) and the low 16 bits hold a dense field id
-// assigned at load time. Using an integer key avoids hashing a field string on
-// the retrieval hot path.
-type blockKey uint32
+// blockKey is a dense field id used for block lookup.
+// blockKey resolution is O(1) via integer map key, avoiding hashing a field
+// string on the retrieval hot path.
+type blockKey uint16
 
-func makeBlockKey(k int, fieldID uint16) blockKey {
-	return blockKey(uint32(k)<<16 | uint32(fieldID))
+func makeBlockKey(fieldID uint16) blockKey {
+	return blockKey(fieldID)
 }
 
 // blockLookup holds pre-resolved references for a (K, field) pair.
@@ -93,8 +92,8 @@ func NewSegmentReaderWithOptions(b []byte, opts ReaderOptions) (*SegmentReader, 
 	if err := json.Unmarshal(metaBytes, &meta); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal metadata: %w", err)
 	}
-	if meta.Version != SegmentVersionV3 {
-		return nil, fmt.Errorf("unsupported segment version %d", meta.Version)
+	if meta.Version != SegmentVersionV4 {
+		return nil, fmt.Errorf("unsupported segment version %d (expected v4)", meta.Version)
 	}
 
 	blocks := make(map[blockKey]*blockLookup)
@@ -130,8 +129,7 @@ func NewSegmentReaderWithOptions(b []byte, opts ReaderOptions) (*SegmentReader, 
 		}
 	}
 
-	// Single O(blocks) pass: structured BlockDef carries (K, field, kind), so no
-	// block-name parsing is needed.
+	// Single O(blocks) pass: structured BlockDef carries (Field, kind).
 	for name, def := range meta.BlockIndex {
 		if def.Kind == BlockKindWildcards {
 			continue // already decoded above
@@ -140,7 +138,7 @@ func NewSegmentReaderWithOptions(b []byte, opts ReaderOptions) (*SegmentReader, 
 		if !ok {
 			return nil, fmt.Errorf("block %s references unknown field %q", name, def.Field)
 		}
-		key := makeBlockKey(def.K, fid)
+		key := makeBlockKey(fid)
 		blk, exists := blocks[key]
 		if !exists {
 			blk = &blockLookup{}
@@ -260,22 +258,23 @@ func checkedBlockBytes(b []byte, metaOffset uint64, blockDef BlockDef) ([]byte, 
 	return b[blockDef.Offset : blockDef.Offset+blockDef.Size], nil
 }
 
-// lookupBlock resolves the pre-parsed block group for (k, field) via the dense
-// field id, avoiding a string-keyed map lookup on the retrieval hot path.
-func (sr *SegmentReader) lookupBlock(k int, field core.BEField) (*blockLookup, bool) {
+// lookupBlock resolves the pre-parsed block group for the given field via the
+// dense field id, avoiding a string-keyed map lookup on the retrieval hot path.
+func (sr *SegmentReader) lookupBlock(field core.BEField) (*blockLookup, bool) {
 	fid, ok := sr.fieldID[string(field)]
 	if !ok {
 		return nil, false
 	}
-	blk, ok := sr.blocks[makeBlockKey(k, fid)]
+	blk, ok := sr.blocks[makeBlockKey(fid)]
 	return blk, ok
 }
 
 // GetPostingsByTerm returns a posting iterator for an already encoded physical
-// term. Segment readers intentionally do not stringify or tokenize arbitrary
-// values; build/query value encoding belongs to parser.PredicateEncoder.
+// term. When k >= 0 the posting list is filtered to only entries with that K
+// value (via zero-copy binary-search sub-view). When k == AllK (-1) the full
+// merged posting list across all K values is returned.
 func (sr *SegmentReader) GetPostingsByTerm(k int, field core.BEField, term string) (core.PostingIterator, error) {
-	blk, ok := sr.lookupBlock(k, field)
+	blk, ok := sr.lookupBlock(field)
 	if !ok || blk.dict == nil {
 		return nil, core.ErrUnknownQueryField
 	}
@@ -290,13 +289,21 @@ func (sr *SegmentReader) GetPostingsByTerm(k int, field core.BEField, term strin
 		return nil, fmt.Errorf("field %s: %w", field, err)
 	}
 
+	if k >= 0 {
+		pl = pl.SubViewByK(k)
+		if pl.CountUint32() == 0 {
+			return nil, nil
+		}
+	}
+
 	return pl.NewPostingCursor(core.NewTerm(field, term)), nil
 }
 
 // MultiPatternSearch performs AC automaton matching on the input text
-// and returns posting iterators for all matched terms.
+// and returns posting iterators for all matched terms. When k >= 0 each
+// returned posting list is K-range filtered; k == AllK returns full lists.
 func (sr *SegmentReader) MultiPatternSearch(k int, field core.BEField, text string) ([]core.PostingIterator, error) {
-	blk, ok := sr.lookupBlock(k, field)
+	blk, ok := sr.lookupBlock(field)
 	if !ok || blk.ac == nil {
 		return nil, fmt.Errorf("AC matcher not configured for field %s", field)
 	}
@@ -312,19 +319,41 @@ func (sr *SegmentReader) MultiPatternSearch(k int, field core.BEField, text stri
 		if err != nil {
 			continue
 		}
+		if k >= 0 {
+			pl = pl.SubViewByK(k)
+			if pl.CountUint32() == 0 {
+				continue
+			}
+		}
 		iterators = append(iterators, pl.NewPostingCursor(core.NewTerm(field, text)))
 	}
 	return iterators, nil
 }
 
 // GetRangePostings returns posting iterators for every interval that contains
-// the query point in an ext_range field.
+// the query point in an ext_range field. When k >= 0 returned postings are
+// K-range filtered; k == AllK returns full lists.
 func (sr *SegmentReader) GetRangePostings(k int, field core.BEField, point int64) ([]core.PostingIterator, error) {
-	blk, ok := sr.lookupBlock(k, field)
+	blk, ok := sr.lookupBlock(field)
 	if !ok || blk.rng == nil {
 		return nil, nil
 	}
-	return blk.rng.Stab(field, point)
+	iters, err := blk.rng.Stab(field, point)
+	if err != nil {
+		return nil, err
+	}
+	if k < 0 || len(iters) == 0 {
+		return iters, nil
+	}
+	filtered := make([]core.PostingIterator, 0, len(iters))
+	for _, it := range iters {
+		pl := it.(*flatPostingCursor).pl
+		sub := pl.SubViewByK(k)
+		if sub.CountUint32() > 0 {
+			filtered = append(filtered, sub.NewPostingCursor(it.Term()))
+		}
+	}
+	return filtered, nil
 }
 
 // Contains returns true if the DocID is present in this segment.

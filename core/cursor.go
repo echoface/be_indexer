@@ -45,6 +45,10 @@ func (s *SliceIterator) SkipTo(id EntryID) EntryID {
 	return s.Current()
 }
 
+func (s *SliceIterator) ReachEnd() bool {
+	return s.cursor >= len(s.EIDs)
+}
+
 // iterHeap is a min-heap of PostingIterator ordered by Current() EntryID.
 // It replaces sort.Slice in FieldCursor, reducing SkipTo from O(n log n) to O(log n).
 type iterHeap []PostingIterator
@@ -94,6 +98,20 @@ func (f *FieldCursor) SkipTo(id EntryID) EntryID {
 	it.SkipTo(id)
 	heap.Push(&f.Iters, it)
 	return f.Iters[0].Current()
+}
+
+// ReachEnd reports whether all iterators in this cursor have exhausted.
+// An empty cursor (no iterators at all) is treated as exhausted.
+func (f *FieldCursor) ReachEnd() bool {
+	if len(f.Iters) == 0 {
+		return true
+	}
+	for _, it := range f.Iters {
+		if !it.ReachEnd() {
+			return false
+		}
+	}
+	return true
 }
 
 func (f *FieldCursor) DumpInfo() []string {
@@ -170,4 +188,18 @@ func (fcs *FieldCursors) ShortCircuitAfter(k int, nextID EntryID) {
 		}
 	}
 	fcs.Sort()
+}
+
+// CompactLast removes exhausted cursors from the end of the list.
+// After Sort(), exhausted cursors (those with only NULLENTRY entries)
+// naturally move to the right end. Call Sort() before CompactLast().
+func (fcs *FieldCursors) CompactLast() {
+	for fcs.Len() > 0 {
+		last := fcs.Len() - 1
+		if fcs.items[last].ReachEnd() {
+			fcs.items = fcs.items[:last]
+		} else {
+			break
+		}
+	}
 }

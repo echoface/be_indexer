@@ -47,7 +47,7 @@ type ExternalBuilder struct {
 	records  []postingRecord
 	runFiles []string
 
-	rangeData map[int]map[string][]Interval
+	rangeData map[string][]Interval
 
 	// field <-> dense uint16 id used only inside on-disk run records to avoid
 	// repeating the full field name on every posting record.
@@ -63,7 +63,6 @@ type ExternalBuilder struct {
 }
 
 type postingRecord struct {
-	K     int
 	Field string
 	Term  string
 	Entry core.EntryID
@@ -128,7 +127,7 @@ func (b *ExternalBuilder) AddPosting(k int, field string, term string, entries [
 		return fmt.Errorf("field %s not found", field)
 	}
 	for _, entry := range entries {
-		b.records = append(b.records, postingRecord{K: k, Field: field, Term: term, Entry: entry})
+		b.records = append(b.records, postingRecord{Field: field, Term: term, Entry: entry})
 		if len(b.records) >= b.maxRecs {
 			if err := b.flushRun(); err != nil {
 				return err
@@ -147,14 +146,9 @@ func (b *ExternalBuilder) AddRangePosting(k int, field string, lo, hi int64, ent
 		return fmt.Errorf("field %s not found", field)
 	}
 	if b.rangeData == nil {
-		b.rangeData = make(map[int]map[string][]Interval)
+		b.rangeData = make(map[string][]Interval)
 	}
-	kMap, ok := b.rangeData[k]
-	if !ok {
-		kMap = make(map[string][]Interval)
-		b.rangeData[k] = kMap
-	}
-	kMap[field] = append(kMap[field], Interval{Lo: lo, Hi: hi, Entry: entry})
+	b.rangeData[field] = append(b.rangeData[field], Interval{Lo: lo, Hi: hi, Entry: entry})
 	return nil
 }
 
@@ -202,7 +196,7 @@ func (b *ExternalBuilder) Write() error {
 		}
 	}
 	meta := MetaBlock{
-		Version:        SegmentVersionV3,
+		Version:        SegmentVersionV4,
 		DocCount:       b.docCount,
 		SchemaHash:     b.schemaHash,
 		Fields:         b.sortedFieldMeta(),
@@ -353,7 +347,6 @@ func (b *ExternalBuilder) writeMergedBlocks() (map[string]BlockDef, error) {
 		}
 	}
 
-	var currentK int
 	var currentField string
 	var postingsOffset uint64
 	var dict streamingDict
@@ -364,9 +357,9 @@ func (b *ExternalBuilder) writeMergedBlocks() (map[string]BlockDef, error) {
 			return nil
 		}
 		postingsSize := b.offset - postingsOffset
-		postingsBlockName := plBlockName(currentK, currentField)
+		postingsBlockName := plBlockName(currentField)
 		b.finishBlock(postingsBlockName)
-		blockIndex[postingsBlockName] = BlockDef{K: currentK, Field: currentField, Kind: BlockKindPostings, Offset: postingsOffset, Size: postingsSize}
+		blockIndex[postingsBlockName] = BlockDef{Field: currentField, Kind: BlockKindPostings, Offset: postingsOffset, Size: postingsSize}
 
 		meta := b.fields[currentField]
 		if meta.Container == core.IndexNameACMatcher {
@@ -379,20 +372,20 @@ func (b *ExternalBuilder) writeMergedBlocks() (map[string]BlockDef, error) {
 			if err != nil {
 				return fmt.Errorf("failed to compile AC automaton for field %s: %w", currentField, err)
 			}
-			acBlockName := acBlockName(currentK, currentField)
+			acBlockName := acBlockName(currentField)
 			acOffset := b.offset
 			if err := b.writeChecksummedBlock(acBlockName, acBytes); err != nil {
 				return err
 			}
-			blockIndex[acBlockName] = BlockDef{K: currentK, Field: currentField, Kind: BlockKindAC, Offset: acOffset, Size: b.offset - acOffset}
+			blockIndex[acBlockName] = BlockDef{Field: currentField, Kind: BlockKindAC, Offset: acOffset, Size: b.offset - acOffset}
 		}
 
 		dictOffset := b.offset
 		dictBytes := dict.Bytes()
-		if err := b.writeChecksummedBlock(dictBlockName(currentK, currentField), dictBytes); err != nil {
+		if err := b.writeChecksummedBlock(dictBlockName(currentField), dictBytes); err != nil {
 			return err
 		}
-		blockIndex[dictBlockName(currentK, currentField)] = BlockDef{K: currentK, Field: currentField, Kind: BlockKindDict, Offset: dictOffset, Size: b.offset - dictOffset}
+		blockIndex[dictBlockName(currentField)] = BlockDef{Field: currentField, Kind: BlockKindDict, Offset: dictOffset, Size: b.offset - dictOffset}
 		groupOpen = false
 		return nil
 	}
@@ -403,26 +396,24 @@ func (b *ExternalBuilder) writeMergedBlocks() (map[string]BlockDef, error) {
 			return nil, err
 		}
 		rec := first.rec
-		if !groupOpen || rec.K != currentK || rec.Field != currentField {
+		if !groupOpen || rec.Field != currentField {
 			if err := finishGroup(); err != nil {
 				return nil, err
 			}
-			currentK = rec.K
 			currentField = rec.Field
-			// Align posting block start to 8 bytes for zero-copy EntryID view.
 			if err := b.alignTo8(); err != nil {
 				return nil, err
 			}
 			postingsOffset = b.offset
 			dict.Reset()
 			groupOpen = true
-			b.beginBlock(plBlockName(currentK, currentField))
+			b.beginBlock(plBlockName(currentField))
 		}
 
 		entries := []core.EntryID{rec.Entry}
 		for h.Len() > 0 {
 			next := (*h)[0]
-			if next.rec.K != rec.K || next.rec.Field != rec.Field || next.rec.Term != rec.Term {
+			if next.rec.Field != rec.Field || next.rec.Term != rec.Term {
 				break
 			}
 			item := heap.Pop(h).(postingHeapItem)
@@ -442,36 +433,29 @@ func (b *ExternalBuilder) writeMergedBlocks() (map[string]BlockDef, error) {
 	return blockIndex, nil
 }
 
-// writeRangeBlocks serializes ext_range segment-tree blocks deterministically
-// ordered by (K, field) and records them in blockIndex.
+// writeRangeBlocks serializes ext_range segment-tree blocks (all K merged)
+// deterministically ordered by field and records them in blockIndex.
 func (b *ExternalBuilder) writeRangeBlocks(blockIndex map[string]BlockDef) error {
-	var ks []int
-	for k := range b.rangeData {
-		ks = append(ks, k)
+	var fields []string
+	for f := range b.rangeData {
+		fields = append(fields, f)
 	}
-	sort.Ints(ks)
-	for _, k := range ks {
-		kMap := b.rangeData[k]
-		var fields []string
-		for f := range kMap {
-			fields = append(fields, f)
+	sort.Strings(fields)
+	for _, field := range fields {
+		intervals := b.rangeData[field]
+		rangeBytes, err := BuildRangeIndex(intervals)
+		if err != nil {
+			return fmt.Errorf("failed to build range index for field %s: %w", field, err)
 		}
-		sort.Strings(fields)
-		for _, field := range fields {
-			rangeBytes, err := BuildRangeIndex(kMap[field])
-			if err != nil {
-				return fmt.Errorf("failed to build range index for field %s: %w", field, err)
-			}
-			if err := b.alignTo8(); err != nil {
-				return err
-			}
-			name := rangeBlockName(k, field)
-			offset := b.offset
-			if err := b.writeChecksummedBlock(name, rangeBytes); err != nil {
-				return err
-			}
-			blockIndex[name] = BlockDef{K: k, Field: field, Kind: BlockKindRange, Offset: offset, Size: b.offset - offset}
+		if err := b.alignTo8(); err != nil {
+			return err
 		}
+		name := rangeBlockName(field)
+		offset := b.offset
+		if err := b.writeChecksummedBlock(name, rangeBytes); err != nil {
+			return err
+		}
+		blockIndex[name] = BlockDef{Field: field, Kind: BlockKindRange, Offset: offset, Size: b.offset - offset}
 	}
 	return nil
 }
@@ -600,9 +584,6 @@ func (b *ExternalBuilder) cleanupRuns() {
 }
 
 func lessPostingRecord(a, b postingRecord) bool {
-	if a.K != b.K {
-		return a.K < b.K
-	}
 	if a.Field != b.Field {
 		return a.Field < b.Field
 	}
@@ -614,12 +595,12 @@ func lessPostingRecord(a, b postingRecord) bool {
 
 // writeRunRecord serializes one posting record. The field is stored as a dense
 // uint16 id (resolved via fieldID) instead of its full string name, which avoids
+// On-disk run record format (compact, no K);
+//   [fid uint16] [termLen uint32] [entry uint64] [term string bytes]
+// = 14 bytes header, then term data. The field id (uint16) avoids
 // repeating long field names on every record and shrinks run files / merge IO
 // substantially. The term still varies per record and is stored inline.
 func (b *ExternalBuilder) writeRunRecord(w io.Writer, rec postingRecord) error {
-	if rec.K < 0 || rec.K > 0xffff {
-		return fmt.Errorf("run record K out of range: %d", rec.K)
-	}
 	fid, ok := b.fieldID[rec.Field]
 	if !ok {
 		return fmt.Errorf("run record references unknown field %q", rec.Field)
@@ -627,11 +608,10 @@ func (b *ExternalBuilder) writeRunRecord(w io.Writer, rec postingRecord) error {
 	if len(rec.Term) > int(^uint32(0)) {
 		return fmt.Errorf("run record term too large: %d", len(rec.Term))
 	}
-	header := make([]byte, 16)
-	binary.LittleEndian.PutUint16(header[0:2], uint16(rec.K))
-	binary.LittleEndian.PutUint16(header[2:4], fid)
-	binary.LittleEndian.PutUint32(header[4:8], uint32(len(rec.Term)))
-	binary.LittleEndian.PutUint64(header[8:16], uint64(rec.Entry))
+	header := make([]byte, 14)
+	binary.LittleEndian.PutUint16(header[0:2], fid)
+	binary.LittleEndian.PutUint32(header[2:6], uint32(len(rec.Term)))
+	binary.LittleEndian.PutUint64(header[6:14], uint64(rec.Entry))
 	if _, err := w.Write(header); err != nil {
 		return err
 	}
@@ -655,17 +635,16 @@ func (b *ExternalBuilder) openPostingRunReader(path string) (*postingRunReader, 
 }
 
 func (r *postingRunReader) Next() (bool, error) {
-	header := make([]byte, 16)
+	header := make([]byte, 14)
 	if _, err := io.ReadFull(r.br, header); err != nil {
 		if err == io.EOF {
 			return false, nil
 		}
 		return false, err
 	}
-	k := binary.LittleEndian.Uint16(header[0:2])
-	fid := binary.LittleEndian.Uint16(header[2:4])
-	termLen := binary.LittleEndian.Uint32(header[4:8])
-	entry := binary.LittleEndian.Uint64(header[8:16])
+	fid := binary.LittleEndian.Uint16(header[0:2])
+	termLen := binary.LittleEndian.Uint32(header[2:6])
+	entry := binary.LittleEndian.Uint64(header[6:14])
 	if int(fid) >= len(r.fields) {
 		return false, fmt.Errorf("run record field id %d out of range", fid)
 	}
@@ -673,7 +652,7 @@ func (r *postingRunReader) Next() (bool, error) {
 	if _, err := io.ReadFull(r.br, term); err != nil {
 		return false, err
 	}
-	r.rec = postingRecord{K: int(k), Field: r.fields[fid], Term: string(term), Entry: core.EntryID(entry)}
+	r.rec = postingRecord{Field: r.fields[fid], Term: string(term), Entry: core.EntryID(entry)}
 	return true, nil
 }
 
@@ -683,7 +662,7 @@ func (r *postingRunReader) Close() error { return r.f.Close() }
 
 // streamingDict accumulates dict entries in merge order (already sorted by
 // term) without using a map. Since the k-way merge emits records in strict
-// (K, field, term) lexicographic order, terms arrive pre-sorted and are
+// (field, term) lexicographic order, terms arrive pre-sorted and are
 // appended once — no lookup or deduplication needed. Bytes() produces output
 // byte-identical to WriteFlatDict.
 //

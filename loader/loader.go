@@ -187,10 +187,10 @@ func loadSegments(root, base string, descs []manifest.SegmentDescriptor, schemaH
 			closeSegments(segments)
 			return nil, err
 		}
-		if reader.Version() != segment.SegmentVersionV3 {
+		if reader.Version() != segment.SegmentVersionV4 {
 			_ = reader.Close()
 			closeSegments(segments)
-			return nil, fmt.Errorf("segment %s format mismatch: got segment-v%d, want segment-v%d", desc.File, reader.Version(), segment.SegmentVersionV3)
+			return nil, fmt.Errorf("segment %s format mismatch: got segment-v%d, want segment-v%d", desc.File, reader.Version(), segment.SegmentVersionV4)
 		}
 		if schemaHash != "" && reader.SchemaHash() != schemaHash {
 			_ = reader.Close()

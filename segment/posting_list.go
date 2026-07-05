@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
+	"sort"
 	"unsafe"
 
 	"github.com/echoface/be_indexer/core"
@@ -178,4 +179,35 @@ func (c *flatPostingCursor) SkipTo(target core.EntryID) core.EntryID {
 
 func (c *flatPostingCursor) Term() core.Term {
 	return c.term
+}
+
+func (c *flatPostingCursor) ReachEnd() bool {
+	return c.idx >= c.pl.count
+}
+
+// CountUint32 returns the number of EntryIDs in this posting list as uint32.
+func (pl *FlatPostingList) CountUint32() uint32 { return pl.count }
+
+// Count returns the number of EntryIDs as int.
+func (pl *FlatPostingList) Count() int { return int(pl.count) }
+
+// EntryIndex returns the i-th EntryID. Caller must ensure i < int(pl.count).
+func (pl *FlatPostingList) EntryIndex(i uint32) core.EntryID { return pl.data[i] }
+
+// SubView returns a zero-copy sub-posting-list of entries in [start, end).
+func (pl *FlatPostingList) SubView(start, end int) *FlatPostingList {
+	if start >= end {
+		return &FlatPostingList{count: 0}
+	}
+	return &FlatPostingList{count: uint32(end - start), data: pl.data[start:end]}
+}
+
+// SubViewByK returns a zero-copy sub-posting-list containing only entries
+// with conjunction size K. It uses binary search to locate the K-range
+// boundaries within the EntryID-sorted posting list.
+func (pl *FlatPostingList) SubViewByK(k int) *FlatPostingList {
+	count := int(pl.count)
+	start := sort.Search(count, func(i int) bool { return pl.data[i] >= core.KStartEntryID(k) })
+	end := sort.Search(count, func(i int) bool { return pl.data[i] >= core.KStartEntryID(k+1) })
+	return pl.SubView(start, end)
 }

@@ -114,6 +114,8 @@ type TermIterator interface {
 	Current() EntryID
 	SkipTo(target EntryID) EntryID
 	Term() Term
+	// ReachEnd reports whether the iterator has exhausted its posting list.
+	ReachEnd() bool
 }
 
 // PostingIterator is an alias for TermIterator.

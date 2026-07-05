@@ -113,7 +113,7 @@ const (
 	IndexNameDefault     = core.IndexNameDefault
 	IndexNameACMatcher   = core.IndexNameACMatcher
 	IndexNameExtendRange = core.IndexNameExtendRange
-	SegmentVersionV3     = segment.SegmentVersionV3
+	SegmentVersionV4     = segment.SegmentVersionV4
 
 	FormatVersionSegmentV2 = manifest.FormatVersionSegmentV2
 

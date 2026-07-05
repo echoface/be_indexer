@@ -8,6 +8,10 @@ import (
 	"github.com/echoface/be_indexer/core"
 )
 
+func mkE(k int, id core.DocID) core.EntryID {
+	return core.NewEntryID(core.NewConjID(id, 0, k), true)
+}
+
 func TestExternalBuilderMatchesBuilderAcrossRuns(t *testing.T) {
 	fields := []core.FieldMeta{{ID: 1, Field: "a", FieldOption: core.FieldOption{Tokenizer: "number"}}}
 	build := func(useExternal bool) []byte {
@@ -31,11 +35,11 @@ func TestExternalBuilderMatchesBuilderAcrossRuns(t *testing.T) {
 			term  string
 			entry core.EntryID
 		}{
-			{term: "2", entry: 30},
-			{term: "1", entry: 20},
-			{term: "1", entry: 10},
-			{term: "2", entry: 40},
-			{term: "3", entry: 50},
+			{term: "2", entry: mkE(1, 4)},
+			{term: "1", entry: mkE(1, 2)},
+			{term: "1", entry: mkE(1, 1)},
+			{term: "2", entry: mkE(1, 5)},
+			{term: "3", entry: mkE(1, 6)},
 		}
 		for _, posting := range postings {
 			if err := sink.AddPosting(1, "a", posting.term, []core.EntryID{posting.entry}); err != nil {
@@ -62,8 +66,14 @@ func TestExternalBuilderMatchesBuilderAcrossRuns(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if it.Current() != 10 || it.SkipTo(11) != 20 {
-		t.Fatalf("posting list order mismatch")
+	if it == nil {
+		t.Fatal("expected posting iterator for term 1")
+	}
+	expected1 := mkE(1, 1)
+	expected2 := mkE(1, 2)
+	if it.Current() != expected1 || it.SkipTo(expected2) != expected2 {
+		t.Fatalf("posting list order mismatch: got %d skipTo(%d)=%d want %d,%d",
+			it.Current(), expected2, it.SkipTo(expected2), expected1, expected2)
 	}
 }
 
@@ -79,10 +89,10 @@ func TestExternalBuilderACMatcherAcrossRuns(t *testing.T) {
 		term  string
 		entry core.EntryID
 	}{
-		{term: "apple", entry: 2},
-		{term: "app", entry: 1},
-		{term: "banana", entry: 3},
-		{term: "tree", entry: 4},
+		{term: "apple", entry: mkE(1, 2)},
+		{term: "app", entry: mkE(1, 1)},
+		{term: "banana", entry: mkE(1, 3)},
+		{term: "tree", entry: mkE(1, 4)},
 	}
 	for _, posting := range postings {
 		if err := b.AddPosting(1, "keyword", posting.term, []core.EntryID{posting.entry}); err != nil {
@@ -109,7 +119,7 @@ func TestExternalBuilderACMatcherAcrossRuns(t *testing.T) {
 		}
 	}
 	sort.Slice(got, func(i, j int) bool { return got[i] < got[j] })
-	want := []core.EntryID{1, 2, 3}
+	want := []core.EntryID{mkE(1, 1), mkE(1, 2), mkE(1, 3)}
 	if len(got) != len(want) {
 		t.Fatalf("entries length mismatch: got=%v want=%v", got, want)
 	}
@@ -129,7 +139,7 @@ func TestExternalBuilderSegmentV2EmbedsWildcards(t *testing.T) {
 	})
 	b.SetDocCount(2)
 	b.AddField(core.FieldMeta{ID: 1, Field: "a", FieldOption: core.FieldOption{Tokenizer: "number"}})
-	if err := b.AddPosting(1, "a", "1", []core.EntryID{20}); err != nil {
+	if err := b.AddPosting(1, "a", "1", []core.EntryID{mkE(1, 20)}); err != nil {
 		t.Fatal(err)
 	}
 	if err := b.Write(); err != nil {
@@ -139,7 +149,7 @@ func TestExternalBuilderSegmentV2EmbedsWildcards(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if reader.Version() != SegmentVersionV3 || reader.SchemaHash() != "sha256:schema" {
+	if reader.Version() != SegmentVersionV4 || reader.SchemaHash() != "sha256:schema" {
 		t.Fatalf("v3 metadata mismatch: version=%d schema=%s", reader.Version(), reader.SchemaHash())
 	}
 	wildcards := reader.Wildcards()
@@ -171,15 +181,15 @@ func TestExternalBuilderSegmentV2MatchesBuilderAcrossRuns(t *testing.T) {
 			term  string
 			entry core.EntryID
 		}{
-			{term: "2", entry: 30},
-			{term: "1", entry: 10},
-			{term: "1", entry: 20},
+			{term: "2", entry: mkE(1, 30)},
+			{term: "1", entry: mkE(1, 10)},
+			{term: "1", entry: mkE(1, 20)},
 		} {
 			if err := sink.AddPosting(1, "a", posting.term, []core.EntryID{posting.entry}); err != nil {
 				t.Fatal(err)
 			}
 		}
-		if err := sink.AddPosting(2, "b", "9", []core.EntryID{40}); err != nil {
+		if err := sink.AddPosting(2, "b", "9", []core.EntryID{mkE(2, 40)}); err != nil {
 			t.Fatal(err)
 		}
 		if err := sink.Write(); err != nil {

@@ -110,3 +110,14 @@ func (s Entries) DocString() []string {
 	}
 	return res
 }
+
+// KStartEntryID returns the minimum EntryID for a given conjunction size K.
+// K occupies bits 56-63 of EntryID due to the ConjID layout and the <<4 shift:
+//   EntryID = (ConjID << 4) | incl/excl
+//   ConjID  = [ reserved(4) | K(8) | index(8) | negSign(1) | docID(43) ]
+//   → K shifted to bits 56-63 in EntryID.
+//
+// All EntryIDs with size K fall in [KStartEntryID(K), KStartEntryID(K+1)).
+func KStartEntryID(k int) EntryID {
+	return EntryID(uint64(k) << 56)
+}

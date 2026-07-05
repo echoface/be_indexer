@@ -1,13 +1,21 @@
 package segment
 
-// MagicNumber identifies the only supported Segment format (v3).
-var MagicNumber = []byte("BEIDX\x00\x00\x03")
+// MagicNumber identifies the only supported Segment format (v4).
+// v4 merges all K-groups into per-field blocks (K is encoded in EntryID itself).
+var MagicNumber = []byte("BEIDX\x00\x00\x04")
 
 const (
-	SegmentVersionV3 = 3
+	SegmentVersionV4 = 4
+
+	// AllK sentinel: passed to GetPostingsByTerm/GetRangePostings/MultiPatternSearch
+	// to request the full posting list without K-range filtering.
+	AllK = -1
 
 	wildcardsBlockName = "__wildcards"
 	checksumPrefix     = "sha256:"
+
+	// deprecated: kept for legacy references (may be removed in future cleanup)
+	SegmentVersionV3 = 3
 )
 
 // Block kind discriminators stored in BlockDef.Kind.
@@ -45,11 +53,10 @@ type FieldMetaDump struct {
 	Parser    string `json:"parser"`
 }
 
-// BlockDef describes one data block. K/Field/Kind are the structured identity
-// (Field/K are empty/0 for the wildcards block), Offset/Size locate it, and
+// BlockDef describes one data block. Field/Kind are the structured identity
+// (Field is empty for the wildcards block), Offset/Size locate it, and
 // Checksum (sha256:...) protects its bytes.
 type BlockDef struct {
-	K        int    `json:"k"`
 	Field    string `json:"field,omitempty"`
 	Kind     string `json:"kind"`
 	Offset   uint64 `json:"offset"`

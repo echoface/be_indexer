@@ -1387,3 +1387,162 @@ func TestNewDocument_Empty(t *testing.T) {
 
 // Ensure bytes.Buffer roundtrip compiles
 var _ = bytes.NewBuffer
+
+// ---------------------------------------------------------------------------
+// Phase 1: K-Group Elimination — KStartEntryID
+// ---------------------------------------------------------------------------
+
+func TestKStartEntryID(t *testing.T) {
+	// K=0: EntryID has K=0 in bits 56-63 → uint64(0)<<56 = 0
+	if KStartEntryID(0) != 0 {
+		t.Errorf("KStartEntryID(0) should be 0, got %d", KStartEntryID(0))
+	}
+	// K=1: EntryID has K=1 in bits 56-63 → uint64(1)<<56
+	expected := EntryID(uint64(1) << 56)
+	if KStartEntryID(1) != expected {
+		t.Errorf("KStartEntryID(1) should be %d, got %d", expected, KStartEntryID(1))
+	}
+	// K=255: maximum
+	expected = EntryID(uint64(255) << 56)
+	if KStartEntryID(255) != expected {
+		t.Errorf("KStartEntryID(255) should be %d, got %d", expected, KStartEntryID(255))
+	}
+	// K boundary: [KStartEntryID(k), KStartEntryID(k+1)) should not overlap
+	for k := 0; k < 255; k++ {
+		if KStartEntryID(k) >= KStartEntryID(k+1) {
+			t.Errorf("KStartEntryID(%d) >= KStartEntryID(%d)", k, k+1)
+		}
+	}
+}
+
+// Verify KStartEntryID correctly decomposes EntryIDs by K.
+func TestKStartEntryID_RangePartition(t *testing.T) {
+	for k := 0; k < 100; k++ {
+		for incl := 0; incl < 2; incl++ {
+			eid := NewEntryID(NewConjID(100, 0, k), incl == 1)
+			if eid < KStartEntryID(k) {
+				t.Errorf("K=%d entry %d should be >= KStartEntryID(%d)=%d", k, eid, k, KStartEntryID(k))
+			}
+			if eid >= KStartEntryID(k+1) {
+				t.Errorf("K=%d entry %d should be < KStartEntryID(%d)=%d", k, eid, k+1, KStartEntryID(k+1))
+			}
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Phase 1: K-Group Elimination — ReachEnd & CompactLast
+// ---------------------------------------------------------------------------
+
+func TestSliceIterator_ReachEnd(t *testing.T) {
+	eids := []EntryID{
+		NewEntryID(NewConjID(1, 0, 1), true),
+		NewEntryID(NewConjID(3, 0, 1), true),
+	}
+	it := NewSliceIterator(NewTerm("x", 0), eids)
+
+	if it.ReachEnd() {
+		t.Error("Fresh iterator should not have reached end")
+	}
+
+	it.SkipTo(NewEntryID(NewConjID(10, 0, 1), true))
+	if !it.ReachEnd() {
+		t.Error("After skipping past all entries, should have reached end")
+	}
+
+	// Empty iterator
+	empty := NewSliceIterator(NewTerm("e", 0), nil)
+	if !empty.ReachEnd() {
+		t.Error("Empty iterator should report reach end")
+	}
+}
+
+func TestFieldCursor_ReachEnd(t *testing.T) {
+	eids := []EntryID{NewEntryID(NewConjID(1, 0, 1), true)}
+	it := NewSliceIterator(NewTerm("x", 0), eids)
+	fc := NewFieldCursor(it)
+
+	if fc.ReachEnd() {
+		t.Error("Fresh cursor should not have reached end")
+	}
+
+	fc.SkipTo(NewEntryID(NewConjID(10, 0, 1), true))
+	if !fc.ReachEnd() {
+		t.Error("After skipping past all entries, cursor should have reached end")
+	}
+
+	empty := NewFieldCursor()
+	if !empty.ReachEnd() {
+		t.Error("Empty cursor should report reach end")
+	}
+}
+
+func TestFieldCursors_CompactLast(t *testing.T) {
+	eids1 := []EntryID{NewEntryID(NewConjID(1, 0, 1), true)}
+	eids2 := []EntryID{NewEntryID(NewConjID(5, 0, 1), true)}
+
+	fc1 := NewFieldCursor(NewSliceIterator(NewTerm("a", 0), eids1))
+	fc2 := NewFieldCursor(NewSliceIterator(NewTerm("b", 0), eids2))
+
+	fcs := NewFieldCursors(2)
+	fcs.Append(fc1)
+	fcs.Append(fc2)
+
+	// Both cursors alive
+	fcs.CompactLast()
+	if fcs.Len() != 2 {
+		t.Errorf("CompactLast should keep both cursors, got %d", fcs.Len())
+	}
+
+	// Exhaust fc1
+	fc1.SkipTo(NewEntryID(NewConjID(10, 0, 1), true))
+	// Rebuild fc1 into fcs
+	fcs2 := NewFieldCursors(2)
+	fcs2.Append(fc1)
+	fcs2.Append(fc2)
+	fcs2.Sort()
+	fcs2.CompactLast()
+	if fcs2.Len() != 1 {
+		t.Errorf("CompactLast should remove exhausted fc1, got %d", fcs2.Len())
+	}
+	// Remaining cursor should be fc2
+	if fcs2.Peek() != eids2[0] {
+		t.Errorf("Remaining cursor should be fc2")
+	}
+}
+
+func TestFieldCursors_CompactLast_AllExhausted(t *testing.T) {
+	eids := []EntryID{NewEntryID(NewConjID(1, 0, 1), true)}
+	fc := NewFieldCursor(NewSliceIterator(NewTerm("x", 0), eids))
+	fc.SkipTo(NewEntryID(NewConjID(10, 0, 1), true))
+
+	fcs := NewFieldCursors(1)
+	fcs.Append(fc)
+	fcs.Sort()
+	fcs.CompactLast()
+
+	if fcs.Len() != 0 {
+		t.Error("CompactLast should clear all exhausted cursors")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// id_bounds external test
+// ---------------------------------------------------------------------------
+
+var _ = NewTerm
+
+func TestConjID_KAtByteBoundary(t *testing.T) {
+	// Verify K occupies exactly the top byte of EntryID (bits 56-63),
+	// which means sorting by EntryID naturally groups same-K entries.
+	for k := 0; k <= 255; k++ {
+		for docID := DocID(1); docID < 5; docID++ {
+			conj := NewConjID(docID, 0, k)
+			eid := NewEntryID(conj, true)
+			gotK := int((uint64(eid) >> 56) & 0xFF)
+			if gotK != k {
+				t.Errorf("K mismatch for K=%d docID=%d: got K=%d from EntryID", k, docID, gotK)
+			}
+		}
+	}
+}

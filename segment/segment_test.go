@@ -11,6 +11,11 @@ import (
 	"github.com/echoface/be_indexer/core"
 )
 
+// makeE creates a properly encoded EntryID with the given K, document id, and include flag.
+func makeE(k int, id core.DocID) core.EntryID {
+	return core.NewEntryID(core.NewConjID(id, 0, k), true)
+}
+
 func TestBuilderReader(t *testing.T) {
 	buf := new(bytes.Buffer)
 	writer := NewInMemorySegmentBuilder(buf)
@@ -21,8 +26,8 @@ func TestBuilderReader(t *testing.T) {
 	}
 	writer.AddField(metaAge)
 
-	writer.AddPosting(1, "age", "18", []core.EntryID{10, 20, 30})
-	writer.AddPosting(1, "age", "25", []core.EntryID{15, 25})
+	writer.AddPosting(1, "age", "18", []core.EntryID{makeE(1, 10), makeE(1, 20), makeE(1, 30)})
+	writer.AddPosting(1, "age", "25", []core.EntryID{makeE(1, 15), makeE(1, 25)})
 
 	if err := writer.Write(); err != nil {
 		t.Fatal(err)
@@ -38,7 +43,7 @@ func TestBuilderReader(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if pi.Current() != 10 {
+	if pi.Current() != makeE(1, 10) {
 		t.Fatalf("expected 10, got %d", pi.Current())
 	}
 
@@ -47,7 +52,7 @@ func TestBuilderReader(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if pi2.Current() != 15 {
+	if pi2.Current() != makeE(1, 15) {
 		t.Fatalf("expected 15, got %d", pi2.Current())
 	}
 
@@ -76,10 +81,10 @@ func TestBuilderRangeRoundTrip(t *testing.T) {
 		entry  core.EntryID
 	}
 	ranges := []rng{
-		{18, 1 << 62, 100},
-		{-(1 << 62), 21, 200},
-		{18, 25, 300},
-		{30, 30, 400},
+		{18, 1 << 62, makeE(1, 100)},
+		{-(1 << 62), 21, makeE(1, 200)},
+		{18, 25, makeE(1, 300)},
+		{30, 30, makeE(1, 400)},
 	}
 	build := func(external bool) []byte {
 		buf := new(bytes.Buffer)
@@ -132,10 +137,10 @@ func TestBuilderRangeRoundTrip(t *testing.T) {
 		return out
 	}
 	cases := map[int64][]core.EntryID{
-		17: {200},
-		18: {100, 200, 300},
-		25: {100, 300},
-		30: {100, 400},
+		17: {makeE(1, 200)},
+		18: {makeE(1, 100), makeE(1, 200), makeE(1, 300)},
+		25: {makeE(1, 100), makeE(1, 300)},
+		30: {makeE(1, 100), makeE(1, 400)},
 	}
 	for q, want := range cases {
 		got := collect(q)
@@ -159,7 +164,7 @@ func TestBuilderReaderSegmentV2MetadataWildcardsAndChecksum(t *testing.T) {
 	})
 	writer.SetDocCount(1)
 	writer.AddField(core.FieldMeta{ID: 1, Field: "age"})
-	if err := writer.AddPosting(1, "age", "18", []core.EntryID{20}); err != nil {
+	if err := writer.AddPosting(1, "age", "18", []core.EntryID{makeE(1, 20)}); err != nil {
 		t.Fatal(err)
 	}
 	if err := writer.Write(); err != nil {
@@ -170,7 +175,7 @@ func TestBuilderReaderSegmentV2MetadataWildcardsAndChecksum(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if reader.Version() != SegmentVersionV3 {
+	if reader.Version() != SegmentVersionV4 {
 		t.Fatalf("version mismatch: %d", reader.Version())
 	}
 	if reader.SchemaHash() != "sha256:schema" {
@@ -184,7 +189,7 @@ func TestBuilderReaderSegmentV2MetadataWildcardsAndChecksum(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if it.Current() != 20 {
+	if it.Current() != makeE(1, 20) {
 		t.Fatalf("posting mismatch: %d", it.Current())
 	}
 }
@@ -194,7 +199,7 @@ func TestNewSegmentReaderRejectsSegmentV2BlockChecksumMismatch(t *testing.T) {
 	writer := NewInMemorySegmentBuilderWithOptions(buf, InMemorySegmentBuilderOptions{Wildcards: core.Entries{10}})
 	writer.SetDocCount(1)
 	writer.AddField(core.FieldMeta{ID: 1, Field: "age"})
-	if err := writer.AddPosting(1, "age", "18", []core.EntryID{20}); err != nil {
+	if err := writer.AddPosting(1, "age", "18", []core.EntryID{makeE(1, 20)}); err != nil {
 		t.Fatal(err)
 	}
 	if err := writer.Write(); err != nil {
@@ -205,7 +210,7 @@ func TestNewSegmentReaderRejectsSegmentV2BlockChecksumMismatch(t *testing.T) {
 	if err := json.Unmarshal(buf.Bytes()[metaOffset:len(buf.Bytes())-8], &meta); err != nil {
 		t.Fatal(err)
 	}
-	for _, blockName := range []string{"k1_age_postings", "k1_age_dict", wildcardsBlockName} {
+	for _, blockName := range []string{plBlockName("age"), dictBlockName("age"), wildcardsBlockName} {
 		t.Run(blockName, func(t *testing.T) {
 			data := append([]byte(nil), buf.Bytes()...)
 			block := meta.BlockIndex[blockName]
@@ -223,7 +228,7 @@ func TestNewSegmentReaderRejectsUnsupportedSegmentVersion(t *testing.T) {
 	writer := NewInMemorySegmentBuilder(buf)
 	writer.SetDocCount(1)
 	writer.AddField(core.FieldMeta{ID: 1, Field: "age"})
-	if err := writer.AddPosting(1, "age", "18", []core.EntryID{20}); err != nil {
+	if err := writer.AddPosting(1, "age", "18", []core.EntryID{makeE(1, 20)}); err != nil {
 		t.Fatal(err)
 	}
 	if err := writer.Write(); err != nil {
@@ -255,7 +260,7 @@ func TestNewSegmentReaderRejectsSegmentV2ACChecksumMismatch(t *testing.T) {
 	writer := NewInMemorySegmentBuilder(buf)
 	writer.SetDocCount(1)
 	writer.AddField(core.FieldMeta{ID: 1, Field: "keyword", FieldOption: core.FieldOption{Container: core.IndexNameACMatcher}})
-	if err := writer.AddPosting(1, "keyword", "apple", []core.EntryID{20}); err != nil {
+	if err := writer.AddPosting(1, "keyword", "apple", []core.EntryID{makeE(1, 20)}); err != nil {
 		t.Fatal(err)
 	}
 	if err := writer.Write(); err != nil {
@@ -267,7 +272,7 @@ func TestNewSegmentReaderRejectsSegmentV2ACChecksumMismatch(t *testing.T) {
 	if err := json.Unmarshal(data[metaOffset:len(data)-8], &meta); err != nil {
 		t.Fatal(err)
 	}
-	block := meta.BlockIndex["k1_keyword_ac"]
+	block := meta.BlockIndex[acBlockName("keyword")]
 	data[block.Offset] ^= 0xff
 	_, err := NewSegmentReader(data)
 	if err == nil || !strings.Contains(err.Error(), "checksum mismatch") {
@@ -283,17 +288,17 @@ func TestNewSegmentReaderRejectsCorruptBlockBounds(t *testing.T) {
 	}{
 		{
 			name:    "empty block",
-			block:   BlockDef{K: 1, Field: "age", Kind: BlockKindDict, Checksum: "sha256:bad", Offset: uint64(len(MagicNumber)), Size: 0},
+			block:   BlockDef{Field: "age", Kind: BlockKindDict, Checksum: "sha256:bad", Offset: uint64(len(MagicNumber)), Size: 0},
 			wantErr: "empty block",
 		},
 		{
 			name:    "offset after metadata",
-			block:   BlockDef{K: 1, Field: "age", Kind: BlockKindDict, Checksum: "sha256:bad", Offset: uint64(len(MagicNumber)) + 2, Size: 1},
+			block:   BlockDef{Field: "age", Kind: BlockKindDict, Checksum: "sha256:bad", Offset: uint64(len(MagicNumber)) + 2, Size: 1},
 			wantErr: "exceeds metadata offset",
 		},
 		{
 			name:    "size crosses metadata",
-			block:   BlockDef{K: 1, Field: "age", Kind: BlockKindDict, Checksum: "sha256:bad", Offset: 0, Size: uint64(len(MagicNumber)) + 1},
+			block:   BlockDef{Field: "age", Kind: BlockKindDict, Checksum: "sha256:bad", Offset: 0, Size: uint64(len(MagicNumber)) + 1},
 			wantErr: "exceeds data region",
 		},
 	}
@@ -315,7 +320,7 @@ func TestNewSegmentReaderRejectsCorruptBlockBounds(t *testing.T) {
 func corruptSegmentWithBlock(block BlockDef) []byte {
 	metaOffset := uint64(len(MagicNumber))
 	badMeta := MetaBlock{
-		Version:  SegmentVersionV3,
+		Version:  SegmentVersionV4,
 		DocCount: 1,
 		Fields:   []FieldMetaDump{{Name: "age", ID: 1}},
 		BlockIndex: map[string]BlockDef{

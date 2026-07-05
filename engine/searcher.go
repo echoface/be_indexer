@@ -94,7 +94,7 @@ func (e *BooleanEngine) RetrieveWithCollector(
 	// the segment layer filters by K internally when needed.
 	encoded := e.encodeQueries(queries)
 
-	fCursors := e.initCursorsOnce(encoded, ctx.Observer)
+	fCursors := e.initCursors(encoded, ctx.Observer)
 	if fCursors.Len() == 0 {
 		return nil
 	}
@@ -184,11 +184,11 @@ func (e *BooleanEngine) retrieveAll(ctx *core.RetrieveContext, fieldCursors *cor
 	}
 }
 
-// initCursorsOnce builds FieldCursors for ALL K values in a single pass.
+// initCursors builds FieldCursors for ALL K values in a single pass.
 // It requests full posting lists (k = segment.AllK) from each segment, so
 // each cursor contains entries for every K. The retrieveAll function then
 // reads K dynamically from EntryID as cursors are merged.
-func (e *BooleanEngine) initCursorsOnce(
+func (e *BooleanEngine) initCursors(
 	encoded []encodedField, obs core.RetrieveObserver,
 ) *core.FieldCursors {
 	fCursors := core.NewFieldCursors(len(encoded) + 1)

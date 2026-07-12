@@ -100,6 +100,93 @@ func TestBuildSegmentsFromDocs_Consistency(t *testing.T) {
 	}
 }
 
+// TestBuildSegmentsFromDocs_EmbedsPerSegmentWildcards ensures the multi-segment
+// helper writes a non-empty __wildcards block into each segment that has K=0
+// conjunctions. Loader recovery reads seg.Wildcards() only; it must not depend
+// on the returned union entries alone.
+func TestBuildSegmentsFromDocs_EmbedsPerSegmentWildcards(t *testing.T) {
+	fields := map[core.BEField]*core.FieldMeta{
+		"age":  {ID: 1, Field: "age", FieldOption: core.FieldOption{Container: core.IndexNameDefault, Tokenizer: "number"}},
+		"city": {ID: 2, Field: "city", FieldOption: core.FieldOption{Container: core.IndexNameDefault, Tokenizer: "default"}},
+	}
+	docs := []*core.Document{
+		core.NewDocument(1).AddConjunction(core.NewConjunction().In("age", 18)),
+		// K=0 pure exclude → must produce a per-segment wildcard EntryID
+		core.NewDocument(2).AddConjunction(core.NewConjunction().NotIn("city", "bj")),
+		core.NewDocument(3).AddConjunction(core.NewConjunction().In("age", 20).In("city", "sh")),
+	}
+
+	var segBuffers []*bytes.Buffer
+	returnedWildcards, segCnt, err := BuildSegmentsFromDocs(func(segIdx int) (io.Writer, error) {
+		b := new(bytes.Buffer)
+		segBuffers = append(segBuffers, b)
+		return b, nil
+	}, fields, docs, BuildSegmentsFromDocsOptions{MaxDocsPerSegment: 1})
+	if err != nil {
+		t.Fatalf("BuildSegmentsFromDocs failed: %v", err)
+	}
+	if segCnt != 3 {
+		t.Fatalf("want 3 segments, got %d", segCnt)
+	}
+
+	// Reconstruct wildcards the same way loader.embeddedWildcards does.
+	var embedded core.Entries
+	segs := make([]*segment.SegmentReader, 0, len(segBuffers))
+	for i, b := range segBuffers {
+		sr, err := segment.NewSegmentReader(b.Bytes())
+		if err != nil {
+			t.Fatalf("NewSegmentReader[%d] failed: %v", i, err)
+		}
+		segs = append(segs, sr)
+		embedded = append(embedded, sr.Wildcards()...)
+	}
+	sort.Slice(embedded, func(i, j int) bool { return embedded[i] < embedded[j] })
+
+	if len(embedded) == 0 {
+		t.Fatal("embedded per-segment wildcards is empty; multi-segment path forgot SetWildcards")
+	}
+	if len(embedded) != len(returnedWildcards) {
+		t.Fatalf("embedded wildcards len=%d, returned union len=%d", len(embedded), len(returnedWildcards))
+	}
+	for i := range embedded {
+		if embedded[i] != returnedWildcards[i] {
+			t.Fatalf("embedded wildcards mismatch returned union at %d: %v vs %v", i, embedded, returnedWildcards)
+		}
+	}
+	// Only doc2 (segment index 1) is K=0.
+	if got := segs[1].Wildcards(); len(got) != 1 {
+		t.Fatalf("segment[1] (K=0 doc) wildcards want 1, got %v", got)
+	}
+	if got := segs[0].Wildcards(); len(got) != 0 {
+		t.Fatalf("segment[0] (K=1 doc) wildcards want empty, got %v", got)
+	}
+	if got := segs[2].Wildcards(); len(got) != 0 {
+		t.Fatalf("segment[2] (K=2 doc) wildcards want empty, got %v", got)
+	}
+
+	// Engine built only from embedded wildcards must still hit the K=0 doc.
+	eng, err := engine.NewBooleanEngine(fields, embedded, segs)
+	if err != nil {
+		t.Fatalf("NewBooleanEngine failed: %v", err)
+	}
+	// city=sh does not match exclude city=bj, so K=0 doc2 should hit.
+	res, err := eng.Retrieve(core.Assignments{"city": "sh"})
+	if err != nil {
+		t.Fatalf("Retrieve failed: %v", err)
+	}
+	ids := bitmapToSlice(res)
+	found := false
+	for _, id := range ids {
+		if id == 2 {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("K=0 doc 2 missing from result %v when engine uses only embedded wildcards", ids)
+	}
+}
+
 func bitmapToSlice(b *core.BitmapDocSet) core.DocIDList {
 	var ids core.DocIDList
 	b.ForEach(func(id core.DocID) { ids = append(ids, id) })

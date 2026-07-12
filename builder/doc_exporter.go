@@ -71,21 +71,14 @@ func BuildSegmentsFromDocs(
 			return nil, segIdx, err
 		}
 
-		sw := segment.NewInMemorySegmentBuilder(w)
-		sw.SetDocCount(len(chunk))
-		for _, fc := range codec.Fields() {
-			sw.AddField(fc.Meta)
-		}
-
-		wildcards, err := exportDocsToSegment(sw, codec, chunk)
+		// Reuse the single-segment path so each segment embeds a sorted
+		// __wildcards block (SetWildcards + Write). Loader recovery depends
+		// on per-segment wildcards, not only the returned union.
+		wildcards, err := buildSegmentFromDocsWithCodec(w, codec, chunk, BuildSegmentFromDocsOptions{})
 		if err != nil {
 			return nil, segIdx + 1, err
 		}
 		allWildcards = append(allWildcards, wildcards...)
-
-		if err := sw.Write(); err != nil {
-			return nil, segIdx + 1, err
-		}
 		segIdx++
 	}
 

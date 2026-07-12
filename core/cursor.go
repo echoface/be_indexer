@@ -31,17 +31,38 @@ func (s *SliceIterator) Current() EntryID {
 	return s.EIDs[s.cursor]
 }
 
-func (s *SliceIterator) SkipTo(id EntryID) EntryID {
-	left, right := s.cursor, len(s.EIDs)-1
-	for left <= right {
-		mid := left + (right-left)/2
-		if s.EIDs[mid] < id {
-			left = mid + 1
+func (s *SliceIterator) SkipTo(target EntryID) EntryID {
+	n := len(s.EIDs)
+	if s.cursor >= n {
+		return NULLENTRY
+	}
+	// Galloping search: exponential probe to locate a narrow search window,
+	// then binary search within that window. Collapses to a single check
+	// for sequential advances (the dominant pattern in mergeCursors).
+	lo := s.cursor
+	if s.EIDs[lo] >= target {
+		return s.EIDs[lo]
+	}
+	lo++
+	hi := lo
+	step := 1
+	for hi < n && s.EIDs[hi] < target {
+		lo = hi + 1
+		step *= 2
+		hi = s.cursor + step
+	}
+	if hi >= n {
+		hi = n - 1
+	}
+	for lo <= hi {
+		mid := lo + (hi-lo)/2
+		if s.EIDs[mid] < target {
+			lo = mid + 1
 		} else {
-			right = mid - 1
+			hi = mid - 1
 		}
 	}
-	s.cursor = left
+	s.cursor = lo
 	return s.Current()
 }
 

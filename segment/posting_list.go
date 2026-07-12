@@ -152,15 +152,26 @@ func (c *flatPostingCursor) SkipTo(target core.EntryID) core.EntryID {
 		return core.NULLENTRY
 	}
 
-	// Fast path check
+	// Galloping search: exponential probe for sequential-dominant patterns.
 	if c.pl.data[c.idx] >= target {
 		return c.pl.data[c.idx]
 	}
 
-	// Binary search since entries are sorted
-	left := c.idx + 1
-	right := c.pl.count
+	lo := c.idx + 1
+	hi := lo
+	var step uint32 = 1
+	for hi < c.pl.count && c.pl.data[hi] < target {
+		lo = hi + 1
+		step *= 2
+		hi = c.idx + step
+	}
+	if hi >= c.pl.count {
+		hi = c.pl.count - 1
+	}
 
+	// Semi-open [lo, hi+1) binary search — safe from uint32 underflow.
+	left := lo
+	right := hi + 1
 	for left < right {
 		mid := left + (right-left)/2
 		if c.pl.data[mid] < target {

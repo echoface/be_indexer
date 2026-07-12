@@ -240,6 +240,9 @@ func (sw *InMemorySegmentBuilder) Write() error {
 	wildcards := append(core.Entries(nil), sw.wildcards...)
 	sort.Slice(wildcards, func(i, j int) bool { return wildcards[i] < wildcards[j] })
 	wildcardBytes := encodeEntriesBlock(wildcards)
+	if err := sw.alignTo8(); err != nil {
+		return err
+	}
 	wildcardOffset := sw.offset
 	sw.beginBlock()
 	if err := sw.writeBytes(wildcardBytes); err != nil {

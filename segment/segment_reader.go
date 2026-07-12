@@ -328,11 +328,13 @@ func (sr *SegmentReader) Version() int {
 }
 
 // Wildcards returns embedded Z-list entries for segment v2 files.
+// The returned slice is a view into the segment's backing memory (mmap or heap);
+// it is valid only while the SegmentReader remains open and must not be modified.
 func (sr *SegmentReader) Wildcards() core.Entries {
 	if sr == nil || len(sr.wildcards) == 0 {
 		return nil
 	}
-	return append(core.Entries(nil), sr.wildcards...)
+	return sr.wildcards
 }
 
 // Close releases the backing storage. For mmap-backed readers it unmaps the

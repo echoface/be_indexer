@@ -173,6 +173,9 @@ func (b *ExternalBuilder) Write() error {
 		return err
 	}
 
+	if err := b.alignTo8(); err != nil {
+		return err
+	}
 	wildcardOffset := b.offset
 	if b.wildcardsBlockFile != "" {
 		if err := b.writeChecksummedFileBlock(wildcardsBlockName, b.wildcardsBlockFile); err != nil {

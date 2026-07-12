@@ -3,6 +3,7 @@ package segment
 import (
 	"encoding/binary"
 	"fmt"
+	"math"
 
 	"github.com/echoface/be_indexer/core"
 )
@@ -24,6 +25,12 @@ func decodeEntriesBlock(data []byte) (core.Entries, error) {
 	count := binary.LittleEndian.Uint64(data[8:16])
 	if count > uint64((len(data)-16)/8) || len(data) != 16+int(count)*8 {
 		return nil, fmt.Errorf("truncated entries block")
+	}
+	if count == 0 {
+		return nil, nil
+	}
+	if count <= math.MaxUint32 {
+		return mapEntryIDs(data[16:16+int(count)*8], uint32(count)), nil
 	}
 	entries := make(core.Entries, count)
 	for i := range entries {

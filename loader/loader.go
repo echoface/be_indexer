@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"github.com/echoface/be_indexer/core"
@@ -107,8 +106,7 @@ func loadFullEngine(root string, fields map[core.BEField]*core.FieldMeta, schema
 	if err != nil {
 		return nil, err
 	}
-	wildcards := embeddedWildcards(segments)
-	return engine.NewBooleanEngine(fields, wildcards, segments)
+	return engine.NewBooleanEngine(fields, nil, segments)
 }
 
 func loadDeltas(root string, fields map[core.BEField]*core.FieldMeta, schemaHash string, deltas []manifest.DeltaIndexDescriptor, opts Options) ([]*engine.BooleanEngine, *core.BitmapDocSet, *core.BitmapDocSet, error) {
@@ -126,9 +124,8 @@ func loadDeltas(root string, fields map[core.BEField]*core.FieldMeta, schemaHash
 		if err != nil {
 			return nil, nil, nil, err
 		}
-		wildcards := embeddedWildcards(segments)
 		if len(segments) > 0 {
-			deltaEngine, err := engine.NewBooleanEngine(fields, wildcards, segments)
+			deltaEngine, err := engine.NewBooleanEngine(fields, nil, segments)
 			if err != nil {
 				return nil, nil, nil, err
 			}
@@ -162,17 +159,6 @@ func loadDeltas(root string, fields map[core.BEField]*core.FieldMeta, schemaHash
 		}
 	}
 	return deltaEngines, changedDocs, deletedDocs, nil
-}
-
-func embeddedWildcards(segments []*segment.SegmentReader) core.Entries {
-	var wildcards core.Entries
-	for _, seg := range segments {
-		wildcards = append(wildcards, seg.Wildcards()...)
-	}
-	// 优化分析， 为什么不所有 segment 的wildcard 在 build 时统一写入 roaring bitmap
-	// 这里通过 bitmap 反序列化出来； 这样拼接排序非常影响 serving 端性能
-	sort.Slice(wildcards, func(i, j int) bool { return wildcards[i] < wildcards[j] })
-	return wildcards
 }
 
 func loadSegments(root, base string, descs []manifest.SegmentDescriptor, schemaHash string, opts Options) ([]*segment.SegmentReader, error) {

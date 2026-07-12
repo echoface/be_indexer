@@ -186,17 +186,23 @@ func (e *BooleanEngine) mergeCursors(ctx *core.RetrieveContext, fieldCursors *co
 }
 
 // initCursors builds FieldCursors for ALL K values in a single pass.
-// It requests full posting lists from each segment; each cursor contains
-// entries for every K. The mergeCursors function reads K dynamically from
-// EntryID as cursors are merged.
+// It collects posting iterators from every segment; both field postings and
+// per-segment wildcards are wrapped in FieldCursors whose internal heap
+// performs lazy K-way merge at query time — no load-time wildcard merge needed.
 func (e *BooleanEngine) initCursors(
 	encoded []encodedField, obs core.RetrieveObserver,
 ) *core.FieldCursors {
 	fCursors := core.NewFieldCursors(len(encoded) + 1)
 
-	if len(e.wildcardEntries) > 0 {
-		pl := core.NewSliceIterator(core.WildcardTerm, e.wildcardEntries)
-		fCursors.Append(core.NewFieldCursor(pl))
+	var wildcardIters []core.PostingIterator
+	for _, seg := range e.segments {
+		wc := seg.Wildcards()
+		if len(wc) > 0 {
+			wildcardIters = append(wildcardIters, core.NewSliceIterator(core.WildcardTerm, wc))
+		}
+	}
+	if len(wildcardIters) > 0 {
+		fCursors.Append(core.NewFieldCursor(wildcardIters...))
 	}
 
 	fieldCount := 0
@@ -248,8 +254,12 @@ func (e *BooleanEngine) initCursors(
 
 // DumpIndexInfo writes diagnostic information about the engine.
 func (e *BooleanEngine) DumpIndexInfo(sb *strings.Builder) {
+	var wcCount int
+	for _, seg := range e.segments {
+		wcCount += len(seg.Wildcards())
+	}
 	sb.WriteString("\n+++++++ Mmap Searcher info +++++++++++\n")
-	sb.WriteString(fmt.Sprintf("wildcard info: count:%d\n", len(e.wildcardEntries)))
+	sb.WriteString(fmt.Sprintf("wildcard info: count:%d\n", wcCount))
 	sb.WriteString(fmt.Sprintf("segments count: %d\n", len(e.segments)))
 	sb.WriteString("\n++++++++++++++dump index info end ++++++++++++++++\n")
 }

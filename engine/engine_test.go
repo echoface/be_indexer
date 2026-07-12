@@ -85,9 +85,18 @@ type testResultCollector struct {
 	ids []core.DocID
 }
 
-func (c *testResultCollector) Add(id core.DocID, _ core.ConjID)  { c.ids = append(c.ids, id) }
-func (c *testResultCollector) GetDocIDs() core.DocIDList         { return c.ids }
-func (c *testResultCollector) GetDocIDsInto(ids *core.DocIDList) { *ids = append(*ids, c.ids...) }
+func (c *testResultCollector) Add(id core.DocID, _ core.ConjID) { c.ids = append(c.ids, id) }
+
+func bitmapToSlice(b *core.BitmapDocSet) core.DocIDList {
+	if b == nil {
+		return nil
+	}
+	var ids core.DocIDList
+	b.ForEach(func(id core.DocID) {
+		ids = append(ids, id)
+	})
+	return ids
+}
 
 // --- TestObserver ---
 type testObserver struct {
@@ -143,10 +152,11 @@ func TestEngine_BasicQuery(t *testing.T) {
 		{q: core.Assignments{"age": 30, "city": "bj"}, want: []core.DocID{3}},
 	}
 	for _, c := range checks {
-		res, err := eng.Retrieve(c.q)
+		b, err := eng.Retrieve(c.q)
 		if err != nil {
 			t.Fatalf("Retrieve(%v) failed: %v", c.q, err)
 		}
+		res := bitmapToSlice(b)
 		sort.Slice(res, func(i, j int) bool { return res[i] < res[j] })
 		if len(res) != len(c.want) {
 			t.Fatalf("Retrieve(%v): got %v, want %v", c.q, res, c.want)
@@ -167,10 +177,11 @@ func TestEngine_EmptyQuery(t *testing.T) {
 	}
 	eng := buildSingleEngine(t, fields, docs)
 
-	res, err := eng.Retrieve(core.Assignments{})
+	b, err := eng.Retrieve(core.Assignments{})
 	if err != nil {
 		t.Fatalf("Retrieve failed: %v", err)
 	}
+	res := bitmapToSlice(b)
 	if len(res) != 1 || res[0] != 2 {
 		t.Errorf("empty query: want [2], got %v", res)
 	}
@@ -198,8 +209,10 @@ func TestEngine_MultiSegment(t *testing.T) {
 		{"a": 99},
 	}
 	for i, q := range queries {
-		r1, _ := eng1.Retrieve(q)
-		r2, _ := eng2.Retrieve(q)
+		br1, _ := eng1.Retrieve(q)
+		r1 := bitmapToSlice(br1)
+		br2, _ := eng2.Retrieve(q)
+		r2 := bitmapToSlice(br2)
 		sort.Slice(r1, func(i, j int) bool { return r1[i] < r1[j] })
 		sort.Slice(r2, func(i, j int) bool { return r2[i] < r2[j] })
 		if len(r1) != len(r2) {
@@ -227,19 +240,21 @@ func TestEngine_ExcludeShortCircuit(t *testing.T) {
 	eng := buildSingleEngine(t, fields, docs)
 
 	// q={a:25, b:1} → exclude b=1 should fire for docs 1,2; doc 3 matches
-	res, err := eng.Retrieve(core.Assignments{"a": 25, "b": 1})
+	b, err := eng.Retrieve(core.Assignments{"a": 25, "b": 1})
 	if err != nil {
 		t.Fatalf("Retrieve failed: %v", err)
 	}
+	res := bitmapToSlice(b)
 	if len(res) != 1 || res[0] != 3 {
 		t.Errorf("q={a:25,b:1}: should match only doc 3, got %v", res)
 	}
 
 	// q={a:25, b:2} → no exclude → all 3 match
-	res, err = eng.Retrieve(core.Assignments{"a": 25, "b": 2})
+	b, err = eng.Retrieve(core.Assignments{"a": 25, "b": 2})
 	if err != nil {
 		t.Fatalf("Retrieve failed: %v", err)
 	}
+	res = bitmapToSlice(b)
 	if len(res) != 3 {
 		t.Errorf("q={a:25,b:2}: should match 3 docs, got %v", res)
 	}
@@ -269,10 +284,11 @@ func TestEngine_K0Wildcard(t *testing.T) {
 		{q: core.Assignments{}, want: 1},                // only doc 1 (K=0 wildcard)
 	}
 	for _, c := range checks {
-		res, err := eng.Retrieve(c.q)
+		b, err := eng.Retrieve(c.q)
 		if err != nil {
 			t.Fatalf("Retrieve(%v) failed: %v", c.q, err)
 		}
+		res := bitmapToSlice(b)
 		if len(res) != c.want {
 			t.Errorf("Retrieve(%v): got %d want %d: %v", c.q, len(res), c.want, res)
 		}
@@ -320,13 +336,14 @@ func TestEngine_ObserverMatchCount(t *testing.T) {
 	eng := buildSingleEngine(t, fields, docs)
 
 	obs := &testObserver{}
-	res, err := eng.Retrieve(
+	b, err := eng.Retrieve(
 		core.Assignments{"a": 25},
 		func(ctx *core.RetrieveContext) { ctx.Observer = obs },
 	)
 	if err != nil {
 		t.Fatalf("Retrieve failed: %v", err)
 	}
+	res := bitmapToSlice(b)
 	if len(res) != 2 {
 		t.Errorf("expected 2 results, got %v", res)
 	}
@@ -349,8 +366,9 @@ func TestEngine_LiveDocs(t *testing.T) {
 	eng := buildSingleEngine(t, fields, docs)
 
 	res, _ := eng.Retrieve(core.Assignments{"a": 25})
-	if len(res) != 3 {
-		t.Fatalf("without LiveDocs: want 3, got %v", res)
+	resSlice := bitmapToSlice(res)
+	if len(resSlice) != 3 {
+		t.Fatalf("without LiveDocs: want 3, got %v", resSlice)
 	}
 
 	ld := core.NewLiveDocs()
@@ -358,10 +376,11 @@ func TestEngine_LiveDocs(t *testing.T) {
 	eng.SetLiveDocs(ld)
 
 	res, _ = eng.Retrieve(core.Assignments{"a": 25})
-	if len(res) != 2 {
-		t.Fatalf("with LiveDocs: want 2, got %v", res)
+	resSlice = bitmapToSlice(res)
+	if len(resSlice) != 2 {
+		t.Fatalf("with LiveDocs: want 2, got %v", resSlice)
 	}
-	for _, id := range res {
+	for _, id := range resSlice {
 		if id == 2 {
 			t.Errorf("doc 2 should be filtered")
 		}
@@ -380,8 +399,9 @@ func TestEngine_LiveDocsAllDeleted(t *testing.T) {
 	eng.SetLiveDocs(ld)
 
 	res, _ := eng.Retrieve(core.Assignments{"a": 25})
-	if len(res) != 0 {
-		t.Errorf("all deleted: expected 0, got %v", res)
+	resSlice := bitmapToSlice(res)
+	if len(resSlice) != 0 {
+		t.Errorf("all deleted: expected 0, got %v", resSlice)
 	}
 }
 
@@ -405,10 +425,11 @@ func TestEngine_MultiKLevels(t *testing.T) {
 
 	check := func(q core.Assignments, want []core.DocID) {
 		t.Helper()
-		res, err := eng.Retrieve(q)
+		b, err := eng.Retrieve(q)
 		if err != nil {
 			t.Fatalf("Retrieve(%v) failed: %v", q, err)
 		}
+		res := bitmapToSlice(b)
 		sort.Slice(res, func(i, j int) bool { return res[i] < res[j] })
 		if len(res) != len(want) {
 			t.Fatalf("Retrieve(%v): got %v, want %v", q, res, want)
@@ -493,10 +514,11 @@ func TestEngine_PoolReuse(t *testing.T) {
 	eng := buildSingleEngine(t, fields, docs)
 
 	for i := 0; i < 5; i++ {
-		res, err := eng.Retrieve(core.Assignments{"a": 25})
+		b, err := eng.Retrieve(core.Assignments{"a": 25})
 		if err != nil {
 			t.Fatalf("iteration %d: %v", i, err)
 		}
+		res := bitmapToSlice(b)
 		if len(res) != 1 {
 			t.Errorf("iteration %d: want 1, got %v", i, res)
 		}
@@ -519,10 +541,11 @@ func TestEngine_MultiValueQuery(t *testing.T) {
 	eng := buildSingleEngine(t, fields, docs)
 
 	// Query with multiple values
-	res, err := eng.Retrieve(core.Assignments{"age": []int{25, 30}})
+	b, err := eng.Retrieve(core.Assignments{"age": []int{25, 30}})
 	if err != nil {
 		t.Fatalf("Retrieve failed: %v", err)
 	}
+	res := bitmapToSlice(b)
 	sort.Slice(res, func(i, j int) bool { return res[i] < res[j] })
 	if len(res) != 2 || res[0] != 1 || res[1] != 2 {
 		t.Errorf("multi-value query: want [1 2], got %v", res)
@@ -548,20 +571,22 @@ func TestEngine_MultiConjunctionDoc(t *testing.T) {
 
 	// q={a:25, b:1} → doc 1 conj1 excluded, but doc 1 conj2? Has a=30, not a=25 → fail.
 	// So only doc 2 matches
-	res, err := eng.Retrieve(core.Assignments{"a": 25, "b": 1})
+	b, err := eng.Retrieve(core.Assignments{"a": 25, "b": 1})
 	if err != nil {
 		t.Fatalf("Retrieve failed: %v", err)
 	}
+	res := bitmapToSlice(b)
 	if len(res) != 1 || res[0] != 2 {
 		t.Errorf("exclude first conj: want [2], got %v", res)
 	}
 
 	// q={a:30, b:2} → doc 1 conj1 (a=25≠30 → fail), conj2 (a=30 → match)
 	// doc 2 (a=25≠30 → fail)
-	res, err = eng.Retrieve(core.Assignments{"a": 30, "b": 2})
+	b, err = eng.Retrieve(core.Assignments{"a": 30, "b": 2})
 	if err != nil {
 		t.Fatalf("Retrieve failed: %v", err)
 	}
+	res = bitmapToSlice(b)
 	if len(res) != 1 || res[0] != 1 {
 		t.Errorf("second conj matches: want [1], got %v", res)
 	}
@@ -576,7 +601,7 @@ func BenchmarkCompositeEngineFullVsFullDelta(b *testing.B) {
 	fullEngine := buildBenchmarkEngine(b, fields, fullDocs)
 	deltaEngine := buildBenchmarkEngine(b, fields, deltaDocs)
 
-	changedDocs := engine.NewBitmapDocSet()
+	changedDocs := core.NewBitmapDocSet()
 	for i := range deltaDocs {
 		changedDocs.Add(core.DocID(i + 1))
 	}
@@ -599,7 +624,7 @@ func BenchmarkCompositeEngineFullVsFullDelta(b *testing.B) {
 				FullEngine:   fullEngine,
 				DeltaEngines: []*engine.BooleanEngine{deltaEngine},
 				ChangedDocs:  changedDocs,
-				DeletedDocs:  engine.NewBitmapDocSet(),
+				DeletedDocs:  core.NewBitmapDocSet(),
 			},
 		},
 	}
@@ -611,10 +636,11 @@ func BenchmarkCompositeEngineFullVsFullDelta(b *testing.B) {
 			var ids core.DocIDList
 			for i := 0; i < b.N; i++ {
 				var err error
-				ids, err = ce.Retrieve(query)
+				bm, err := ce.Retrieve(query)
 				if err != nil {
 					b.Fatal(err)
 				}
+				ids = bitmapToSlice(bm)
 			}
 			benchmarkCompositeIDs = ids
 		})

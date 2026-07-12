@@ -60,7 +60,8 @@ func TestHolderReloadKeepsOldSnapshotOnFailure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewHolder failed: %v", err)
 	}
-	ids, err := h.Retrieve(core.Assignments{"a": 1})
+	b, err := h.Retrieve(core.Assignments{"a": 1})
+	ids := bitmapToSlice(b)
 	if err != nil || len(ids) != 1 || ids[0] != 1 {
 		t.Fatalf("initial query got ids=%v err=%v", ids, err)
 	}
@@ -71,7 +72,8 @@ func TestHolderReloadKeepsOldSnapshotOnFailure(t *testing.T) {
 	if err := h.Reload(); err == nil {
 		t.Fatal("expected reload failure")
 	}
-	ids, err = h.Retrieve(core.Assignments{"a": 1})
+	b, err = h.Retrieve(core.Assignments{"a": 1})
+	ids = bitmapToSlice(b)
 	if err != nil || len(ids) != 1 || ids[0] != 1 {
 		t.Fatalf("old snapshot should remain, got ids=%v err=%v", ids, err)
 	}
@@ -95,7 +97,8 @@ func TestHolderReloadPublishesNewSnapshot(t *testing.T) {
 	if err := h.Reload(); err != nil {
 		t.Fatalf("Reload failed: %v", err)
 	}
-	ids, err := h.Retrieve(core.Assignments{"a": 2})
+	b, err := h.Retrieve(core.Assignments{"a": 2})
+	ids := bitmapToSlice(b)
 	if err != nil || len(ids) != 1 || ids[0] != 1 {
 		t.Fatalf("new snapshot query got ids=%v err=%v", ids, err)
 	}

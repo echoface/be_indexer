@@ -84,8 +84,8 @@ func TestCompositeEngineMatchesOracleAfterMutationReplay(t *testing.T) {
 	ce := engine.NewCompositeEngine(&engine.IndexSnapshot{
 		FullEngine:  buildOracleEngine(t, fullDocs),
 		DeltaEngine: buildOracleEngine(t, plan.Documents),
-		ChangedDocs: engine.NewBitmapDocSet(plan.ChangedDocs...),
-		DeletedDocs: engine.NewBitmapDocSet(plan.DeletedDocs...),
+		ChangedDocs: core.NewBitmapDocSet(plan.ChangedDocs...),
+		DeletedDocs: core.NewBitmapDocSet(plan.DeletedDocs...),
 	})
 
 	latestDocs := []*core.Document{
@@ -106,10 +106,12 @@ func TestCompositeEngineMatchesOracleAfterMutationReplay(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		got, err := ce.Retrieve(q)
+		b, err := ce.Retrieve(q)
 		if err != nil {
 			t.Fatal(err)
 		}
+		var got core.DocIDList
+		b.ForEach(func(id core.DocID) { got = append(got, id) })
 		assertDocIDs(t, got, want)
 	}
 }

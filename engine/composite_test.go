@@ -63,19 +63,21 @@ func TestCompositeEngine_UpdateStillMatchesUsesDelta(t *testing.T) {
 		Generation:  2,
 		FullEngine:  full,
 		DeltaEngine: delta,
-		ChangedDocs: engine.NewBitmapDocSet(1),
+		ChangedDocs: core.NewBitmapDocSet(1),
 	})
 
-	ids, err := ce.Retrieve(core.Assignments{"a": 2})
+	b, err := ce.Retrieve(core.Assignments{"a": 2})
 	if err != nil {
 		t.Fatal(err)
 	}
+	ids := bitmapToSlice(b)
 	assertIDs(t, ids, 1)
 
-	ids, err = ce.Retrieve(core.Assignments{"a": 1})
+	b, err = ce.Retrieve(core.Assignments{"a": 1})
 	if err != nil {
 		t.Fatal(err)
 	}
+	ids = bitmapToSlice(b)
 	assertIDs(t, ids)
 }
 
@@ -89,13 +91,14 @@ func TestCompositeEngine_UpdateNoLongerMatchesRemovesFull(t *testing.T) {
 	ce := engine.NewCompositeEngine(&engine.IndexSnapshot{
 		FullEngine:  full,
 		DeltaEngine: delta,
-		ChangedDocs: engine.NewBitmapDocSet(2),
+		ChangedDocs: core.NewBitmapDocSet(2),
 	})
 
-	ids, err := ce.Retrieve(core.Assignments{"a": 1})
+	b, err := ce.Retrieve(core.Assignments{"a": 1})
 	if err != nil {
 		t.Fatal(err)
 	}
+	ids := bitmapToSlice(b)
 	assertIDs(t, ids)
 }
 
@@ -105,14 +108,15 @@ func TestCompositeEngine_DeleteRemovesFull(t *testing.T) {
 	})
 	ce := engine.NewCompositeEngine(&engine.IndexSnapshot{
 		FullEngine:  full,
-		ChangedDocs: engine.NewBitmapDocSet(3),
-		DeletedDocs: engine.NewBitmapDocSet(3),
+		ChangedDocs: core.NewBitmapDocSet(3),
+		DeletedDocs: core.NewBitmapDocSet(3),
 	})
 
-	ids, err := ce.Retrieve(core.Assignments{"a": 1})
+	b, err := ce.Retrieve(core.Assignments{"a": 1})
 	if err != nil {
 		t.Fatal(err)
 	}
+	ids := bitmapToSlice(b)
 	assertIDs(t, ids)
 }
 
@@ -126,15 +130,16 @@ func TestCompositeEngine_DeleteThenRecreateReturnsDelta(t *testing.T) {
 	ce := engine.NewCompositeEngine(&engine.IndexSnapshot{
 		FullEngine:  full,
 		DeltaEngine: delta,
-		ChangedDocs: engine.NewBitmapDocSet(4),
+		ChangedDocs: core.NewBitmapDocSet(4),
 		// DeletedDocs is empty because the latest mutation is recreate/upsert.
-		DeletedDocs: engine.NewBitmapDocSet(),
+		DeletedDocs: core.NewBitmapDocSet(),
 	})
 
-	ids, err := ce.Retrieve(core.Assignments{"a": 2})
+	b, err := ce.Retrieve(core.Assignments{"a": 2})
 	if err != nil {
 		t.Fatal(err)
 	}
+	ids := bitmapToSlice(b)
 	assertIDs(t, ids, 4)
 }
 
@@ -148,13 +153,14 @@ func TestCompositeEngine_DeduplicatesFinalResult(t *testing.T) {
 	ce := engine.NewCompositeEngine(&engine.IndexSnapshot{
 		FullEngine:  full,
 		DeltaEngine: delta,
-		ChangedDocs: engine.NewBitmapDocSet(5),
+		ChangedDocs: core.NewBitmapDocSet(5),
 	})
 
-	ids, err := ce.Retrieve(core.Assignments{"a": 1})
+	b, err := ce.Retrieve(core.Assignments{"a": 1})
 	if err != nil {
 		t.Fatal(err)
 	}
+	ids := bitmapToSlice(b)
 	assertIDs(t, ids, 5)
 }
 
@@ -165,27 +171,31 @@ func TestCompositeEngine_ExcludeMissingSemantics(t *testing.T) {
 	})
 	ce := engine.NewCompositeEngine(&engine.IndexSnapshot{FullEngine: idx})
 
-	ids, err := ce.Retrieve(core.Assignments{"a": 1})
+	b, err := ce.Retrieve(core.Assignments{"a": 1})
 	if err != nil {
 		t.Fatal(err)
 	}
+	ids := bitmapToSlice(b)
 	assertIDs(t, ids, 6, 7)
 
-	ids, err = ce.Retrieve(core.Assignments{"a": 1, "b": 3})
+	b, err = ce.Retrieve(core.Assignments{"a": 1, "b": 3})
 	if err != nil {
 		t.Fatal(err)
 	}
+	ids = bitmapToSlice(b)
 	assertIDs(t, ids, 6, 7)
 
-	ids, err = ce.Retrieve(core.Assignments{"a": 1, "b": 2})
+	b, err = ce.Retrieve(core.Assignments{"a": 1, "b": 2})
 	if err != nil {
 		t.Fatal(err)
 	}
+	ids = bitmapToSlice(b)
 	assertIDs(t, ids)
 
-	ids, err = ce.Retrieve(core.Assignments{"a": 1, "b": []int{}})
+	b, err = ce.Retrieve(core.Assignments{"a": 1, "b": []int{}})
 	if err != nil {
 		t.Fatal(err)
 	}
+	ids = bitmapToSlice(b)
 	assertIDs(t, ids, 6, 7)
 }

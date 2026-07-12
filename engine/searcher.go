@@ -58,17 +58,18 @@ func (e *BooleanEngine) Close() error {
 	return firstErr
 }
 
-// Retrieve returns matched DocIDs for the given assignments.
-// Uses an internal pooled collector; for custom collection use RetrieveWithCollector.
+// Retrieve returns matched DocIDs as a BitmapDocSet for the given assignments.
 func (e *BooleanEngine) Retrieve(
 	queries core.Assignments, opts ...core.IndexOpt,
-) (core.DocIDList, error) {
+) (*core.BitmapDocSet, error) {
 	collector := core.PickCollector()
 	defer core.PutCollector(collector)
 	if err := e.RetrieveWithCollector(queries, collector, opts...); err != nil {
 		return nil, err
 	}
-	return collector.GetDocIDs(), nil
+	// Clone out of the pooled collector so the result is safe to keep after
+	// the collector is recycled.
+	return collector.Bitmap().Clone(), nil
 }
 
 // RetrieveWithCollector feeds matched DocIDs into the provided collector.

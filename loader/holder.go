@@ -56,10 +56,10 @@ func (h *Holder) Reload() error {
 }
 
 // Retrieve executes a query against the current engine.
-func (h *Holder) Retrieve(queries core.Assignments, opts ...core.IndexOpt) (core.DocIDList, error) {
+func (h *Holder) Retrieve(queries core.Assignments, opts ...core.IndexOpt) (*core.BitmapDocSet, error) {
 	cur := h.Current()
 	if cur == nil {
-		return nil, nil
+		return core.NewBitmapDocSet(), nil
 	}
 	return cur.Retrieve(queries, opts...)
 }

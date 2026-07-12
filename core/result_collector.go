@@ -44,28 +44,11 @@ func (c *DocIDCollector) DocCount() int {
 	return int(c.docBits.GetCardinality())
 }
 
-// GetDocIDs returns collected DocIDs as a sorted slice.
-func (c *DocIDCollector) GetDocIDs() (ids DocIDList) {
-	if c.DocCount() == 0 {
-		return nil
-	}
-	ids = make(DocIDList, 0, c.DocCount())
-	iter := c.docBits.Iterator()
-	for iter.HasNext() {
-		ids = append(ids, DocID(iter.Next()))
-	}
-	return ids
-}
-
-// GetDocIDsInto appends collected DocIDs into the given slice.
-func (c *DocIDCollector) GetDocIDsInto(ids *DocIDList) {
-	if c.DocCount() == 0 {
-		return
-	}
-	iter := c.docBits.Iterator()
-	for iter.HasNext() {
-		*ids = append(*ids, DocID(iter.Next()))
-	}
+// Bitmap returns the internal BitmapDocSet. The returned set shares the
+// underlying bitmap with the collector; callers must not mutate it after
+// the collector is returned to the pool.
+func (c *DocIDCollector) Bitmap() *BitmapDocSet {
+	return &BitmapDocSet{bits: c.docBits}
 }
 
 // collectorPool for reuse.

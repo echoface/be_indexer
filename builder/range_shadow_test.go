@@ -105,14 +105,15 @@ func TestRangeShadowAgainstOracle(t *testing.T) {
 		if err != nil {
 			t.Fatalf("oracle q=%v: %v", q, err)
 		}
-		sort.Slice(got, func(i, j int) bool { return got[i] < got[j] })
+		gotSlice := bitmapToSlice(got)
+		sort.Slice(gotSlice, func(i, j int) bool { return gotSlice[i] < gotSlice[j] })
 
-		if len(got) != len(want) {
-			t.Fatalf("q=%v len mismatch: index=%v oracle=%v", q, got, want)
+		if len(gotSlice) != len(want) {
+			t.Fatalf("q=%v len mismatch: index=%v oracle=%v", q, gotSlice, want)
 		}
-		for j := range got {
-			if got[j] != want[j] {
-				t.Fatalf("q=%v mismatch: index=%v oracle=%v", q, got, want)
+		for j := range gotSlice {
+			if gotSlice[j] != want[j] {
+				t.Fatalf("q=%v mismatch: index=%v oracle=%v", q, gotSlice, want)
 			}
 		}
 	}
@@ -149,7 +150,7 @@ func TestRangeUnboundedEdges(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if (len(r) > 0) != c.want {
+		if (r.Cardinality() > 0) != c.want {
 			t.Fatalf("v=%d got %v want match=%v", c.q, r, c.want)
 		}
 	}

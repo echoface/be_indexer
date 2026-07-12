@@ -59,8 +59,6 @@ type FieldMeta struct {
 // ResultCollector receives matched documents during retrieval.
 type ResultCollector interface {
 	Add(id DocID, conj ConjID)
-	GetDocIDs() (ids DocIDList)
-	GetDocIDsInto(ids *DocIDList)
 }
 
 // RetrieveObserver is an optional observer for retrieval instrumentation.

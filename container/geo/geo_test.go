@@ -51,8 +51,9 @@ func TestGeoRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(results) != 1 || results[0] != 1 {
-		t.Fatalf("expected doc 1 for Beijing query, got %v", results)
+	got := bitmapToSlice(results)
+	if len(got) != 1 || got[0] != 1 {
+		t.Fatalf("expected doc 1 for Beijing query, got %v", got)
 	}
 
 	// Query at exact Shanghai center
@@ -63,8 +64,9 @@ func TestGeoRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(results) != 1 || results[0] != 2 {
-		t.Fatalf("expected doc 2 for Shanghai query, got %v", results)
+	got = bitmapToSlice(results)
+	if len(got) != 1 || got[0] != 2 {
+		t.Fatalf("expected doc 2 for Shanghai query, got %v", got)
 	}
 
 	// Query far from both
@@ -75,8 +77,9 @@ func TestGeoRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(results) != 0 {
-		t.Fatalf("expected no results for remote query, got %v", results)
+	got = bitmapToSlice(results)
+	if len(got) != 0 {
+		t.Fatalf("expected no results for remote query, got %v", got)
 	}
 }
 
@@ -91,4 +94,10 @@ type geoParam struct {
 type geoQuery struct {
 	Lat float64
 	Lng float64
+}
+
+func bitmapToSlice(b *be_indexer.BitmapDocSet) be_indexer.DocIDList {
+	var ids be_indexer.DocIDList
+	b.ForEach(func(id be_indexer.DocID) { ids = append(ids, id) })
+	return ids
 }

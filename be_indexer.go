@@ -73,8 +73,7 @@ type (
 
 	BEIndexLogger = core.BEIndexLogger
 
-	DocSet          = engine.DocSet
-	BitmapDocSet    = engine.BitmapDocSet
+	BitmapDocSet    = core.BitmapDocSet
 	IndexSnapshot   = engine.IndexSnapshot
 	CompositeEngine = engine.CompositeEngine
 
@@ -84,11 +83,11 @@ type (
 
 	BuildDirectoryOptions   = builder.BuildDirectoryOptions
 	BuildSegmentOptions     = builder.BuildSegmentFromDocsOptions
-	DocumentIterator        = builder.DocumentIterator
-	DocumentIteratorFunc    = builder.DocumentIteratorFunc
-	FullBuildRequest        = builder.FullBuildRequest
-	FullStreamBuildRequest  = builder.FullStreamBuildRequest
-	DeltaBuildRequest       = builder.DeltaBuildRequest
+	BuildFailMode           = builder.BuildFailMode
+	FullIndexBuilder        = builder.FullIndexBuilder
+	DeltaIndexBuilder       = builder.DeltaIndexBuilder
+	FullIndexBuildOption    = builder.FullIndexBuildOption
+	DeltaIndexBuildOption   = builder.DeltaIndexBuildOption
 	SnapshotManifestRequest = builder.SnapshotManifestRequest
 
 	Manifest             = manifest.Manifest
@@ -156,19 +155,16 @@ var NewEngine = engine.NewBooleanEngine
 var NewCompositeEngine = engine.NewCompositeEngine
 
 // NewBitmapDocSet creates a compact DocID set used by CompositeEngine snapshots.
-var NewBitmapDocSet = engine.NewBitmapDocSet
+var NewBitmapDocSet = core.NewBitmapDocSet
 
 // BuildDeltaPlan compacts mutation events by DocID and keeps the latest version.
 var BuildDeltaPlan = builder.BuildDeltaPlan
 
-// BuildFullIndexDir builds full index segment and sidecar files under index root.
-var BuildFullIndexDir = builder.BuildFullIndexDir
+// NewFullIndexBuilder creates a push-model full index directory builder.
+var NewFullIndexBuilder = builder.NewFullIndexBuilder
 
-// BuildFullIndexDirFromIterator builds full index files from a streaming iterator.
-var BuildFullIndexDirFromIterator = builder.BuildFullIndexDirFromIterator
-
-// BuildDeltaIndexDir builds delta index segment and sidecar files under index root.
-var BuildDeltaIndexDir = builder.BuildDeltaIndexDir
+// NewDeltaIndexBuilder creates a push-model delta index directory builder.
+var NewDeltaIndexBuilder = builder.NewDeltaIndexBuilder
 
 // NewSnapshotManifest creates a validated publishable snapshot manifest.
 var NewSnapshotManifest = builder.NewSnapshotManifest

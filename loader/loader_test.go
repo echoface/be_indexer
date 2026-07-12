@@ -70,6 +70,18 @@ func writeManifest(t *testing.T, root string, m manifest.Manifest) {
 	}
 }
 
+
+func bitmapToSlice(b *core.BitmapDocSet) core.DocIDList {
+	if b == nil {
+		return nil
+	}
+	var ids core.DocIDList
+	b.ForEach(func(id core.DocID) {
+		ids = append(ids, id)
+	})
+	return ids
+}
+
 func TestOpenIndexLoadsFullDeltaSnapshot(t *testing.T) {
 	root := t.TempDir()
 	fields := loaderFields()
@@ -123,17 +135,19 @@ func TestOpenIndexLoadsFullDeltaSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenIndex failed: %v", err)
 	}
-	ids, err := ce.Retrieve(core.Assignments{"a": 1})
+	b, err := ce.Retrieve(core.Assignments{"a": 1})
 	if err != nil {
 		t.Fatal(err)
 	}
+	ids := bitmapToSlice(b)
 	if len(ids) != 1 || ids[0] != 2 {
 		t.Fatalf("query a=1 mismatch: got %v want [2]", ids)
 	}
-	ids, err = ce.Retrieve(core.Assignments{"a": 2})
+	b, err = ce.Retrieve(core.Assignments{"a": 2})
 	if err != nil {
 		t.Fatal(err)
 	}
+	ids = bitmapToSlice(b)
 	if len(ids) != 1 || ids[0] != 1 {
 		t.Fatalf("query a=2 mismatch: got %v want [1]", ids)
 	}
@@ -231,24 +245,27 @@ func TestOpenIndexMultipleDeltasUpdateOverridesOlderDelta(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ids, err := ce.Retrieve(core.Assignments{"a": 0})
+	b, err := ce.Retrieve(core.Assignments{"a": 0})
 	if err != nil {
 		t.Fatal(err)
 	}
+	ids := bitmapToSlice(b)
 	if len(ids) != 0 {
 		t.Fatalf("old full version should be hidden: %v", ids)
 	}
-	ids, err = ce.Retrieve(core.Assignments{"a": 1})
+	b, err = ce.Retrieve(core.Assignments{"a": 1})
 	if err != nil {
 		t.Fatal(err)
 	}
+	ids = bitmapToSlice(b)
 	if len(ids) != 0 {
 		t.Fatalf("older delta version should be hidden: %v", ids)
 	}
-	ids, err = ce.Retrieve(core.Assignments{"a": 2})
+	b, err = ce.Retrieve(core.Assignments{"a": 2})
 	if err != nil {
 		t.Fatal(err)
 	}
+	ids = bitmapToSlice(b)
 	if len(ids) != 1 || ids[0] != 7 {
 		t.Fatalf("latest delta version mismatch: %v", ids)
 	}
@@ -289,10 +306,11 @@ func TestOpenIndexWithMmap(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenIndex(mmap) failed: %v", err)
 	}
-	ids, err := ce.Retrieve(core.Assignments{"a": 1})
+	b, err := ce.Retrieve(core.Assignments{"a": 1})
 	if err != nil {
 		t.Fatal(err)
 	}
+	ids := bitmapToSlice(b)
 	if len(ids) != 2 {
 		t.Fatalf("query a=1 mmap mismatch: got %v want 2 docs", ids)
 	}

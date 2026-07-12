@@ -111,11 +111,11 @@ func loadFullEngine(root string, fields map[core.BEField]*core.FieldMeta, schema
 	return engine.NewBooleanEngine(fields, wildcards, segments)
 }
 
-func loadDeltas(root string, fields map[core.BEField]*core.FieldMeta, schemaHash string, deltas []manifest.DeltaIndexDescriptor, opts Options) ([]*engine.BooleanEngine, *engine.BitmapDocSet, *engine.BitmapDocSet, error) {
-	changedDocs := engine.NewBitmapDocSet()
-	deletedDocs := engine.NewBitmapDocSet()
+func loadDeltas(root string, fields map[core.BEField]*core.FieldMeta, schemaHash string, deltas []manifest.DeltaIndexDescriptor, opts Options) ([]*engine.BooleanEngine, *core.BitmapDocSet, *core.BitmapDocSet, error) {
+	changedDocs := core.NewBitmapDocSet()
+	deletedDocs := core.NewBitmapDocSet()
 	deltaEngines := make([]*engine.BooleanEngine, 0, len(deltas))
-	laterChangedDocs := engine.NewBitmapDocSet()
+	laterChangedDocs := core.NewBitmapDocSet()
 	for i := len(deltas) - 1; i >= 0; i-- {
 		delta := deltas[i]
 		changed, err := loadDocIDSidecar(root, delta.Path, delta.ChangedDocsFile, delta.ChangedDocsChecksum)

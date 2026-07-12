@@ -329,7 +329,7 @@ func TestDocIDCollector_Basic(t *testing.T) {
 		t.Errorf("Count should be 2 (dedup), got %d", c.DocCount())
 	}
 
-	ids := c.GetDocIDs()
+	ids := bitmapToSlice(c.Bitmap())
 	if len(ids) != 2 {
 		t.Fatalf("GetDocIDs should return 2 ids, got %d", len(ids))
 	}
@@ -353,7 +353,7 @@ func TestDocIDCollector_GetDocIDsInto(t *testing.T) {
 	c.Add(20, 0)
 
 	var into DocIDList
-	c.GetDocIDsInto(&into)
+	into = append(into, bitmapToSlice(c.Bitmap())...)
 	if len(into) != 2 {
 		t.Fatalf("GetDocIDsInto should append 2 ids, got %d", len(into))
 	}
@@ -364,11 +364,11 @@ func TestDocIDCollector_GetDocIDsInto(t *testing.T) {
 
 func TestDocIDCollector_Empty(t *testing.T) {
 	c := NewDocIDCollector()
-	if ids := c.GetDocIDs(); ids != nil {
+	if ids := bitmapToSlice(c.Bitmap()); ids != nil {
 		t.Errorf("Empty collector should return nil, got %v", ids)
 	}
 	var into DocIDList
-	c.GetDocIDsInto(&into)
+	into = append(into, bitmapToSlice(c.Bitmap())...)
 	if len(into) != 0 {
 		t.Errorf("Empty collector GetDocIDsInto should not append")
 	}
@@ -391,7 +391,7 @@ func TestDocIDCollector_WithLiveDocs(t *testing.T) {
 		t.Errorf("Count should be 2 (filtered), got %d", c.DocCount())
 	}
 
-	ids := c.GetDocIDs()
+	ids := bitmapToSlice(c.Bitmap())
 	if len(ids) != 2 || ids[0] != 1 || ids[1] != 4 {
 		t.Errorf("Expected [1 4], got %v", ids)
 	}
@@ -1104,13 +1104,17 @@ func (c *testResultCollector) Add(id DocID, _ ConjID) {
 	c.ids = append(c.ids, id)
 }
 
-func (c *testResultCollector) GetDocIDs() DocIDList {
-	return c.ids
+func bitmapToSlice(b *BitmapDocSet) DocIDList {
+	if b == nil {
+		return nil
+	}
+	var ids DocIDList
+	b.ForEach(func(id DocID) {
+		ids = append(ids, id)
+	})
+	return ids
 }
 
-func (c *testResultCollector) GetDocIDsInto(ids *DocIDList) {
-	*ids = append(*ids, c.ids...)
-}
 
 // ---------------------------------------------------------------------------
 // LiveDocs serialization edge cases
@@ -1173,7 +1177,7 @@ func TestDocIDCollector_ResetThenReuse(t *testing.T) {
 		t.Errorf("After reset and re-add, count should be 1, got %d", c.DocCount())
 	}
 
-	ids := c.GetDocIDs()
+	ids := bitmapToSlice(c.Bitmap())
 	if len(ids) != 1 || ids[0] != 3 {
 		t.Errorf("Unexpected ids after reset: %v", ids)
 	}
@@ -1324,7 +1328,7 @@ func TestDocIDCollector_GetDocIDsIntoAppend(t *testing.T) {
 	c.Add(2, 0)
 
 	into := DocIDList{0} // pre-populated
-	c.GetDocIDsInto(&into)
+	into = append(into, bitmapToSlice(c.Bitmap())...)
 	if len(into) != 3 || into[0] != 0 || into[1] != 1 || into[2] != 2 {
 		t.Errorf("Unexpected appended result: %v", into)
 	}

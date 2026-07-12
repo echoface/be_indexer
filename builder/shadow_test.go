@@ -143,17 +143,19 @@ func TestBuildSegmentsFromDocs_ShadowTest(t *testing.T) {
 					t.Fatalf("multi Retrieve[%d] failed: %v", qi, err)
 				}
 
-				sort.Slice(r1, func(i, j int) bool { return r1[i] < r1[j] })
-				sort.Slice(r2, func(i, j int) bool { return r2[i] < r2[j] })
+				s1 := bitmapToSlice(r1)
+				s2 := bitmapToSlice(r2)
+				sort.Slice(s1, func(i, j int) bool { return s1[i] < s1[j] })
+				sort.Slice(s2, func(i, j int) bool { return s2[i] < s2[j] })
 
-				if len(r1) != len(r2) {
+				if len(s1) != len(s2) {
 					t.Fatalf("[%s] q[%d]=%v len mismatch: %d vs %d\n  baseline=%v\n  multi   =%v",
-						cfg.name, qi, q, len(r1), len(r2), r1, r2)
+						cfg.name, qi, q, len(s1), len(s2), s1, s2)
 				}
-				for j := range r1 {
-					if r1[j] != r2[j] {
+				for j := range s1 {
+					if s1[j] != s2[j] {
 						t.Fatalf("[%s] q[%d]=%v: result[%d] mismatch: %d vs %d\n  baseline=%v\n  multi   =%v",
-							cfg.name, qi, q, j, r1[j], r2[j], r1, r2)
+							cfg.name, qi, q, j, s1[j], s2[j], s1, s2)
 					}
 				}
 			}

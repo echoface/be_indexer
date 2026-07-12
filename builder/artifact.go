@@ -18,6 +18,20 @@ const (
 	defaultPostingEncoding = "conjid64-entryid64-v1"
 )
 
+// ErrGenerationExists is returned by NewFullIndexBuilder / NewDeltaIndexBuilder
+// when the target generation directory already exists. Generations are
+// immutable and never overwritten; the caller must remove the old generation
+// or choose a new one.
+var ErrGenerationExists = fmt.Errorf("target generation directory already exists")
+
+// ErrBuilderClosed is returned by AddDocument/AddMutation/Build after the
+// builder has been closed, poisoned by a fatal error, or already built.
+var ErrBuilderClosed = fmt.Errorf("index builder is closed")
+
+// ErrTooManyMutations is returned by DeltaIndexBuilder.AddMutation when the
+// accumulated mutation count exceeds the configured MaxMutations limit.
+var ErrTooManyMutations = fmt.Errorf("delta mutation count exceeds MaxMutations")
+
 // BuildDirectoryOptions controls on-disk full/delta artifact generation.
 type BuildDirectoryOptions struct {
 	// MaxDocsPerSegment limits how many docs are built into one segment.
@@ -38,46 +52,46 @@ type BuildDirectoryOptions struct {
 	SegmentSchemaHash string
 }
 
-// DocumentIterator streams full-build documents without requiring callers to
-// materialize the entire corpus in memory.
-type DocumentIterator interface {
-	Next() (*core.Document, bool, error)
-}
+// BuildFailMode controls how the builder reacts to per-document / per-mutation
+// (isolatable) validation errors. Builder-level errors (disk IO, spill, merge,
+// rename) always fail fast regardless of this mode.
+type BuildFailMode int
 
-// DocumentIteratorFunc adapts a function to DocumentIterator.
-type DocumentIteratorFunc func() (*core.Document, bool, error)
+const (
+	// FailFast poisons the builder on any error; subsequent Add*/Build calls
+	// are rejected. This is the default and the safe choice for indexes where a
+	// missing document means incorrect serving results.
+	FailFast BuildFailMode = iota
+	// FailSkip skips an offending document/mutation (invoking the OnSkip
+	// callback if set) and continues. Builder-level errors still fail fast.
+	FailSkip
+)
 
-func (f DocumentIteratorFunc) Next() (*core.Document, bool, error) { return f() }
-
-// FullBuildRequest describes a full index generation build.
-type FullBuildRequest struct {
+// FullIndexBuildOption configures a FullIndexBuilder.
+type FullIndexBuildOption struct {
 	Root              string
 	Generation        uint64
 	SnapshotWatermark uint64
 	Fields            map[core.BEField]*core.FieldMeta
-	Documents         []*core.Document
 	Options           BuildDirectoryOptions
+	FailMode          BuildFailMode
+	// OnSkip is invoked for each document skipped under FailSkip. Optional.
+	OnSkip func(docID core.DocID, err error)
 }
 
-// FullStreamBuildRequest describes a streaming full index generation build.
-type FullStreamBuildRequest struct {
-	Root              string
-	Generation        uint64
-	SnapshotWatermark uint64
-	Fields            map[core.BEField]*core.FieldMeta
-	Documents         DocumentIterator
-	Options           BuildDirectoryOptions
-}
-
-// DeltaBuildRequest describes a delta index generation build.
-type DeltaBuildRequest struct {
+// DeltaIndexBuildOption configures a DeltaIndexBuilder.
+type DeltaIndexBuildOption struct {
 	Root                   string
 	Generation             uint64
 	FromWatermarkExclusive uint64
 	ToWatermarkInclusive   uint64
 	Fields                 map[core.BEField]*core.FieldMeta
-	Mutations              []Mutation
 	Options                BuildDirectoryOptions
+	FailMode               BuildFailMode
+	// MaxMutations caps accumulated mutations. 0 means unlimited (default).
+	MaxMutations int
+	// OnSkip is invoked for each mutation skipped under FailSkip. Optional.
+	OnSkip func(docID core.DocID, err error)
 }
 
 // SnapshotManifestRequest describes a complete publishable snapshot manifest.
@@ -92,129 +106,477 @@ type SnapshotManifestRequest struct {
 	Deltas          []manifest.DeltaIndexDescriptor
 }
 
-// BuildFullIndexDir builds all full index files under root/full/full-<generation>.
-// Files are first created under root/tmp and then published by directory rename.
-func BuildFullIndexDir(req FullBuildRequest) (manifest.FullIndexDescriptor, error) {
-	return BuildFullIndexDirFromIterator(FullStreamBuildRequest{
-		Root:              req.Root,
-		Generation:        req.Generation,
-		SnapshotWatermark: req.SnapshotWatermark,
-		Fields:            req.Fields,
-		Documents:         newSliceDocumentIterator(req.Documents),
-		Options:           req.Options,
-	})
+// builderState tracks the lifecycle of a push builder.
+type builderState int
+
+const (
+	stateAccepting builderState = iota // accepting Add*, not yet built
+	statePoisoned                      // a fatal error occurred; reject Add*/Build
+	stateBuilt                         // Build succeeded; terminal
+	stateClosed                        // Close called before Build; tmp removed
+)
+
+// --------------------------------------------------------------------------------
+// FullIndexBuilder — push model, streaming full index directory build.
+// --------------------------------------------------------------------------------
+
+// FullIndexBuilder builds a full index generation directory by accepting
+// documents one at a time (push model). Documents are streamed into an
+// external-sort segment builder so neither the corpus nor the postings need to
+// be materialized in memory. Internal segment rolling (MaxDocsPerSegment) is an
+// implementation detail invisible to callers.
+//
+// Lifecycle: New -> AddDocument* -> Build (commit) ; Close for cleanup/abort.
+// The builder is NOT safe for concurrent use: AddDocument must be called
+// serially. Build's success boundary is Rename(tmp -> final); it produces a
+// self-describing, checksummed, immutable Descriptor. It never publishes or
+// distributes — that is business infrastructure outside this library.
+type FullIndexBuilder struct {
+	opt      FullIndexBuildOption
+	codec    *parser.SchemaCodec
+	relPath  string
+	finalDir string
+	tmpDir   string
+
+	maxDocsPerSegment int
+
+	// current segment build state
+	segIdx     int
+	curSeg     *segmentBuild
+	segments   []manifest.SegmentDescriptor
+	docCount   int
+	skipped    int
+	state      builderState
+	fatalErr   error
+	closeOnce  bool
 }
 
-// BuildFullIndexDirFromIterator builds full index files from a streaming document iterator.
-// It uses an external-sort segment builder so neither the full document corpus nor
-// all segment postings need to be materialized in memory.
-func BuildFullIndexDirFromIterator(req FullStreamBuildRequest) (manifest.FullIndexDescriptor, error) {
-	if req.Root == "" {
-		return manifest.FullIndexDescriptor{}, fmt.Errorf("root is required")
-	}
-	if req.Generation == 0 {
-		return manifest.FullIndexDescriptor{}, fmt.Errorf("generation is required")
-	}
-	if len(req.Fields) == 0 {
-		return manifest.FullIndexDescriptor{}, fmt.Errorf("fields are required")
-	}
-	if req.Documents == nil {
-		return manifest.FullIndexDescriptor{}, fmt.Errorf("document iterator is required")
-	}
+// segmentBuild holds the per-segment external builder + wildcard accumulator.
+// Each segment owns an independent wildcard sidecar lifecycle.
+type segmentBuild struct {
+	tmpFile  *os.File
+	tmpName  string
+	esb      *segment.ExternalBuilder
+	wildAcc  *entryRunAccumulator
+	docCount int
+	minDoc   core.DocID
+	maxDoc   core.DocID
+}
 
-	relPath := filepath.ToSlash(filepath.Join("full", generationDir("full", req.Generation)))
-	finalDir := filepath.Join(req.Root, relPath)
-	tmpDir, err := makeBuildTmpDir(req.Root, "building-full", req.Generation)
+// NewFullIndexBuilder creates a full index builder. It fails fast if the target
+// generation directory already exists (immutable generations, ErrGenerationExists),
+// so a whole build is never wasted on a name collision.
+func NewFullIndexBuilder(opt FullIndexBuildOption) (*FullIndexBuilder, error) {
+	if opt.Root == "" {
+		return nil, fmt.Errorf("root is required")
+	}
+	if opt.Generation == 0 {
+		return nil, fmt.Errorf("generation is required")
+	}
+	if len(opt.Fields) == 0 {
+		return nil, fmt.Errorf("fields are required")
+	}
+	codec, err := parser.NewSchemaCodec(opt.Fields)
 	if err != nil {
-		return manifest.FullIndexDescriptor{}, err
+		return nil, err
 	}
-	defer os.RemoveAll(tmpDir)
 
-	segments, err := buildStreamingSegmentsToDir(tmpDir, req.Fields, req.Documents, req.Options)
+	relPath := filepath.ToSlash(filepath.Join("full", generationDir("full", opt.Generation)))
+	finalDir := filepath.Join(opt.Root, relPath)
+	if err := ensureGenerationAbsent(finalDir); err != nil {
+		return nil, err
+	}
+	tmpDir, err := makeBuildTmpDir(opt.Root, "building-full", opt.Generation)
 	if err != nil {
-		return manifest.FullIndexDescriptor{}, err
-	}
-	if len(segments) == 0 {
-		return manifest.FullIndexDescriptor{}, fmt.Errorf("full documents are required")
-	}
-	if err := publishBuiltDir(tmpDir, finalDir); err != nil {
-		return manifest.FullIndexDescriptor{}, err
+		return nil, err
 	}
 
-	return manifest.FullIndexDescriptor{
-		Generation:        req.Generation,
-		SnapshotWatermark: req.SnapshotWatermark,
-		Path:              relPath,
-		Segments:          segments,
+	maxDocs := opt.Options.MaxDocsPerSegment
+	if maxDocs <= 0 {
+		maxDocs = int(^uint(0) >> 1)
+	}
+
+	return &FullIndexBuilder{
+		opt:               opt,
+		codec:             codec,
+		relPath:           relPath,
+		finalDir:          finalDir,
+		tmpDir:            tmpDir,
+		maxDocsPerSegment: maxDocs,
+		state:             stateAccepting,
 	}, nil
 }
 
-type sliceDocumentIterator struct {
-	docs []*core.Document
-	idx  int
+// AddDocument streams one document into the current segment, rolling to a new
+// segment when MaxDocsPerSegment is reached. Under FailFast a doc-level error
+// poisons the builder; under FailSkip it is skipped (OnSkip invoked) and nil is
+// returned. Builder-level errors always poison and return the error.
+func (b *FullIndexBuilder) AddDocument(doc *core.Document) error {
+	if b.state != stateAccepting {
+		return ErrBuilderClosed
+	}
+	if doc == nil {
+		return b.handleDocError(0, fmt.Errorf("nil document"))
+	}
+
+	if b.curSeg == nil {
+		if err := b.startNewSegment(); err != nil {
+			return b.fatal(err) // builder-level
+		}
+	}
+
+	w, err := exportDocToSink(b.curSeg.esb, b.codec, doc)
+	if err != nil {
+		return b.handleDocError(doc.ID, err) // doc-level
+	}
+	if err := b.curSeg.wildAcc.Add(w); err != nil {
+		return b.fatal(err) // builder-level (spill IO)
+	}
+
+	if b.curSeg.docCount == 0 {
+		b.curSeg.minDoc, b.curSeg.maxDoc = doc.ID, doc.ID
+	} else {
+		if doc.ID < b.curSeg.minDoc {
+			b.curSeg.minDoc = doc.ID
+		}
+		if doc.ID > b.curSeg.maxDoc {
+			b.curSeg.maxDoc = doc.ID
+		}
+	}
+	b.curSeg.docCount++
+	b.docCount++
+
+	if b.curSeg.docCount >= b.maxDocsPerSegment {
+		if err := b.finishCurrentSegment(); err != nil {
+			return b.fatal(err)
+		}
+	}
+	return nil
 }
 
-func newSliceDocumentIterator(docs []*core.Document) *sliceDocumentIterator {
-	return &sliceDocumentIterator{docs: docs}
+// Build finalizes the current segment, commits the directory via rename, and
+// returns a self-describing descriptor. On any failure it removes the tmp dir
+// so the local filesystem returns to its pre-build state, and poisons the
+// builder. Empty full builds are rejected.
+func (b *FullIndexBuilder) Build() (manifest.FullIndexDescriptor, error) {
+	if b.state != stateAccepting {
+		if b.state == statePoisoned {
+			return manifest.FullIndexDescriptor{}, b.fatalErr
+		}
+		return manifest.FullIndexDescriptor{}, ErrBuilderClosed
+	}
+
+	if b.curSeg != nil {
+		if err := b.finishCurrentSegment(); err != nil {
+			return manifest.FullIndexDescriptor{}, b.fatal(err)
+		}
+	}
+
+	if len(b.segments) == 0 {
+		return manifest.FullIndexDescriptor{}, b.fatal(fmt.Errorf("full documents are required"))
+	}
+
+	if err := publishBuiltDir(b.tmpDir, b.finalDir); err != nil {
+		return manifest.FullIndexDescriptor{}, b.fatal(err)
+	}
+	b.state = stateBuilt
+
+	return manifest.FullIndexDescriptor{
+		Generation:        b.opt.Generation,
+		SnapshotWatermark: b.opt.SnapshotWatermark,
+		Path:              b.relPath,
+		Segments:          b.segments,
+	}, nil
 }
 
-func (it *sliceDocumentIterator) Next() (*core.Document, bool, error) {
-	if it.idx >= len(it.docs) {
-		return nil, false, nil
+// Close is idempotent. Before a successful Build it aborts and removes the tmp
+// directory (restoring pre-build state); after Build it is a no-op. defer Close()
+// is always safe.
+func (b *FullIndexBuilder) Close() error {
+	if b.closeOnce {
+		return nil
 	}
-	doc := it.docs[it.idx]
-	it.idx++
-	return doc, true, nil
+	b.closeOnce = true
+	if b.curSeg != nil {
+		b.curSeg.abort()
+		b.curSeg = nil
+	}
+	if b.state == stateBuilt {
+		return nil // tmp already consumed by rename
+	}
+	if b.state == stateAccepting {
+		b.state = stateClosed
+	}
+	return os.RemoveAll(b.tmpDir)
 }
 
-// BuildDeltaIndexDir builds delta segment and sidecar files under root/delta/delta-<generation>.
-func BuildDeltaIndexDir(req DeltaBuildRequest) (manifest.DeltaIndexDescriptor, error) {
-	if req.Root == "" {
-		return manifest.DeltaIndexDescriptor{}, fmt.Errorf("root is required")
+// SkippedCount returns the number of documents skipped under FailSkip.
+func (b *FullIndexBuilder) SkippedCount() int { return b.skipped }
+
+func (b *FullIndexBuilder) handleDocError(docID core.DocID, err error) error {
+	if b.opt.FailMode == FailSkip {
+		b.skipped++
+		if b.opt.OnSkip != nil {
+			b.opt.OnSkip(docID, err)
+		}
+		return nil
 	}
-	if req.Generation == 0 {
-		return manifest.DeltaIndexDescriptor{}, fmt.Errorf("generation is required")
+	return b.fatal(err)
+}
+
+// fatal poisons the builder, cleans up the current segment and the tmp dir, and
+// returns the error. This makes "no successful build => restored state" the
+// default behavior rather than relying on the caller's defer Close().
+func (b *FullIndexBuilder) fatal(err error) error {
+	b.state = statePoisoned
+	b.fatalErr = err
+	if b.curSeg != nil {
+		b.curSeg.abort()
+		b.curSeg = nil
 	}
-	if req.ToWatermarkInclusive <= req.FromWatermarkExclusive {
-		return manifest.DeltaIndexDescriptor{}, fmt.Errorf("invalid delta watermark range")
+	_ = os.RemoveAll(b.tmpDir)
+	return err
+}
+
+func (b *FullIndexBuilder) startNewSegment() error {
+	if err := os.MkdirAll(b.tmpDir, 0o755); err != nil {
+		return err
 	}
-	if len(req.Fields) == 0 {
-		return manifest.DeltaIndexDescriptor{}, fmt.Errorf("fields are required")
+	tmp, err := os.CreateTemp(b.tmpDir, ".segment-*.tmp")
+	if err != nil {
+		return err
+	}
+	wildAcc := newEntryRunAccumulator(
+		filepath.Join(b.tmpDir, ".wildcard-runs", fmt.Sprintf("segment-%06d", b.segIdx)),
+		b.opt.Options.MaxWildcardEntriesInMemory,
+	)
+	esb := segment.NewExternalBuilder(tmp, filepath.Join(b.tmpDir, ".runs", fmt.Sprintf("segment-%06d", b.segIdx)), segment.ExternalBuilderOptions{
+		MaxPostingsInMemory: b.opt.Options.MaxPostingsInMemory,
+		SchemaHash:          b.opt.Options.SegmentSchemaHash,
+	})
+	for _, fc := range b.codec.Fields() {
+		esb.AddField(fc.Meta)
+	}
+	b.curSeg = &segmentBuild{
+		tmpFile: tmp,
+		tmpName: tmp.Name(),
+		esb:     esb,
+		wildAcc: wildAcc,
+	}
+	return nil
+}
+
+// finishCurrentSegment writes the current segment's wildcard sidecar, seals the
+// segment file, renames it into the tmp dir, records its descriptor, and resets
+// for the next segment. Mirrors the tail of the previous pull-based
+// buildStreamingSegmentToDir so push and pull produce byte-identical segments.
+func (b *FullIndexBuilder) finishCurrentSegment() error {
+	seg := b.curSeg
+	if seg == nil {
+		return nil
+	}
+	// Reset immediately so any error path won't double-abort via Close.
+	b.curSeg = nil
+
+	if seg.docCount == 0 {
+		seg.abort()
+		return nil
 	}
 
-	plan, err := BuildDeltaPlan(req.Mutations)
-	if err != nil {
-		return manifest.DeltaIndexDescriptor{}, err
-	}
-	relPath := filepath.ToSlash(filepath.Join("delta", generationDir("delta", req.Generation)))
-	finalDir := filepath.Join(req.Root, relPath)
-	tmpDir, err := makeBuildTmpDir(req.Root, "building-delta", req.Generation)
-	if err != nil {
-		return manifest.DeltaIndexDescriptor{}, err
-	}
-	defer os.RemoveAll(tmpDir)
+	file := fmt.Sprintf("segment-%06d.bei", b.segIdx)
+	path := filepath.Join(b.tmpDir, file)
 
-	segments, _, err := buildSegmentsToDir(tmpDir, req.Fields, plan.Documents, req.Options)
+	seg.esb.SetDocCount(seg.docCount)
+	wildFile, _, err := seg.wildAcc.WriteSidecar(b.tmpDir, fmt.Sprintf(".segment-%06d-wildcards.bin", b.segIdx))
 	if err != nil {
+		seg.abort()
+		return err
+	}
+	wildPath := filepath.Join(b.tmpDir, wildFile)
+	seg.esb.SetWildcardsBlockFile(wildPath)
+
+	if err := seg.esb.Write(); err != nil {
+		_ = os.Remove(wildPath)
+		seg.abort()
+		return err
+	}
+	if err := seg.tmpFile.Sync(); err != nil {
+		_ = os.Remove(wildPath)
+		seg.abort()
+		return err
+	}
+	if err := seg.tmpFile.Close(); err != nil {
+		_ = os.Remove(wildPath)
+		seg.wildAcc.Cleanup()
+		return err
+	}
+	_ = os.Remove(wildPath)
+	seg.wildAcc.Cleanup()
+
+	if err := os.Rename(seg.tmpName, path); err != nil {
+		return err
+	}
+	size, checksum, err := manifest.SHA256File(path)
+	if err != nil {
+		return err
+	}
+	b.segments = append(b.segments, manifest.SegmentDescriptor{
+		SegmentID: uint32(b.segIdx),
+		File:      file,
+		Size:      size,
+		Checksum:  checksum,
+		DocCount:  uint64(seg.docCount),
+		MinDocID:  int64(seg.minDoc),
+		MaxDocID:  int64(seg.maxDoc),
+	})
+	b.segIdx++
+	return nil
+}
+
+// abort discards a partially-built segment: closes and removes its tmp file and
+// cleans up wildcard run files. Safe to call on a segment that never wrote.
+func (s *segmentBuild) abort() {
+	if s.tmpFile != nil {
+		_ = s.tmpFile.Close()
+		_ = os.Remove(s.tmpName)
+		s.tmpFile = nil
+	}
+	if s.wildAcc != nil {
+		s.wildAcc.Cleanup()
+	}
+}
+
+// --------------------------------------------------------------------------------
+// DeltaIndexBuilder — push model, delta index directory build.
+// --------------------------------------------------------------------------------
+
+// DeltaIndexBuilder builds a delta index generation directory by accepting
+// mutations one at a time. Unlike the full builder, mutations are accumulated
+// in memory until Build, because delta plan compaction (BuildDeltaPlan) must see
+// all mutations to pick the highest version per DocID. Delta volumes are small
+// by nature (a time-window increment), so this is an accepted trade-off; use a
+// full rebuild for very large changes (MaxMutations guards against misuse).
+type DeltaIndexBuilder struct {
+	opt       DeltaIndexBuildOption
+	relPath   string
+	finalDir  string
+	mutations []Mutation
+	skipped   int
+	state     builderState
+	fatalErr  error
+	closeOnce bool
+}
+
+// NewDeltaIndexBuilder creates a delta index builder, failing fast on an
+// existing generation directory (ErrGenerationExists).
+func NewDeltaIndexBuilder(opt DeltaIndexBuildOption) (*DeltaIndexBuilder, error) {
+	if opt.Root == "" {
+		return nil, fmt.Errorf("root is required")
+	}
+	if opt.Generation == 0 {
+		return nil, fmt.Errorf("generation is required")
+	}
+	if opt.ToWatermarkInclusive <= opt.FromWatermarkExclusive {
+		return nil, fmt.Errorf("invalid delta watermark range")
+	}
+	if len(opt.Fields) == 0 {
+		return nil, fmt.Errorf("fields are required")
+	}
+	relPath := filepath.ToSlash(filepath.Join("delta", generationDir("delta", opt.Generation)))
+	finalDir := filepath.Join(opt.Root, relPath)
+	if err := ensureGenerationAbsent(finalDir); err != nil {
+		return nil, err
+	}
+	return &DeltaIndexBuilder{
+		opt:      opt,
+		relPath:  relPath,
+		finalDir: finalDir,
+		state:    stateAccepting,
+	}, nil
+}
+
+// AddMutation accumulates one mutation. Only enqueue validation happens here;
+// dedup/plan generation is deferred to Build. Under FailFast a validation error
+// poisons the builder; under FailSkip it is skipped (OnSkip invoked).
+func (b *DeltaIndexBuilder) AddMutation(m Mutation) error {
+	if b.state != stateAccepting {
+		return ErrBuilderClosed
+	}
+	if err := validateMutation(m); err != nil {
+		if b.opt.FailMode == FailSkip {
+			b.skipped++
+			if b.opt.OnSkip != nil {
+				b.opt.OnSkip(m.DocID, err)
+			}
+			return nil
+		}
+		b.state = statePoisoned
+		b.fatalErr = err
+		return err
+	}
+	if b.opt.MaxMutations > 0 && len(b.mutations) >= b.opt.MaxMutations {
+		b.state = statePoisoned
+		b.fatalErr = ErrTooManyMutations
+		return ErrTooManyMutations
+	}
+	b.mutations = append(b.mutations, m)
+	return nil
+}
+
+// Build compacts mutations into a delta plan, exports upsert documents into
+// segments, writes changed/deleted sidecars, and commits via rename. An empty
+// delta (no mutations) is valid and produces empty sidecars. On failure the tmp
+// dir is removed to restore pre-build state.
+func (b *DeltaIndexBuilder) Build() (manifest.DeltaIndexDescriptor, error) {
+	if b.state != stateAccepting {
+		if b.state == statePoisoned {
+			return manifest.DeltaIndexDescriptor{}, b.fatalErr
+		}
+		return manifest.DeltaIndexDescriptor{}, ErrBuilderClosed
+	}
+
+	plan, err := BuildDeltaPlan(b.mutations)
+	if err != nil {
+		b.state = statePoisoned
+		b.fatalErr = err
 		return manifest.DeltaIndexDescriptor{}, err
+	}
+
+	tmpDir, err := makeBuildTmpDir(b.opt.Root, "building-delta", b.opt.Generation)
+	if err != nil {
+		b.state = statePoisoned
+		b.fatalErr = err
+		return manifest.DeltaIndexDescriptor{}, err
+	}
+	fail := func(e error) (manifest.DeltaIndexDescriptor, error) {
+		b.state = statePoisoned
+		b.fatalErr = e
+		_ = os.RemoveAll(tmpDir)
+		return manifest.DeltaIndexDescriptor{}, e
+	}
+
+	segments, _, err := buildSegmentsToDir(tmpDir, b.opt.Fields, plan.Documents, b.opt.Options)
+	if err != nil {
+		return fail(err)
 	}
 	changedFile, changedChecksum, err := manifest.WriteDocIDsSidecar(tmpDir, "changed_docs.bin", plan.ChangedDocs)
 	if err != nil {
-		return manifest.DeltaIndexDescriptor{}, err
+		return fail(err)
 	}
 	deletedFile, deletedChecksum, err := manifest.WriteDocIDsSidecar(tmpDir, "deleted_docs.bin", plan.DeletedDocs)
 	if err != nil {
-		return manifest.DeltaIndexDescriptor{}, err
+		return fail(err)
 	}
-	if err := publishBuiltDir(tmpDir, finalDir); err != nil {
-		return manifest.DeltaIndexDescriptor{}, err
+	if err := publishBuiltDir(tmpDir, b.finalDir); err != nil {
+		return fail(err)
 	}
+	b.state = stateBuilt
 
 	return manifest.DeltaIndexDescriptor{
-		Generation:             req.Generation,
-		FromWatermarkExclusive: req.FromWatermarkExclusive,
-		ToWatermarkInclusive:   req.ToWatermarkInclusive,
-		Path:                   relPath,
+		Generation:             b.opt.Generation,
+		FromWatermarkExclusive: b.opt.FromWatermarkExclusive,
+		ToWatermarkInclusive:   b.opt.ToWatermarkInclusive,
+		Path:                   b.relPath,
 		Segments:               segments,
 		ChangedDocsFile:        changedFile,
 		ChangedDocsChecksum:    changedChecksum,
@@ -224,6 +586,28 @@ func BuildDeltaIndexDir(req DeltaBuildRequest) (manifest.DeltaIndexDescriptor, e
 		DeletedDocCount:        uint64(len(plan.DeletedDocs)),
 	}, nil
 }
+
+// Close is idempotent. Delta builders accumulate in memory and only touch disk
+// inside Build (which cleans up its own tmp on failure), so Close mainly releases
+// the accumulated mutations and marks the terminal state.
+func (b *DeltaIndexBuilder) Close() error {
+	if b.closeOnce {
+		return nil
+	}
+	b.closeOnce = true
+	b.mutations = nil
+	if b.state == stateAccepting {
+		b.state = stateClosed
+	}
+	return nil
+}
+
+// SkippedCount returns the number of mutations skipped under FailSkip.
+func (b *DeltaIndexBuilder) SkippedCount() int { return b.skipped }
+
+// --------------------------------------------------------------------------------
+// Snapshot manifest (serving-side helper, unchanged).
+// --------------------------------------------------------------------------------
 
 // NewSnapshotManifest creates and validates a serving snapshot manifest.
 func NewSnapshotManifest(req SnapshotManifestRequest) (manifest.Manifest, error) {
@@ -251,6 +635,10 @@ func NewSnapshotManifest(req SnapshotManifestRequest) (manifest.Manifest, error)
 	}
 	return m, nil
 }
+
+// --------------------------------------------------------------------------------
+// Internal helpers (shared by delta build path and tests).
+// --------------------------------------------------------------------------------
 
 func buildSegmentsToDir(dir string, fields map[core.BEField]*core.FieldMeta, docs []*core.Document, opts BuildDirectoryOptions) ([]manifest.SegmentDescriptor, core.Entries, error) {
 	if len(docs) == 0 {
@@ -303,148 +691,6 @@ func buildSegmentsToDir(dir string, fields map[core.BEField]*core.FieldMeta, doc
 	return segments, allWildcards, nil
 }
 
-func buildStreamingSegmentsToDir(dir string, fields map[core.BEField]*core.FieldMeta, docs DocumentIterator, opts BuildDirectoryOptions) ([]manifest.SegmentDescriptor, error) {
-	codec, err := parser.NewSchemaCodec(fields)
-	if err != nil {
-		return nil, err
-	}
-	maxDocsPerSegment := opts.MaxDocsPerSegment
-	if maxDocsPerSegment <= 0 {
-		maxDocsPerSegment = int(^uint(0) >> 1)
-	}
-
-	var segments []manifest.SegmentDescriptor
-	segIdx := 0
-
-	for {
-		seg, ok, err := buildStreamingSegmentToDir(dir, codec, docs, segIdx, maxDocsPerSegment, opts)
-		if err != nil {
-			return nil, err
-		}
-		if !ok {
-			break
-		}
-		segments = append(segments, seg)
-		segIdx++
-	}
-	return segments, nil
-}
-
-func buildStreamingSegmentToDir(
-	dir string,
-	codec *parser.SchemaCodec,
-	docs DocumentIterator,
-	segIdx int,
-	maxDocsPerSegment int,
-	opts BuildDirectoryOptions,
-) (manifest.SegmentDescriptor, bool, error) {
-	file := fmt.Sprintf("segment-%06d.bei", segIdx)
-	path := filepath.Join(dir, file)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return manifest.SegmentDescriptor{}, false, err
-	}
-	tmp, err := os.CreateTemp(dir, ".segment-*.tmp")
-	if err != nil {
-		return manifest.SegmentDescriptor{}, false, err
-	}
-	tmpName := tmp.Name()
-	committed := false
-	defer func() {
-		if !committed {
-			_ = os.Remove(tmpName)
-		}
-	}()
-
-	segmentWildAcc := newEntryRunAccumulator(filepath.Join(dir, ".wildcard-runs", fmt.Sprintf("segment-%06d", segIdx)), opts.MaxWildcardEntriesInMemory)
-	defer segmentWildAcc.Cleanup()
-
-	esb := segment.NewExternalBuilder(tmp, filepath.Join(dir, ".runs", fmt.Sprintf("segment-%06d", segIdx)), segment.ExternalBuilderOptions{
-		MaxPostingsInMemory: opts.MaxPostingsInMemory,
-		SchemaHash:          opts.SegmentSchemaHash,
-	})
-	for _, fc := range codec.Fields() {
-		esb.AddField(fc.Meta)
-	}
-
-	var docCount int
-	var minDoc, maxDoc core.DocID
-	for docCount < maxDocsPerSegment {
-		doc, ok, err := docs.Next()
-		if err != nil {
-			_ = tmp.Close()
-			return manifest.SegmentDescriptor{}, false, err
-		}
-		if !ok {
-			break
-		}
-		if doc == nil {
-			_ = tmp.Close()
-			return manifest.SegmentDescriptor{}, false, fmt.Errorf("document iterator returned nil document")
-		}
-		if docCount == 0 {
-			minDoc, maxDoc = doc.ID, doc.ID
-		} else {
-			if doc.ID < minDoc {
-				minDoc = doc.ID
-			}
-			if doc.ID > maxDoc {
-				maxDoc = doc.ID
-			}
-		}
-		w, err := exportDocToSink(esb, codec, doc)
-		if err != nil {
-			_ = tmp.Close()
-			return manifest.SegmentDescriptor{}, false, err
-		}
-		if err := segmentWildAcc.Add(w); err != nil {
-			_ = tmp.Close()
-			return manifest.SegmentDescriptor{}, false, err
-		}
-		docCount++
-	}
-	if docCount == 0 {
-		_ = tmp.Close()
-		return manifest.SegmentDescriptor{}, false, nil
-	}
-	esb.SetDocCount(docCount)
-	wildFile, _, err := segmentWildAcc.WriteSidecar(dir, fmt.Sprintf(".segment-%06d-wildcards.bin", segIdx))
-	if err != nil {
-		_ = tmp.Close()
-		return manifest.SegmentDescriptor{}, false, err
-	}
-	wildPath := filepath.Join(dir, wildFile)
-	defer os.Remove(wildPath)
-	esb.SetWildcardsBlockFile(wildPath)
-	if err := esb.Write(); err != nil {
-		_ = tmp.Close()
-		return manifest.SegmentDescriptor{}, false, err
-	}
-	if err := tmp.Sync(); err != nil {
-		_ = tmp.Close()
-		return manifest.SegmentDescriptor{}, false, err
-	}
-	if err := tmp.Close(); err != nil {
-		return manifest.SegmentDescriptor{}, false, err
-	}
-	if err := os.Rename(tmpName, path); err != nil {
-		return manifest.SegmentDescriptor{}, false, err
-	}
-	committed = true
-	size, checksum, err := manifest.SHA256File(path)
-	if err != nil {
-		return manifest.SegmentDescriptor{}, false, err
-	}
-	return manifest.SegmentDescriptor{
-		SegmentID: uint32(segIdx),
-		File:      file,
-		Size:      size,
-		Checksum:  checksum,
-		DocCount:  uint64(docCount),
-		MinDocID:  int64(minDoc),
-		MaxDocID:  int64(maxDoc),
-	}, true, nil
-}
-
 func docRange(docs []*core.Document) (core.DocID, core.DocID) {
 	minDoc := docs[0].ID
 	maxDoc := docs[0].ID
@@ -471,12 +717,22 @@ func makeBuildTmpDir(root, prefix string, generation uint64) (string, error) {
 	return os.MkdirTemp(tmpRoot, fmt.Sprintf("%s-%06d-*", prefix, generation))
 }
 
+// ensureGenerationAbsent returns ErrGenerationExists if finalDir already exists.
+func ensureGenerationAbsent(finalDir string) error {
+	if _, err := os.Stat(finalDir); err == nil {
+		return fmt.Errorf("%w: %s", ErrGenerationExists, finalDir)
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
 func publishBuiltDir(tmpDir, finalDir string) error {
 	if err := os.MkdirAll(filepath.Dir(finalDir), 0o755); err != nil {
 		return err
 	}
 	if _, err := os.Stat(finalDir); err == nil {
-		return fmt.Errorf("target build directory already exists: %s", finalDir)
+		return fmt.Errorf("%w: %s", ErrGenerationExists, finalDir)
 	} else if !os.IsNotExist(err) {
 		return err
 	}

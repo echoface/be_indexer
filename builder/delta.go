@@ -31,25 +31,35 @@ type DeltaPlan struct {
 	DeletedDocs []core.DocID
 }
 
+// validateMutation checks a single mutation's structural validity. It is the
+// per-mutation (isolatable) validation used both by DeltaIndexBuilder.AddMutation
+// (enqueue-time, subject to FailMode) and by BuildDeltaPlan (defensive).
+func validateMutation(mutation Mutation) error {
+	if !core.ValidDocID(mutation.DocID) {
+		return fmt.Errorf("invalid mutation doc id %d", mutation.DocID)
+	}
+	if mutation.Op != MutationUpsert && mutation.Op != MutationDelete {
+		return fmt.Errorf("invalid mutation op %d for doc %d", mutation.Op, mutation.DocID)
+	}
+	if mutation.Op == MutationUpsert {
+		if mutation.Document == nil {
+			return fmt.Errorf("upsert mutation for doc %d requires document", mutation.DocID)
+		}
+		if mutation.Document.ID != mutation.DocID {
+			return fmt.Errorf("upsert mutation doc id mismatch: event=%d document=%d", mutation.DocID, mutation.Document.ID)
+		}
+	}
+	return nil
+}
+
 // BuildDeltaPlan compacts mutations by DocID and keeps only the highest version.
 // Upserts are emitted as delta documents; deletes are represented only in the
 // changed/deleted sidecars.
 func BuildDeltaPlan(mutations []Mutation) (*DeltaPlan, error) {
 	latest := make(map[core.DocID]Mutation, len(mutations))
 	for _, mutation := range mutations {
-		if !core.ValidDocID(mutation.DocID) {
-			return nil, fmt.Errorf("invalid mutation doc id %d", mutation.DocID)
-		}
-		if mutation.Op != MutationUpsert && mutation.Op != MutationDelete {
-			return nil, fmt.Errorf("invalid mutation op %d for doc %d", mutation.Op, mutation.DocID)
-		}
-		if mutation.Op == MutationUpsert {
-			if mutation.Document == nil {
-				return nil, fmt.Errorf("upsert mutation for doc %d requires document", mutation.DocID)
-			}
-			if mutation.Document.ID != mutation.DocID {
-				return nil, fmt.Errorf("upsert mutation doc id mismatch: event=%d document=%d", mutation.DocID, mutation.Document.ID)
-			}
+		if err := validateMutation(mutation); err != nil {
+			return nil, err
 		}
 		prev, ok := latest[mutation.DocID]
 		if !ok || mutation.Version > prev.Version || (mutation.Version == prev.Version && mutation.Op == MutationDelete) {

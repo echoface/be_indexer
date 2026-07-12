@@ -85,15 +85,23 @@ func TestBuildSegmentsFromDocs_Consistency(t *testing.T) {
 		if err != nil {
 			t.Fatalf("eng2.Retrieve[%d] failed: %v", i, err)
 		}
-		sort.Slice(r1, func(i, j int) bool { return r1[i] < r1[j] })
-		sort.Slice(r2, func(i, j int) bool { return r2[i] < r2[j] })
-		if len(r1) != len(r2) {
-			t.Fatalf("result len mismatch for q[%d]=%v: %v vs %v", i, q, r1, r2)
+		s1 := bitmapToSlice(r1)
+		s2 := bitmapToSlice(r2)
+		sort.Slice(s1, func(i, j int) bool { return s1[i] < s1[j] })
+		sort.Slice(s2, func(i, j int) bool { return s2[i] < s2[j] })
+		if len(s1) != len(s2) {
+			t.Fatalf("result len mismatch for q[%d]=%v: %v vs %v", i, q, s1, s2)
 		}
-		for j := range r1 {
-			if r1[j] != r2[j] {
-				t.Fatalf("result mismatch for q[%d]=%v: %v vs %v", i, q, r1, r2)
+		for j := range s1 {
+			if s1[j] != s2[j] {
+				t.Fatalf("result mismatch for q[%d]=%v: %v vs %v", i, q, s1, s2)
 			}
 		}
 	}
+}
+
+func bitmapToSlice(b *core.BitmapDocSet) core.DocIDList {
+	var ids core.DocIDList
+	b.ForEach(func(id core.DocID) { ids = append(ids, id) })
+	return ids
 }

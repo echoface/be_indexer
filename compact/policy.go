@@ -118,7 +118,7 @@ func CollectStats(m manifest.Manifest) Stats {
 		if delta.ChangedDocsFile != "" && delta.ChangedDocCount == 0 {
 			s.HasExactChangeCounts = false
 		}
-		// BuildDeltaIndexDir always writes deleted_docs.bin, including the valid
+		// DeltaIndexBuilder always writes deleted_docs.bin, including the valid
 		// upsert-only case where DeletedDocCount is exactly zero. Treat a zero
 		// deleted count as missing only when the paired changed count is also absent.
 		if delta.DeletedDocsFile != "" && delta.DeletedDocCount == 0 && delta.ChangedDocCount == 0 {

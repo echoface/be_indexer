@@ -1,73 +1,8 @@
 package engine
 
 import (
-	"github.com/RoaringBitmap/roaring/roaring64"
-
 	"github.com/echoface/be_indexer/core"
 )
-
-// DocSet is a read-only set of DocIDs used by the full+delta merge layer.
-//
-// It deliberately lives above BooleanEngine: a single BooleanEngine-level
-// LiveDocs filter cannot represent update/recreate semantics across full and
-// delta indexes, because it would filter the same DocID in both layers.
-type DocSet interface {
-	Contains(id core.DocID) bool
-}
-
-// BitmapDocSet is a compact roaring-backed DocID set.
-type BitmapDocSet struct {
-	bits *roaring64.Bitmap
-}
-
-// NewBitmapDocSet creates a DocID set initialized with ids.
-func NewBitmapDocSet(ids ...core.DocID) *BitmapDocSet {
-	s := &BitmapDocSet{bits: roaring64.New()}
-	for _, id := range ids {
-		s.Add(id)
-	}
-	return s
-}
-
-// Add inserts a DocID into the set.
-func (s *BitmapDocSet) Add(id core.DocID) {
-	if s == nil {
-		return
-	}
-	s.bits.Add(uint64(id))
-}
-
-// Remove deletes a DocID from the set.
-func (s *BitmapDocSet) Remove(id core.DocID) {
-	if s == nil {
-		return
-	}
-	s.bits.Remove(uint64(id))
-}
-
-// Contains reports whether id is present.
-func (s *BitmapDocSet) Contains(id core.DocID) bool {
-	return s != nil && s.bits.Contains(uint64(id))
-}
-
-// Cardinality returns the number of DocIDs in the set.
-func (s *BitmapDocSet) Cardinality() uint64 {
-	if s == nil {
-		return 0
-	}
-	return s.bits.GetCardinality()
-}
-
-// ForEach calls fn for every DocID in the set.
-func (s *BitmapDocSet) ForEach(fn func(core.DocID)) {
-	if s == nil || fn == nil {
-		return
-	}
-	it := s.bits.Iterator()
-	for it.HasNext() {
-		fn(core.DocID(it.Next()))
-	}
-}
 
 // IndexSnapshot is an immutable serving view composed from a long-window full
 // index and an optional short-window delta index.
@@ -90,8 +25,8 @@ type IndexSnapshot struct {
 	// for correct multi-delta update/update semantics.
 	DeltaEngines []*BooleanEngine
 
-	ChangedDocs DocSet
-	DeletedDocs DocSet
+	ChangedDocs *core.BitmapDocSet
+	DeletedDocs *core.BitmapDocSet
 }
 
 // CompositeEngine executes queries against an immutable full+delta snapshot.
@@ -112,63 +47,78 @@ func (e *CompositeEngine) Snapshot() *IndexSnapshot {
 	return e.snapshot
 }
 
-// Retrieve returns merged DocIDs for assignments.
-func (e *CompositeEngine) Retrieve(queries core.Assignments, opts ...core.IndexOpt) (core.DocIDList, error) {
-	collector := core.PickCollector()
-	defer core.PutCollector(collector)
-	if err := e.RetrieveWithCollector(queries, collector, opts...); err != nil {
-		return nil, err
+// Retrieve returns matched DocIDs as a BitmapDocSet for assignments.
+//
+// Query semantics: Result = (FullResult - ChangedDocs) ∪ (DeltaResult - DeletedDocs)
+//
+// All filtering and merging uses batch bitmap set operations (AndNot, Or)
+// instead of per-document loops.
+func (e *CompositeEngine) Retrieve(queries core.Assignments, opts ...core.IndexOpt) (*core.BitmapDocSet, error) {
+	if e == nil || e.snapshot == nil {
+		return core.NewBitmapDocSet(), nil
 	}
-	return collector.GetDocIDs(), nil
+
+	s := e.snapshot
+
+	// FullEngine.Retrieve already returns an independent, mutable bitmap, so we
+	// reuse it directly as the accumulator (no extra clone/copy). When there is
+	// no full engine, start from an empty set.
+	var fullSet *core.BitmapDocSet
+	if s.FullEngine != nil {
+		fullResult, err := s.FullEngine.Retrieve(queries, opts...)
+		if err != nil {
+			return nil, err
+		}
+		fullSet = fullResult
+	} else {
+		fullSet = core.NewBitmapDocSet()
+	}
+
+	// Merge every delta engine's result. Like fullSet, the first delta result
+	// is reused directly as the accumulator; subsequent ones are Or'ed in.
+	// With no delta engine, deltaSet stays nil (Or/AndNot are nil-safe).
+	var deltaSet *core.BitmapDocSet
+	for _, deltaEngine := range s.deltaEngines() {
+		deltaResult, err := deltaEngine.Retrieve(queries, opts...)
+		if err != nil {
+			return nil, err
+		}
+		if deltaSet == nil {
+			deltaSet = deltaResult
+		} else {
+			deltaSet.Or(deltaResult)
+		}
+	}
+
+	// Batch filter: FullResult - ChangedDocs
+	if s.ChangedDocs.Cardinality() > 0 {
+		fullSet.AndNot(s.ChangedDocs)
+	}
+	// Batch filter: DeltaResult - DeletedDocs
+	if s.DeletedDocs.Cardinality() > 0 {
+		deltaSet.AndNot(s.DeletedDocs)
+	}
+
+	// Merge delta into full. Since ChangedDocs already removed full's stale
+	// entries, delta naturally has priority for updates.
+	fullSet.Or(deltaSet)
+	return fullSet, nil
 }
 
 // RetrieveWithCollector feeds the final de-duplicated full+delta result into collector.
 func (e *CompositeEngine) RetrieveWithCollector(
 	queries core.Assignments, collector core.ResultCollector, opts ...core.IndexOpt,
 ) error {
-	if e == nil || e.snapshot == nil {
+	result, err := e.Retrieve(queries, opts...)
+	if err != nil {
+		return err
+	}
+	if result == nil || collector == nil {
 		return nil
 	}
-	if collector == nil {
-		return nil
-	}
-
-	s := e.snapshot
-	merged := core.PickCollector()
-	defer core.PutCollector(merged)
-
-	if s.FullEngine != nil {
-		fullIDs, err := s.FullEngine.Retrieve(queries, opts...)
-		if err != nil {
-			return err
-		}
-		for _, id := range fullIDs {
-			if s.ChangedDocs != nil && s.ChangedDocs.Contains(id) {
-				continue
-			}
-			merged.Add(id, 0)
-		}
-	}
-
-	for _, deltaEngine := range s.deltaEngines() {
-		deltaIDs, err := deltaEngine.Retrieve(queries, opts...)
-		if err != nil {
-			return err
-		}
-		for _, id := range deltaIDs {
-			if s.DeletedDocs != nil && s.DeletedDocs.Contains(id) {
-				continue
-			}
-			// The merged collector de-duplicates DocID. Since full changed docs are
-			// removed before this point, delta naturally has priority for updates.
-			merged.Add(id, 0)
-		}
-	}
-
-	ids := merged.GetDocIDs()
-	for _, id := range ids {
+	result.ForEach(func(id core.DocID) {
 		collector.Add(id, 0)
-	}
+	})
 	return nil
 }
 

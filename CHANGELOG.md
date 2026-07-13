@@ -2,6 +2,37 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased] - 2026-07-05
+
+### Changed (Compact Index Architecture)
+
+消除 K-Grouping 的物理分桶存储，EntryID 高位编码 K 达成自然排序分组：
+
+- **K-Group Elimination**: segment 格式 v3→v4。blockKey 从 `(K<<16|fieldID)` 简化为 `fieldID`。所有 K 的 posting list 合并为每个 field 一份连续块，K 过滤下沉为查询时 `SubViewByK` 二分定位。
+- **Compact Retrieve**: engine 检索从 `for k:=maxK; k>=0; k--` 外层循环 + `retrieveK()` 改为单次 `initCursors()` + `mergeCursors()`，K 从 EntryID 动态读取 (`conjID.Size()`)。
+- **AllK Sentinel 移除**: segment 方法 `GetPostingsByTerm`/`GetRangePostings`/`MultiPatternSearch` 去掉 `k int` 参数，K 过滤职责归 engine。
+
+### Added (Pluggable Container Extension)
+
+容器型索引可以通过接口注册实现扩展，参考 Lucene PostingsFormat / RocksDB TableFactory 模式：
+
+- `segment.ContainerReader` / `segment.ContainerBuilder` 接口 + `RegisterContainer()` 注册表
+- 内置 `ac_matcher`（AC 自动机）、`ext_range`（段树）注册为 container
+- `segment.SegmentReader.ContainerQuery()` 通用容器 dispatch
+- `engine/searcher.go` `default` 分支路由未知 `QueryKind` 到 `ContainerQuery`
+- `parser.EncodedPosting.Value any` / `parser.EncodedQuery.Value any` 承载自定义容器数据
+- `container/geo` 示例：基于 geohash 的空间索引容器（150 LOC 完整容器实现）
+- `segment.NewPostingListAt` 导出，外部 ContainerReader 可零拷贝创建 posting view
+
+### Removed
+
+- `SegmentReader.Contains()` (dead code, always returned true)
+- `segment.AllK`
+- `OnCursorInit(k int, ...)` → `OnCursorInit(fieldCount int)`
+- `NewNumberParser2` (dead code)
+- `NewPredicate2` → renamed to `NewPredicateWithExpr`
+- `AddPredicate3` → renamed to `AddPredicateValues`
+
 ## [Unreleased] - 2026-04-17
 
 ### Changed (Major Architecture Refactoring)

@@ -114,22 +114,25 @@ wildcards, err := builder.BuildSegmentFromDocs(file, fieldsMeta, docs)
 
 ## 物理段 API (segment)
 
-`segment` 包是对底层二进制文件的包装，核心面向检索端暴露的是 `MmapReader`。
+`segment` 包是对底层二进制文件的包装，核心面向检索端暴露的是 `SegmentReader`。
 
-### MmapReader
+### SegmentReader
 
 使用零拷贝方式映射并读取段文件内容。
 
 ```go
-type MmapReader struct {
+type SegmentReader struct {
     // 内部结构
 }
 
-// 从字节切片（通常是 syscall.Mmap 的结果）初始化 Reader
-func NewMmapReader(data []byte) (*MmapReader, error)
+// 从字节切片（通常是 mmap 的结果）初始化 Reader
+func NewSegmentReader(data []byte) (*SegmentReader, error)
+
+// 从文件路径通过 mmap 加载（推荐生产使用）
+func OpenSegmentFile(path string, opts ...SegmentReaderOption) (*SegmentReader, error)
 ```
 
-> **注意：** 在生产环境中，业务应用需要自行通过 `syscall.Mmap` 或者其他 mmap 库将本地 `.seg` 文件映射为 `[]byte` 并传入 `NewMmapReader`。
+> **注意：** 在生产环境中，推荐使用 `OpenSegmentFile` 直接通过 mmap 加载 `.seg` 文件，零拷贝读取所有 posting/wildcard 数据。
 
 ---
 
@@ -148,12 +151,10 @@ type BooleanEngine struct {
 
 // 初始化引擎
 // fieldsData: 字段元数据定义
-// wildcardEntries: 构建时产生的 K=0 和纯 Exclude 规则
-// segments: 可挂载多个 MmapReader，引擎内部会透明处理合并
+// segments: 可挂载多个 SegmentReader，引擎内部会透明处理合并
 func NewBooleanEngine(
     fieldsData map[core.BEField]*core.FieldMeta, 
-    wildcardEntries core.Entries, 
-    segments []*segment.MmapReader,
+    segments []*segment.SegmentReader,
 ) *BooleanEngine
 
 // 指定 LiveDocs 以支持动态删除/禁用文档
@@ -169,7 +170,7 @@ func (ms *BooleanEngine) RetrieveWithCollector(queries core.Assignments, collect
 **检索示例：**
 ```go
 // 1. 初始化引擎
-searcher := engine.NewBooleanEngine(fieldsMeta, wildcards, []*segment.MmapReader{segReader})
+searcher := engine.NewBooleanEngine(fieldsMeta, []*segment.SegmentReader{segReader})
 
 // 2. 构造查询特征
 assigns := core.Assignments{

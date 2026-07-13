@@ -50,7 +50,7 @@ go vet ./...
 ### 2. Architecture & Design
 该项目采用了强类型的读写分离架构，依赖关系单向向下，严禁反向依赖：
 - **`builder`**: 包含 `BuildSegmentFromDocs`，负责将 `Document` 打平解析并推入 Segment 构建器。
-- **`segment`**: 包含 `Builder` (用于二进制对齐序列化) 和 `MmapReader` (零拷贝反序列化)。通过 `FlatDict` 和 `FlatPostingList` 实现高密集度存储。通过 `ContainerReader`/`ContainerBuilder` 接口 + `RegisterContainer` 注册表支持可插拔索引容器（内置 `ac_matcher`、`ext_range`）。
+- **`segment`**: 包含 `Builder` (用于二进制对齐序列化) 和 `SegmentReader` (零拷贝反序列化)。通过 `FlatDict` 和 `FlatPostingList` 实现高密集度存储。通过 `ContainerReader`/`ContainerBuilder` 接口 + `RegisterContainer` 注册表支持可插拔索引容器（内置 `ac_matcher`、`ext_range`）。
 - **`engine`**: 包含 `BooleanEngine` 和底层的 `mergeCursors` 算法，在不触碰任何物理布局的情况下基于 `FieldCursor` 完成求交运算。通过 `EncodedQuery.Kind` default 分支路由到 `SegmentReader.ContainerQuery`，支持自定义容器类型。
 - **`core`**: 处于依赖最底层，定义基础类型、常数与 ID 位元结构。
 
@@ -70,18 +70,31 @@ go vet ./...
 ```text
 /
 ├── builder/                # 离线构建，汇聚成 Segment
-│   └── doc_exporter.go     # BuildSegmentFromDocs 逻辑
+│   ├── doc_exporter.go     # BuildSegmentFromDocs 逻辑
+│   ├── artifact.go         # FullIndexBuilder, DeltaIndexBuilder
+│   └── delta.go            # DeltaPlan, Mutation types
 ├── engine/                 # 在线查询，执行布尔表达式匹配
-│   └── searcher.go         # BooleanEngine 与 mergeCursors 算法
+│   ├── searcher.go         # BooleanEngine 与 mergeCursors 算法
+│   └── composite.go        # CompositeEngine (full+delta merge)
 ├── segment/                # Mmap 存储结构管理
-│   ├── segment_writer.go   # Builder 二进制写入
-│   ├── segment_reader.go   # MmapReader 映射解析
+│   ├── segment_builder_mem.go    # InMemorySegmentBuilder
+│   ├── segment_builder_external.go # ExternalBuilder (external sort)
+│   ├── segment_reader.go   # SegmentReader (mmap/heap backing)
 │   ├── container.go        # ContainerReader/Builder 接口 + 注册表
-│   ├── dictionary.go       # FlatDict
+│   ├── flatmap.go          # FlatDict
 │   └── posting_list.go     # FlatPostingList
-└── core/                   # 基础接口、结构与 ID 编码
-    ├── id_types.go         # ConjID / EntryID 编解码
-    ├── document.go         # DNF, Conjunction, Predicate
-    ├── cursor.go           # FieldCursor
-    └── result_collector.go # 命中结果收集器
+├── core/                   # 基础接口、结构与 ID 编码
+│   ├── id_types.go         # ConjID / EntryID 编解码
+│   ├── document.go         # DNF, Conjunction, Predicate
+│   ├── cursor.go           # FieldCursor, SliceIterator
+│   └── result_collector.go # DocIDCollector (roaring64)
+├── loader/                 # 冷启动加载
+│   ├── loader.go           # OpenIndex, LoadSnapshot
+│   └── holder.go           # Holder (atomic live-reload)
+├── manifest/               # 快照元数据
+│   ├── manifest.go         # Manifest struct
+│   └── publish.go          # PublishManifest (atomic CURRENT)
+└── parser/                 # 值分词器与 Schema 编解码
+    ├── encoder.go          # SchemaCodec, EncodedQuery
+    └── tokenizer.go        # ValueTokenizer interface
 ```

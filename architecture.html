@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>be_indexer — Boolean Expression Index Architecture</title>
+  <style>
+    body { margin: 0; padding: 20px; background: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    .arch-wrapper { display: flex; gap: 12px; }
+    .arch-sidebar { width: 165px; flex-shrink: 0; }
+    .arch-main { flex: 1; min-width: 0; }
+    .arch-title { text-align: center; font-size: 22px; font-weight: bold; color: #1a365d; margin-bottom: 16px; font-family: Georgia, serif; }
+    .arch-layer { margin: 8px 0; padding: 14px; border-radius: 6px; box-shadow: 0 1px 4px rgba(30, 58, 138, 0.08); }
+    .arch-layer-title { font-size: 13px; font-weight: bold; margin-bottom: 10px; text-align: center; }
+    .arch-grid { display: grid; gap: 8px; }
+    .arch-grid-2 { grid-template-columns: repeat(2, 1fr); }
+    .arch-grid-3 { grid-template-columns: repeat(3, 1fr); }
+    .arch-grid-4 { grid-template-columns: repeat(4, 1fr); }
+    .arch-grid-5 { grid-template-columns: repeat(5, 1fr); }
+    .arch-grid-6 { grid-template-columns: repeat(6, 1fr); }
+    .arch-box { border-radius: 4px; padding: 8px; text-align: center; font-size: 11px; font-weight: 600; line-height: 1.35; color: #1e293b; background: #ffffff; border: 1px solid #cbd5e1; }
+    .arch-box.highlight { background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%); border: 2px solid #2563eb; }
+    .arch-box.tech { font-size: 10px; color: #475569; background: #f1f5f9; }
+    .arch-layer.external { background: linear-gradient(135deg, #edf2f7 0%, #e2e8f0 100%); border: 2px dashed #a0aec0; }
+    .arch-layer.external .arch-layer-title { color: #718096; }
+    .arch-layer.user { background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%); border: 2px solid #3b82f6; }
+    .arch-layer.user .arch-layer-title { color: #1e40af; }
+    .arch-layer.application { background: linear-gradient(135deg, #e0f2fe 0%, #bae6fd 100%); border: 2px solid #0284c7; }
+    .arch-layer.application .arch-layer-title { color: #075985; }
+    .arch-layer.ai { background: linear-gradient(135deg, #e0e7ff 0%, #c7d2fe 100%); border: 2px solid #6366f1; }
+    .arch-layer.ai .arch-layer-title { color: #3730a3; }
+    .arch-layer.data { background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%); border: 2px solid #10b981; }
+    .arch-layer.data .arch-layer-title { color: #065f46; }
+    .arch-layer.infra { background: linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%); border: 2px solid #7c3aed; }
+    .arch-layer.infra .arch-layer-title { color: #5b21b6; }
+    .arch-sidebar-panel { border-radius: 6px; padding: 10px; background: linear-gradient(135deg, #edf1f7 0%, #dde3eb 100%); border: 2px solid #8da3bd; margin-bottom: 8px; box-shadow: 0 1px 3px rgba(30, 58, 138, 0.06); }
+    .arch-sidebar-title { font-size: 12px; font-weight: bold; text-align: center; color: #1a365d; margin-bottom: 6px; }
+    .arch-sidebar-item { font-size: 10px; text-align: center; color: #334155; background: #ffffff; padding: 5px; border-radius: 3px; margin: 3px 0; border: 1px solid #d1d9e4; }
+    .arch-sidebar-item.metric { background: #dbeafe; border: 1px solid #93c5fd; color: #1e40af; font-weight: 600; }
+    .arch-subgroup { display: flex; gap: 8px; margin-top: 8px; }
+    .arch-subgroup-box { flex: 1; border-radius: 6px; padding: 8px; background: rgba(255, 255, 255, 0.5); border: 1px solid rgba(0, 0, 0, 0.08); }
+    .arch-subgroup-title { font-size: 10px; font-weight: bold; color: #374151; text-align: center; margin-bottom: 6px; }
+    .arch-vstack { display: flex; flex-direction: column; gap: 6px; }
+    .arch-vstack-item { border-radius: 3px; padding: 8px; font-size: 11px; font-weight: 500; color: #333; background: #fff; border: 1px solid #ddd; display: flex; align-items: center; gap: 8px; }
+    .arch-vstack-num { width: 20px; height: 20px; border-radius: 50%; background: #eee; border: 1px solid #ccc; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 600; color: #555; flex-shrink: 0; }
+    .arch-zone-row { display: flex; gap: 8px; }
+    .arch-zone { flex: 1; padding: 10px; border: 1px dashed #bbb; border-radius: 4px; background: #fff; }
+    .arch-zone-title { font-size: 10px; font-weight: 600; color: #666; text-align: center; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.3px; }
+    .arch-inline-pipeline { display: flex; gap: 0; align-items: stretch; }
+    .arch-inline-stage { flex: 1; padding: 8px; border: 1px solid #ddd; border-radius: 3px; background: #fff; text-align: center; font-size: 11px; font-weight: 500; color: #333; }
+    .arch-inline-arrow { display: flex; align-items: center; justify-content: center; width: 28px; flex-shrink: 0; font-size: 16px; color: #999; }
+    .arch-kpi-row { display: flex; gap: 8px; }
+    .arch-kpi { flex: 1; border: 1px solid #ccc; border-radius: 4px; padding: 10px; text-align: center; background: #fff; }
+    .arch-kpi-value { font-size: 20px; font-weight: 700; color: #333; }
+    .arch-kpi-label { font-size: 10px; color: #777; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
+    @media (max-width: 900px) {
+      .arch-wrapper { flex-direction: column; }
+      .arch-sidebar { width: 100%; display: flex; gap: 12px; flex-wrap: wrap; }
+      .arch-sidebar-panel { flex: 1; min-width: 200px; margin-bottom: 0; }
+    }
+  </style>
+</head>
+<body>
+  <div style="width: 100%; max-width: 1200px; margin: 0 auto; box-sizing: border-box; position: relative; background: #f0f4f8; padding: 20px; border-radius: 8px; border: 1px solid #c8d6e5;">
+    <div class="arch-title">🔍 be_indexer — Boolean Expression Index Architecture</div>
+    <div class="arch-wrapper">
+      <div class="arch-sidebar">
+        <div class="arch-sidebar-panel"><div class="arch-sidebar-title">Performance Goals</div><div class="arch-sidebar-item metric">Zero-Copy Retrieval</div><div class="arch-sidebar-item metric">Zero-Allocation Hot Path</div><div class="arch-sidebar-item metric">mmap Page Cache Shared</div><div class="arch-sidebar-item metric">< 200μs P99 Latency</div></div>
+        <div class="arch-sidebar-panel"><div class="arch-sidebar-title">Core Algorithms</div><div class="arch-sidebar-item">VLDB 09 Boolean Indexing</div><div class="arch-sidebar-item">K-Groups via EntryID Sort</div><div class="arch-sidebar-item">Z-Entry Wildcard Shortcut</div><div class="arch-sidebar-item">Galloping SkipTo + Heap</div></div>
+        <div class="arch-sidebar-panel"><div class="arch-sidebar-title">Storage Guarantees</div><div class="arch-sidebar-item">Immutable Segments</div><div class="arch-sidebar-item">Atomic CURRENT Pointer</div><div class="arch-sidebar-item">SHA256 Block Checksums</div><div class="arch-sidebar-item">Cross-Platform Endian Safe</div></div>
+        <div class="arch-sidebar-panel"><div class="arch-sidebar-title">Limits</div><div class="arch-sidebar-item metric">DocID: ±2⁴³</div><div class="arch-sidebar-item metric">Conj/Doc: < 256</div><div class="arch-sidebar-item metric">K Size: < 256</div><div class="arch-sidebar-item metric">Mmap Segments: ∞</div></div>
+      </div>
+      <div class="arch-main">
+        <div class="arch-layer user">
+          <div class="arch-layer-title">Core Layer — 基础类型与 ID 编码</div>
+          <div class="arch-grid arch-grid-4">
+            <div class="arch-box">DocID (int64)<br><small>±2⁴³ range</small></div>
+            <div class="arch-box highlight">ConjID (uint64)<br><small>K(8b)|Idx(8b)|Neg(1b)|DocID(43b)</small></div>
+            <div class="arch-box">EntryID (uint64)<br><small>ConjID<<4 | incl/excl</small></div>
+            <div class="arch-box">ValueExpr / Predicate<br><small>Op + Values + Incl/Excl</small></div>
+          </div>
+          <div class="arch-subgroup">
+            <div class="arch-subgroup-box">
+              <div class="arch-subgroup-title">DNF Document Model</div>
+              <div class="arch-grid arch-grid-2">
+                <div class="arch-box">Document<br><small>ID + Version + Cons[]</small></div>
+                <div class="arch-box">Conjunction<br><small>Predicates: Map<Field, ValueExpr[]></small></div>
+              </div>
+            </div>
+            <div class="arch-subgroup-box">
+              <div class="arch-subgroup-title">Cursor Primitives</div>
+              <div class "arch-grid arch-grid-2">
+                <div class="arch-box">SliceIterator<br><small>Galloping SkipTo</small></div>
+                <div class="arch-box">FieldCursor<br><small>Min-Heap Merge</small></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="arch-layer application">
+          <div class="arch-layer-title">Parser Layer — Schema 编译与值分词</div>
+          <div class="arch-grid arch-grid-3">
+            <div class="arch-box highlight">SchemaCodec<br><small>编译一次，复用 Encoder</small></div>
+            <div class="arch-box">PredicateEncoder<br><small>Build() / Query() 接口</small></div>
+            <div class="arch-box">ValueTokenizer<br><small>TokenizeValue / TokenizeAssign</small></div>
+          </div>
+          <div class="arch-subgroup">
+            <div class="arch-subgroup-box">
+              <div class="arch-subgroup-title">Built-in Encoders</div>
+              <div class="arch-grid arch-grid-3">
+                <div class="arch-box">ExactTermEncoder<br><small>default tokenizer → term</small></div>
+                <div class="arch-box">RangeEncoder<br><small>区间 → [Lo,Hi] 闭区间</small></div>
+                <div class="arch-box">ACEncoder<br><small>patterns → AC 自动机</small></div>
+              </div>
+            </div>
+            <div class="arch-subgroup-box">
+              <div class="arch-subgroup-title">Extensibility</div>
+              <div class="arch-grid arch-grid-3">
+                <div class="arch-box">RegisterPredicateEncoder</div>
+                <div class="arch-box">RegisterValueTokenizer</div>
+                <div class="arch-box">RegisterContainer</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="arch-layer ai">
+          <div class="arch-layer-title">Segment Layer — Mmap 存储与容器框架</div>
+          <div class="arch-grid arch-grid-3">
+            <div class="arch-box highlight">SegmentReader<br><small>零拷贝 mmap/heap</small></div>
+            <div class="arch-box">ExternalBuilder<br><small>外排溢写 + 归并</small></div>
+            <div class="arch-box">InMemoryBuilder<br><small>小数据全内存构建</small></div>
+          </div>
+          <div class="arch-subgroup">
+            <div class="arch-subgroup-box">
+              <div class="arch-subgroup-title">Physical Layout (Segment v4)</div>
+              <div class="arch-grid arch-grid-4">
+                <div class="arch-box tech">Magic + Blocks<br><small>Dict / Postings / Container</small></div>
+                <div class="arch-box tech">BlockIndex (JSON)<br><small>offset, size, checksum</small></div>
+                <div class="arch-box tech">Wildcards Block<br><small>Z-Entry (K=0) 集合</small></div>
+                <div class="arch-box tech">Meta Block<br><small>SchemaHash, Version</small></div>
+              </div>
+            </div>
+            <div class="arch-subgroup-box">
+              <div class="arch-subgroup-title">Container Framework</div>
+              <div class="arch-grid arch-grid-4">
+                <div class="arch-box">default (term dict)<br><small>FlatDict + FlatPostingList</small></div>
+                <div class="arch-box">ac_matcher<br><small>AC 自动机 + 术语倒排</small></div>
+                <div class="arch-box">ext_range<br><small>区间树 Stabbing Query</small></div>
+                <div class="arch-box">Custom Container<br><small>RegisterContainer(kind, R, B)</small></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="arch-layer data">
+          <div class="arch-layer-title">Builder Layer — 离线构建（全量 + 增量）</div>
+          <div class="arch-grid arch-grid-2">
+            <div class="arch-box highlight">FullIndexBuilder<br><small>流式 Push → ExternalBuilder</small></div>
+            <div class="arch-box">DeltaIndexBuilder<br><small>内存累积 → BuildDeltaPlan</small></div>
+          </div>
+          <div class="arch-subgroup">
+            <div class="arch-subgroup-box">
+              <div class="arch-subgroup-title">Full Build Flow</div>
+              <div class="arch-vstack">
+                <div class="arch-vstack-item"><div class="arch-vstack-num">1</div>NewFullIndexBuilder(root, gen, fields)</div>
+                <div class="arch-vstack-item"><div class="arch-vstack-num">2</div>AddDocument(doc) × N → 自动分段</div>
+                <div class="arch-vstack-item"><div class="arch-vstack-num">3</div>Build() → 原子 Rename(tmp → final)</div>
+                <div class="arch-vstack-item"><div class="arch-vstack-num">4</div>返回 FullIndexDescriptor</div>
+              </div>
+            </div>
+            <div class="arch-subgroup-box">
+              <div class="arch-subgroup-title">Delta Build Flow</div>
+              <div class="arch-vstack">
+                <div class="arch-vstack-item"><div class="arch-vstack-num">1</div>AddMutation(Upsert/Delete) × N</div>
+                <div class="arch-vstack-item"><div class="arch-vstack-num">2</div>Build() → BuildDeltaPlan(去重取最高版本)</div>
+                <div class="arch-vstack-item"><div class="arch-vstack-num">3</div>导出变更文档段 + changed/deleted sidecar</div>
+                <div class="arch-vstack-item"><div class="arch-vstack-num">4</div>返回 DeltaIndexDescriptor</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="arch-layer infra">
+          <div class="arch-layer-title">Engine Layer — 在线检索执行引擎</div>
+          <div class="arch-grid arch-grid-3">
+            <div class="arch-box highlight">BooleanEngine<br><small>并发安全，零分配 Retrieve</small></div>
+            <div class="arch-box">CompositeEngine<br><small>Full + Deltas 归并查询</small></div>
+            <div class="arch-box">mergeCursors<br><small>K-Groups 多路归并算法</small></div>
+          </div>
+          <div class="arch-subgroup">
+            <div class="arch-subgroup-box">
+              <div class="arch-subgroup-title">Retrieve Hot Path</div>
+              <div class="arch-vstack">
+                <div class="arch-vstack-item"><div class="arch-vstack-num">1</div>Encode Assignments → EncodedQuery[]</div>
+                <div class="arch-vstack-item"><div class="arch-vstack-num">2</div>Init FieldCursors (所有段所有 K)</div>
+                <div class="arch-vstack-item"><div class="arch-vstack-num">3</div>mergeCursors: peek → needMatch=K → check top K</div>
+                <div class="arch-vstack-item"><div class="arch-vstack-num">4</div>Include → Collect DocID; Exclude → ShortCircuit</div>
+                <div class="arch-vstack-item"><div class="arch-vstack-num">5</div>Advance + Compact → 循环直到耗尽</div>
+              </div>
+            </div>
+            <div class="arch-subgroup-box">
+              <div class="arch-subgroup-title">Wildcard (Z-Entry) Handling</div>
+              <div class="arch-grid arch-grid-2">
+                <div class="arch-box tech">段内 Wildcards<br><small>per-segment sidecar</small></div>
+                <div class="arch-box tech">引擎合并<br><small>NewFieldCursor(wildIters...)</small></div>
+                <div class="arch-box tech">K=0 短路<br><small>needMatchCnt=1</small></div>
+                <div class="arch-box tech">无需加载时合并<br><small>查询时懒归并</small></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="arch-layer user">
+          <div class="arch-layer-title">Loader / Manifest — 冷启动与热加载</div>
+          <div class="arch-grid arch-grid-3">
+            <div class="arch-box highlight">OpenIndex()<br><small>读 CURRENT → LoadSnapshot</small></div>
+            <div class="arch-box">Holder<br><small>atomic.Pointer 热切换</small></div>
+            <div class="arch-box">Manifest v1<br><small>Full + Deltas + SchemaHash</small></div>
+          </div>
+          <div class="arch-subgroup">
+            <div class="arch-subgroup-box">
+              <div class="arch-subgroup-title">Cold Start Flow</div>
+              <div class="arch-vstack">
+                <div class="arch-vstack-item"><div class="arch-vstack-num">1</div>Read CURRENT → Manifest JSON</div>
+                <div class="arch-vstack-item"><div class="arch-vstack-num">2</div>Validate SchemaHash + Version</div>
+                <div class="arch-vstack-item"><div class="arch-vstack-num">3</div>OpenSegmentFile (mmap 推荐)</div>
+                <div class="arch-vstack-item"><div class="arch-vstack-num">4</div>NewBooleanEngine(fields, wildcards, segs)</div>
+                <div class="arch-vstack-item"><div class="arch-vstack-num">5</div>NewCompositeEngine(snapshot)</div>
+              </div>
+            </div>
+            <div class="arch-subgroup-box">
+              <div class="arch-subgroup-title">Live Reload (Atomic Swap)</div>
+              <div class="arch-vstack">
+                <div class="arch-vstack-item"><div class="arch-vstack-num">1</div>新 Manifest 发布 → 写新 CURRENT</div>
+                <div class="arch-vstack-item"><div class="arch-vstack-num">2</div>LoadSnapshot() 新 Engine</div>
+                <div class="arch-vstack-item"><div class="arch-vstack-num">3</div>Holder.Swap(newEngine)</div>
+                <div class="arch-vstack-item"><div class="arch-vstack-num">4</div>旧 Engine.Close() 异步回收</div>
+                <div class="arch-vstack-item"><div class="arch-vstack-num">5</div>Finalizer 兜底 munmap</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="arch-layer external">
+          <div class="arch-layer-title">🎯 Target Use Cases — 广告定向 / 规则引擎 / 推荐过滤</div>
+          <div class="arch-grid arch-grid-6">
+            <div class="arch-box tech">Ad Targeting<br><small>user_tags IN [sports, male]</small></div>
+            <div class="arch-box tech">Risk Rules<br><small>amount > 1000 AND geo != CN</small></div>
+            <div class="arch-box tech">Rec Filter<br><small>category IN [A,B] AND price < 50</small></div>
+            <div class="arch-box tech">Feature Flags<br><small>user_id IN [allowlist]</small></div>
+            <div class="arch-box tech">AB Test Buckets<br><small>bucket % 10 == 0</small></div>
+            <div class="arch-box tech">Complex DNF<br><small>(A AND B) OR (C AND D)</small></div>
+          </div>
+        </div>
+      </div>
+      <div class="arch-sidebar">
+        <div class="arch-sidebar-panel"><div class="arch-sidebar-title">Dependency Flow</div><div class="arch-sidebar-item">core → (no deps)</div><div class="arch-sidebar-item">parser → core</div><div class="arch-sidebar-item">segment → core</div><div class="arch-sidebar-item">builder → core, parser, segment</div><div class="arch-sidebar-item">engine → core, parser, segment</div><div class="arch-sidebar-item">loader → core, engine, manifest, segment</div><div class="arch-sidebar-item">manifest → core</div></div>
+        <div class="arch-sidebar-panel"><div class="arch-sidebar-title">Key Design Principles</div><div class="arch-sidebar-item">Read/Write Separation</div><div class="arch-sidebar-item">Unidirectional Deps</div><div class="arch-sidebar-item">Immutable Segments</div><div class="arch-sidebar-item">Zero-Copy Hot Path</div><div class="arch-sidebar-item">Pluggable Containers</div><div class="arch-sidebar-item">No Panic in Retrieve</div></div>
+        <div class="arch-sidebar-panel"><div class="arch-sidebar-title">Data Flow</div><div class="arch-sidebar-item">Documents → Builder</div><div class="arch-sidebar-item">Builder → Segments (.bei)</div><div class="arch-sidebar-item">Segments → Loader</div><div class="arch-sidebar-item">Loader → Holder (atomic)</div><div class="arch-sidebar-item">Holder → Engine</div><div class="arch-sidebar-item">Engine → Query Result</div></div>
+        <div class="arch-sidebar-panel"><div class="arch-sidebar-title">Testing Strategy</div><div class="arch-sidebar-item">GoConvey BDD Tests</div><div class="arch-sidebar-item">Shadow Testing (100%)</div><div class="arch-sidebar-item">mmap Cross-Platform</div><div class="arch-sidebar-item">Benchmarks: skiplist, heap</div><div class="arch-sidebar-item">go vet ./...</div></div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

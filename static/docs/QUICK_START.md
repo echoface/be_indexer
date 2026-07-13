@@ -1,167 +1,224 @@
-# 快速入门指南
+# Quick Start
 
-本指南将帮助您快速上手 `be_indexer`，利用最新的读写分离与 mmap 零拷贝架构，实现千万级布尔规则的高性能匹配。
+## 1. Define Schema
 
-## 目录
-
-1. [核心概念](#核心概念)
-2. [环境要求](#环境要求)
-3. [三步构建你的第一个检索引擎](#三步构建你的第一个检索引擎)
-4. [常见问题 (FAQ)](#常见问题)
-
----
-
-## 核心概念
-
-在使用新版 `be_indexer` 之前，您只需要理解三个简单的领域包划分：
-
-1. **`builder` (编译层)**：将人类和业务可读的 `Document` 列表转化为高度压缩的二进制物理段文件 (`.seg`)。
-2. **`segment` (存储层)**：封装了底层的二进制流，通过 `MmapReader` 将文件以零拷贝的形式映射到内存中。
-3. **`engine` (执行层)**：也就是 `BooleanEngine`，它接收用户的查询特征 (`Assignments`)，在 `MmapReader` 提供的底层数据上执行飞速的条件求交。
-
----
-
-## 环境要求
-
-- Go 1.18+ (推荐使用 1.20+)
-- 支持 `mmap` 的操作系统 (Linux, macOS, Unix-like)
-
-```bash
-go get github.com/echoface/be_indexer
-```
-
----
-
-## 三步构建你的第一个检索引擎
-
-我们将模拟一个简单的商品定向投放场景。
-
-### 第一步：定义特征字典与规则文档
-
-首先，我们需要告诉引擎有哪些字段，以及它们的解析方式。
-然后，我们将业务规则包装为 `core.Document` 列表。
+Define which fields to index and how values are tokenized:
 
 ```go
-package main
+import "github.com/echoface/be_indexer"
 
-import (
-    "fmt"
-    "os"
-    "github.com/echoface/be_indexer/core"
-    "github.com/echoface/be_indexer/builder"
-    "github.com/echoface/be_indexer/segment"
-    "github.com/echoface/be_indexer/engine"
+fields := map[be_indexer.BEField]*be_indexer.FieldMeta{
+    "age": {
+        ID:    1,
+        Field: "age",
+        FieldOption: be_indexer.FieldOption{
+            Container: be_indexer.IndexNameDefault,
+            Tokenizer: "number",
+        },
+    },
+    "city": {
+        ID:    2,
+        Field: "city",
+        FieldOption: be_indexer.FieldOption{
+            Container: be_indexer.IndexNameDefault,
+            Tokenizer: "default",
+        },
+    },
+}
+
+// For range queries ("age > 18"):
+fields["age"].FieldOption.Container = be_indexer.IndexNameExtendRange
+
+// For substring matching ("tag contains 'premium'"):
+fields["tag"].FieldOption.Container = be_indexer.IndexNameACMatcher
+```
+
+## 2. Build Documents
+
+Documents encode ad targeting rules in DNF (OR of ANDs):
+
+```go
+// Doc 1: age in [18,25] AND city = "beijing"
+doc1 := be_indexer.NewDocument(1)
+c1 := be_indexer.NewConjunction()
+c1.In("age", be_indexer.NewIntValues(18, 25))
+c1.In("city", be_indexer.NewStrValues("beijing"))
+doc1.AddConjunction(c1)
+
+// Doc 2: city NOT IN "rural"  (K=0 wildcard)
+doc2 := be_indexer.NewDocument(2)
+c2 := be_indexer.NewConjunction()
+c2.NotIn("city", be_indexer.NewStrValues("rural"))
+doc2.AddConjunction(c2)
+
+// Doc 3: age > 30 AND (tag contains "vip" OR "premium")
+doc3 := be_indexer.NewDocument(3)
+c3 := be_indexer.NewConjunction()
+c3.GreaterThan("age", 30)
+c3.In("tag", be_indexer.NewStrValues("vip"))
+c3.In("tag", be_indexer.NewStrValues("premium"))
+doc3.AddConjunction(c3)
+
+docs := []*be_indexer.Document{doc1, doc2, doc3}
+```
+
+## 3. Build & Query (Single Segment)
+
+```go
+// Build
+buf := new(bytes.Buffer)
+wildcards, err := be_indexer.BuildSegment(buf, fields, docs)
+
+// Load
+reader, err := be_indexer.NewSegmentReader(buf.Bytes())
+engine := be_indexer.NewEngine(fields, wildcards, []*be_indexer.SegmentReader{reader})
+
+// Query
+result, err := engine.Retrieve(be_indexer.Assignments{
+    "age":  []int{20},
+    "city": []string{"beijing"},
+})
+// result → BitmapDocSet containing DocID 1 and 2
+```
+
+## 4. Production: Full + Delta with mmap
+
+In production, data is built offline and loaded via mmap for zero-copy serving.
+
+### Build
+
+```go
+// Full index (daily batch)
+fullOpt := be_indexer.FullIndexBuildOption{
+    Root:       "/data/index",
+    Generation: 20240701,
+    Fields:     fields,
+}
+full := be_indexer.NewFullIndexBuilder(fullOpt)
+for _, doc := range allDocs {
+    if err := full.AddDocument(doc); err != nil {
+        // handle
+    }
+}
+fullDesc, err := full.Build()
+// → /data/index/full/full-20240701/segment-000000.bei ...
+```
+
+```go
+// Delta index (incremental, every 5 min)
+deltaOpt := be_indexer.DeltaIndexBuildOption{
+    Root:                   "/data/index",
+    Generation:             202407010001,
+    FromWatermarkExclusive: 0,
+    ToWatermarkInclusive:   snapshotWatermark,
+    Fields:                 fields,
+}
+delta := be_indexer.NewDeltaIndexBuilder(deltaOpt)
+for _, m := range mutations { // Mutation{Op: Upsert/Delete, DocID, Doc}
+    delta.Add(m)
+}
+deltaDesc, err := delta.Build()
+// → /data/index/delta/delta-202407010001/segment-000000.bei
+//                                      changed_docs.bin
+//                                      deleted_docs.bin
+```
+
+```go
+// Publish manifest
+manifest, err := be_indexer.NewSnapshotManifest(be_indexer.SnapshotManifestRequest{
+    Full:   fullDesc,
+    Deltas: []be_indexer.DeltaIndexDescriptor{deltaDesc},
+})
+be_indexer.PublishManifest("/data/index", "manifest-1.json", manifest)
+// → /data/index/manifests/manifest-1.json
+// → /data/index/CURRENT → "manifests/manifest-1.json"
+```
+
+### Serve
+
+```go
+// Cold start
+engine, err := be_indexer.OpenIndex("/data/index", fields,
+    be_indexer.LoaderOptions{UseMmap: true},
 )
-
-func main() {
-    // 1. 定义字段元数据
-    fieldsMeta := map[core.BEField]*core.FieldMeta{
-        "age": {
-            Field: "age", ID: 1, 
-            FieldOption: core.FieldOption{Container: core.IndexNameDefault, Tokenizer: "number"},
-        },
-        "city": {
-            Field: "city", ID: 2, 
-            FieldOption: core.FieldOption{Container: core.IndexNameDefault, Tokenizer: "default"},
-        },
-    }
-
-    // 2. 构造商品可见性规则
-    // 商品A(ID: 1): 只投放给 18-25岁 的 北京 用户
-    docA := core.NewDocument(1)
-    conjA := core.NewConjunction()
-    conjA.In("age", core.NewIntValues(18, 25))
-    conjA.In("city", core.NewStrValues("beijing"))
-    docA.AddConjunction(conjA)
-
-    // 商品B(ID: 2): 只要不是 农村 的用户都能看 (这是一个纯 Exclude 规则)
-    docB := core.NewDocument(2)
-    conjB := core.NewConjunction()
-    conjB.NotIn("city", core.NewStrValues("rural"))
-    docB.AddConjunction(conjB)
-
-    docs := []*core.Document{docA, docB}
+results, err := engine.Retrieve(assignments)
 ```
 
-### 第二步：编译为物理段文件
-
-我们将刚才的规则列表转为紧凑的二进制段。在生产中，这通常发生在一个分布式的离线 Hadoop/Spark 任务或者单独的 Builder 进程中。
-
 ```go
-    // 3. 创建物理文件并导出
-    file, err := os.Create("goods.seg")
-    if err != nil {
-        panic(err)
-    }
-    
-    // wildcards 包含了 K=0 (如只有排除条件) 的特殊项，需要被引擎妥善保管
-    wildcards, err := builder.BuildSegmentFromDocs(file, fieldsMeta, docs)
-    if err != nil {
-        panic(err)
-    }
-    file.Close()
+// With live reload
+holder := be_indexer.NewIndexHolder("/data/index", fields,
+    be_indexer.LoaderOptions{UseMmap: true},
+)
+go func() {
+    ctx := context.Background()
+    holder.Watch(ctx, 30*time.Second) // auto-reload on manifest change
+}()
+
+// All readers get the latest snapshot
+results, err := holder.Engine().Retrieve(assignments)
 ```
 
-### 第三步：零拷贝加载与在线检索
+## 5. Multi-Segment Build
 
-现在我们来到了在线检索进程（比如一个高并发的 Web API 服务）。
+For large datasets, split across segments to bound peak memory:
 
 ```go
-    // 4. 零拷贝加载物理段 (生产环境中推荐使用 syscall.Mmap 以获得真正的 Zero-Copy)
-    fileData, err := os.ReadFile("goods.seg")
-    if err != nil {
-        panic(err)
-    }
-    segReader, err := segment.NewMmapReader(fileData)
-    if err != nil {
-        panic(err)
-    }
+wildcards, segCount, err := be_indexer.BuildSegments(
+    func(segIdx int) (io.Writer, error) {
+        return os.Create(fmt.Sprintf("segment_%d.bei", segIdx))
+    },
+    fields,
+    docs,
+    be_indexer.BuildOptions{MaxDocsPerSegment: 1_000_000},
+)
+```
 
-    // 5. 初始化在线查询引擎
-    searcher := engine.NewBooleanEngine(fieldsMeta, wildcards, []*segment.MmapReader{segReader})
+## 6. Observability
 
-    // 6. 模拟用户请求并执行检索
-    
-    // 场景1: 20岁的北京用户
-    req1 := core.Assignments{
-        "age":  []int{20},
-        "city": []string{"beijing"},
-    }
-    res1, _ := searcher.Retrieve(req1)
-    fmt.Println("20岁北京用户 可见的商品:", res1) // 应该匹配商品A 和 商品B(不是农村) -> [1, 2]
+```go
+type obs struct{ matchCount int }
 
-    // 场景2: 40岁的农村用户
-    req2 := core.Assignments{
-        "age":  []int{40},
-        "city": []string{"rural"},
-    }
-    res2, _ := searcher.Retrieve(req2)
-    fmt.Println("40岁农村用户 可见的商品:", res2) // 商品A年龄不符，商品B排除了农村 -> []
+func (o *obs) OnRetrieveStart(ctx *be_indexer.RetrieveContext) {}
+func (o *obs) OnRetrieveEnd(ctx *be_indexer.RetrieveContext)   {}
+func (o *obs) OnMatch(docID be_indexer.DocID, conjID be_indexer.ConjID)   { o.matchCount++ }
+func (o *obs) OnExcludeSkip(docID be_indexer.DocID)                       {}
+func (o *obs) OnCursorInit(fieldCount int)                                {}
+
+results, _ := engine.Retrieve(assignments,
+    be_indexer.WithObserver(&obs{}),
+)
+```
+
+## 7. Compaction
+
+Monitor index health and trigger merges:
+
+```go
+manifest, _ := be_indexer.LoadSnapshot(root, fields, opts)
+
+stats := be_indexer.CollectCompactStats(manifest)
+decision := be_indexer.DecideCompact(stats, be_indexer.DefaultCompactPolicy)
+
+switch decision.Decision {
+case be_indexer.CompactDecisionMajor:
+    // Full rebuild needed (many deltas / old full)
+case be_indexer.CompactDecisionMinor:
+    // Merge deltas (reduce delta count)
+case be_indexer.CompactDecisionNone:
+    // Healthy
 }
 ```
 
 ---
 
-## 常见问题 (FAQ)
+## Migration from v1/v2
 
-### 1. 什么是 `wildcards`？为什么引擎需要它？
-`builder.BuildSegmentFromDocs` 除了生成二进制文件，还会返回一个 `wildcards` 数组。
-这是因为存在一些**没有任何包含条件**（如纯 Exclude 规则，或什么条件都没配置）的规则。这些规则在查询时不需要走底层倒排链的提取，而是引擎在处理前置 K=0 的层级时直接介入的。因此在分发 `.seg` 文件时，请务必连同这部分 `wildcards` 一并分发给查询节点（可以序列化为旁路的 JSON）。
+| Old (v1) | New (v3+) |
+|:---------|:----------|
+| `segment.MmapReader` | `segment.SegmentReader` |
+| `segment.NewMmapReader(data)` | `segment.NewSegmentReader(data)` |
+| `segment.OpenMmapFile(path)` | `segment.OpenSegmentFile(path)` |
+| `engine.NewBooleanEngine(fields, wc, [reader])` | same signature (unchanged) |
+| Wildcards returned from build, passed to engine | Wildcards embedded in segment; engine reads from segments (pass `nil`) |
 
-### 2. 为什么我在段文件中看不到原来的字符串特征了？
-物理段内部的 `FlatDict` 和 `FlatPostingList` 是高度汇编化的。所有字符串都在编译阶段被去重、哈希/排序，被转化为了位元结构的 `EntryID`，这是 `be_indexer` 性能极高的秘诀之一。
-
-### 3. 如何动态更新或者删除规则？
-新版架构中 Segment 是完全不可变的（Immutable）。
-若要实现动态删除，请使用 `engine` 暴露的 **LiveDocs** 机制：
-```go
-liveDocs := core.NewLiveDocs()
-liveDocs.Add(1) // 标记文档 1 为存活
-// 文档 2 被移除
-searcher.SetLiveDocs(liveDocs)
-```
-检索时，引擎会自动过滤掉未在 `LiveDocs` 中的 `DocID`。增量的新文档则可以编译为一个新的 `.seg`，作为新的 `MmapReader` 挂载到 `BooleanEngine` 的 `segments` 数组中。
-
----
-
-更多高阶功能（如 AC多模式匹配，紧凑 ID 编解码），请参考 [API 参考文档](./API_REFERENCE.md) 和 [设计原理](./ARCHITECTURE.md)。
+The older `wildcards` parameter to `NewBooleanEngine` is still accepted but no longer used — the engine reads wildcards directly from segments for lazy K-way merge at query time.

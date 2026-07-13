@@ -8,6 +8,7 @@
 2. [广告定向系统](#广告定向系统)
 3. [多模式子串匹配 (AC自动机)](#多模式子串匹配-ac自动机)
 4. [高级排异 (Exclude) 与 Z-Entry](#高级排异-exclude-与-z-entry)
+5. [全量+增量索引与在线服务](#全量增量索引与在线服务)
 
 ---
 
@@ -61,13 +62,13 @@ func main() {
 
     // 4. 零拷贝加载
     fileData, _ := os.ReadFile("base.seg") // 生产推荐使用 syscall.Mmap
-    segReader, err := segment.NewMmapReader(fileData)
+    segReader, err := segment.NewSegmentReader(fileData)
     if err != nil {
         panic(err)
     }
 
     // 5. 初始化查询引擎
-    searcher := engine.NewBooleanEngine(fieldsMeta, wildcards, []*segment.MmapReader{segReader})
+    searcher := engine.NewBooleanEngine(fieldsMeta, wildcards, []*segment.SegmentReader{segReader})
 
     // 6. 执行检索
     assigns := core.Assignments{
@@ -131,8 +132,8 @@ func main() {
     wildcards, _ := builder.BuildSegmentFromDocs(&segBuf, fieldsMeta, adRules)
 
     // 加载引擎
-    segReader, _ := segment.NewMmapReader(segBuf.Bytes())
-    searcher := engine.NewBooleanEngine(fieldsMeta, wildcards, []*segment.MmapReader{segReader})
+    segReader, _ := segment.NewSegmentReader(segBuf.Bytes())
+    searcher := engine.NewBooleanEngine(fieldsMeta, wildcards, []*segment.SegmentReader{segReader})
 
     // 模拟用户画像请求
     userProfiles := []core.Assignments{
@@ -199,8 +200,8 @@ func main() {
     var segBuf bytes.Buffer
     wildcards, _ := builder.BuildSegmentFromDocs(&segBuf, fieldsMeta, rules)
 
-    segReader, _ := segment.NewMmapReader(segBuf.Bytes())
-    searcher := engine.NewBooleanEngine(fieldsMeta, wildcards, []*segment.MmapReader{segReader})
+    segReader, _ := segment.NewSegmentReader(segBuf.Bytes())
+    searcher := engine.NewBooleanEngine(fieldsMeta, wildcards, []*segment.SegmentReader{segReader})
 
     // 测试长文本匹配
     texts := []string{
@@ -255,8 +256,8 @@ func main() {
     // Wildcards 将会捕获这个纯 Exclude 规则
     wildcards, _ := builder.BuildSegmentFromDocs(&segBuf, fieldsMeta, rules)
 
-    segReader, _ := segment.NewMmapReader(segBuf.Bytes())
-    searcher := engine.NewBooleanEngine(fieldsMeta, wildcards, []*segment.MmapReader{segReader})
+    segReader, _ := segment.NewSegmentReader(segBuf.Bytes())
+    searcher := engine.NewBooleanEngine(fieldsMeta, wildcards, []*segment.SegmentReader{segReader})
 
     // 测试不同设备的命中情况
     queryAndroid := core.Assignments{"device": []string{"android"}}
@@ -268,4 +269,133 @@ func main() {
     fmt.Println("Android 命中:", res1) // 输出: [9001]
     fmt.Println("iOS 命中:", res2)     // 输出: []
 }
+
+---
+
+## 全量+增量索引与在线服务
+
+本示例展示生产环境的标准流程：全量构建 → 增量追加 → Manifest 发布 → 在线 mmap 服务。
+
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+    "os"
+    "time"
+
+    "github.com/echoface/be_indexer"
+)
+
+var fields = map[be_indexer.BEField]*be_indexer.FieldMeta{
+    "age":  {ID: 1, Field: "age",  FieldOption: be_indexer.FieldOption{Tokenizer: "number"}},
+    "city": {ID: 2, Field: "city", FieldOption: be_indexer.FieldOption{Tokenizer: "default"}},
+}
+
+func main() {
+    root := "/data/index"
+
+    // ──── 离线：全量构建 ────
+    full := be_indexer.NewFullIndexBuilder(be_indexer.FullIndexBuildOption{
+        Root:       root,
+        Generation: 20240701,
+        Fields:     fields,
+    })
+    for _, doc := range allDocs() {
+        full.AddDocument(doc)
+    }
+    fullDesc, _ := full.Build()
+
+    // ──── 离线：增量构建 ────
+    delta := be_indexer.NewDeltaIndexBuilder(be_indexer.DeltaIndexBuildOption{
+        Root:                   root,
+        Generation:             202407010001,
+        FromWatermarkExclusive: 0,
+        ToWatermarkInclusive:   1 << 60,
+        Fields:                 fields,
+    })
+    for _, m := range latestMutations() {
+        delta.Add(m)  // Mutation{Op: Upsert/Delete, DocID, Doc}
+    }
+    deltaDesc, _ := delta.Build()
+
+    // ──── 离线：发布 Manifest ────
+    manifest, _ := be_indexer.NewSnapshotManifest(be_indexer.SnapshotManifestRequest{
+        Full:   fullDesc,
+        Deltas: []be_indexer.DeltaIndexDescriptor{deltaDesc},
+    })
+    be_indexer.PublishManifest(root, "manifest-1.json", manifest)
+
+    // ──── 在线：加载并服务 ────
+    engine, err := be_indexer.OpenIndex(root, fields,
+        be_indexer.LoaderOptions{UseMmap: true},
+    )
+    if err != nil {
+        panic(err)
+    }
+
+    results, _ := engine.Retrieve(be_indexer.Assignments{
+        "age":  []int{25},
+        "city": []string{"beijing"},
+    })
+    fmt.Println("matched:", results.Cardinality(), "docs")
+
+    // ──── 在线：自动热重载 ────
+    holder := be_indexer.NewIndexHolder(root, fields,
+        be_indexer.LoaderOptions{UseMmap: true},
+    )
+
+    ctx, cancel := context.WithCancel(context.Background())
+    defer cancel()
+
+    go func() {
+        for {
+            select {
+            case <-ctx.Done():
+                return
+            case <-time.After(30 * time.Second):
+                if err := holder.Reload(); err != nil {
+                    fmt.Println("reload failed:", err)
+                }
+            }
+        }
+    }()
+
+    // 所有查询始终获取最新快照
+    http.HandleFunc("/target", func(w http.ResponseWriter, r *http.Request) {
+        result, _ := holder.Engine().Retrieve(assignments(r))
+        fmt.Fprintln(w, result.Cardinality())
+    })
+}
+
+func allDocs() []*be_indexer.Document          { return nil }
+func latestMutations() []be_indexer.Mutation   { return nil }
+func assignments(r *http.Request) be_indexer.Assignments { return nil }
+```
+
+### 查询语义
+
+```
+Result = (FullResult − ChangedDocs) ∪ Σ(DeltaResult − DeletedDocs)
+```
+
+- **ChangedDocs**: 所有增量中发生过变更的 DocID（upsert/delete）
+- **DeletedDocs**: 所有增量中最终被删除的 DocID
+- 后续的增量会通过 LiveDocs 覆盖前序增量中相同 DocID 的结果
+
+### 索引目录结构
+
+```
+/data/index/
+  ├── CURRENT                           → "manifests/manifest-1.json"
+  ├── manifests/manifest-1.json
+  ├── full/full-20240701/
+  │     ├── segment-000000.bei
+  │     └── segment-000001.bei
+  └── delta/delta-202407010001/
+        ├── segment-000000.bei
+        ├── changed_docs.bin
+        └── deleted_docs.bin
+```
 ```

@@ -1,4 +1,6 @@
 go.sum
 .idea
+.cluade
 .DS_Store
+.opencode
 example/playground.go

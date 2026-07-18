@@ -18,14 +18,14 @@ func TestExactTermEncoderUsesTokenizerInBothDirections(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(postings) != 1 || postings[0].Kind != PostingKindTerm || postings[0].Term != "18" {
+	if len(postings) != 1 || postings[0].Record != "18" {
 		t.Fatalf("unexpected build postings: %#v", postings)
 	}
 	queries, err := enc.Query("18")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(queries) != 1 || queries[0].Kind != QueryKindTerm || queries[0].Term != "18" {
+	if len(queries) != 1 || queries[0].Kind != QueryKindTerm || queries[0].Value != "18" {
 		t.Fatalf("unexpected query keys: %#v", queries)
 	}
 }
@@ -42,14 +42,18 @@ func TestRangeEncoderBuildAndQuery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(postings) != 1 || postings[0].Kind != PostingKindRange || postings[0].Lo != 19 {
+	if len(postings) != 1 {
+		t.Fatalf("unexpected range postings: %#v", postings)
+	}
+	rr, ok := postings[0].Record.(core.RangeRecord)
+	if !ok || rr.Lo != 19 {
 		t.Fatalf("unexpected range postings: %#v", postings)
 	}
 	queries, err := enc.Query(25)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(queries) != 1 || queries[0].Kind != QueryKindRange || queries[0].Point != 25 {
+	if len(queries) != 1 || queries[0].Kind != QueryKind(core.IndexNameExtendRange) || queries[0].Value != int64(25) {
 		t.Fatalf("unexpected range query: %#v", queries)
 	}
 }
@@ -66,14 +70,14 @@ func TestACEncoderBuildAndQuery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(postings) != 2 || postings[0].Kind != PostingKindAC || postings[0].Term != "apple" || postings[1].Term != "banana" {
+	if len(postings) != 2 || postings[0].Record != "apple" || postings[1].Record != "banana" {
 		t.Fatalf("unexpected ac postings: %#v", postings)
 	}
 	queries, err := enc.Query([]string{"I love", "apple"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(queries) != 1 || queries[0].Kind != QueryKindAC || queries[0].Text != "I love apple" {
+	if len(queries) != 1 || queries[0].Kind != QueryKind(core.IndexNameACMatcher) || queries[0].Value != "I love apple" {
 		t.Fatalf("unexpected ac query: %#v", queries)
 	}
 }

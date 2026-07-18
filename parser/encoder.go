@@ -9,47 +9,26 @@ import (
 	"github.com/echoface/be_indexer/util"
 )
 
-// PostingKind describes the physical index entry produced by a predicate.
-// It is intentionally segment-oriented: higher layers translate business
-// predicates into these keys, while segment readers/writers only store and
-// retrieve the encoded keys.
-type PostingKind string
-
-const (
-	PostingKindAC    PostingKind = "ac"
-	PostingKindTerm  PostingKind = "term"
-	PostingKindRange PostingKind = "range"
-)
-
 // QueryKind describes the physical lookup key produced from an assignment.
+// The engine routes each kind to the corresponding ContainerReader via ContainerQuery.
 type QueryKind string
 
 const (
-	QueryKindAC    QueryKind = "ac"
-	QueryKindTerm  QueryKind = "term"
-	QueryKindRange QueryKind = "range"
+	QueryKindTerm QueryKind = "term" // Dict fast path via FlatDict binary search
 )
 
 // EncodedPosting is the build-side physical representation of one predicate.
+// Record is a container-defined value; the framework routes it to the
+// container's AddPosting or AddKeyedPosting method.
 type EncodedPosting struct {
-	Kind  PostingKind
-	Term  string
-	Lo    int64
-	Hi    int64
-	// Value carries container-specific build metadata. For built-in containers
-	// (term, ac, range) this is nil. Custom containers use it to pass
-	// configuration or auxiliary data from the encoder to the ContainerBuilder.
-	Value any
+	Record any
 }
 
 // EncodedQuery is the query-side physical representation of one assignment.
+// Kind maps to the container name; Value is container-defined and passed
+// directly to ContainerReader.Retrieve.
 type EncodedQuery struct {
 	Kind  QueryKind
-	Term  string
-	Point int64
-	Text  string
-	// Value carries the raw query payload for custom container types.
-	// The segment container's Retrieve receives this value directly.
 	Value any
 }
 
@@ -195,7 +174,7 @@ func (e ExactTermEncoder) Build(expr *core.ValueExpr) ([]EncodedPosting, error) 
 	terms = util.DistinctString(terms)
 	out := make([]EncodedPosting, 0, len(terms))
 	for _, term := range terms {
-		out = append(out, EncodedPosting{Kind: PostingKindTerm, Term: term})
+		out = append(out, EncodedPosting{Record: term})
 	}
 	return out, nil
 }
@@ -208,7 +187,7 @@ func (e ExactTermEncoder) Query(value interface{}) ([]EncodedQuery, error) {
 	terms = util.DistinctString(terms)
 	out := make([]EncodedQuery, 0, len(terms))
 	for _, term := range terms {
-		out = append(out, EncodedQuery{Kind: QueryKindTerm, Term: term})
+		out = append(out, EncodedQuery{Kind: QueryKindTerm, Value: term})
 	}
 	return out, nil
 }
@@ -227,7 +206,7 @@ func (RangeEncoder) Build(expr *core.ValueExpr) ([]EncodedPosting, error) {
 	}
 	out := make([]EncodedPosting, 0, len(intervals))
 	for _, iv := range intervals {
-		out = append(out, EncodedPosting{Kind: PostingKindRange, Lo: iv.Lo, Hi: iv.Hi})
+		out = append(out, EncodedPosting{Record: core.RangeRecord{Lo: iv.Lo, Hi: iv.Hi}})
 	}
 	return out, nil
 }
@@ -237,7 +216,7 @@ func (RangeEncoder) Query(value interface{}) ([]EncodedQuery, error) {
 	if err != nil {
 		return nil, err
 	}
-	return []EncodedQuery{{Kind: QueryKindRange, Point: point}}, nil
+	return []EncodedQuery{{Kind: QueryKind(core.IndexNameExtendRange), Value: point}}, nil
 }
 
 // ACEncoder translates build-side patterns and query-side text for the AC
@@ -259,7 +238,7 @@ func (ACEncoder) Build(expr *core.ValueExpr) ([]EncodedPosting, error) {
 	patterns = util.DistinctString(patterns)
 	out := make([]EncodedPosting, 0, len(patterns))
 	for _, pattern := range patterns {
-		out = append(out, EncodedPosting{Kind: PostingKindAC, Term: pattern})
+		out = append(out, EncodedPosting{Record: pattern})
 	}
 	return out, nil
 }
@@ -272,5 +251,5 @@ func (ACEncoder) Query(value interface{}) ([]EncodedQuery, error) {
 	if len(parts) == 0 {
 		return nil, nil
 	}
-	return []EncodedQuery{{Kind: QueryKindAC, Text: strings.Join(parts, " ")}}, nil
+	return []EncodedQuery{{Kind: QueryKind(core.IndexNameACMatcher), Value: strings.Join(parts, " ")}}, nil
 }

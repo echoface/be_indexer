@@ -318,8 +318,8 @@ func (ri *RangeIndex) Retrieve(postingBlock []byte, field core.BEField, query in
 }
 
 func init() {
-	RegisterContainer(core.IndexNameExtendRange,
-		func(b []byte) (ContainerReader, error) { return NewRangeIndexReader(b) },
-		nil, // range builder uses BuildRangeIndex directly, not ContainerBuilder
-	)
+	RegisterContainer(core.IndexNameExtendRange, ContainerDef{
+		Reader: func(b []byte) (ContainerReader, error) { return NewRangeIndexReader(b) },
+		Builder: func() ContainerBuilder { return NewRangeBuilder() },
+	})
 }

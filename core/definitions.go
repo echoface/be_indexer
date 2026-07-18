@@ -37,6 +37,7 @@ var (
 // FieldOption specifies how a field should be indexed.
 type FieldOption struct {
 	Container string // index container type: "default", "ac_matcher", "ext_range"
+	Encoder   string // predicate encoder name (empty = use Container)
 	Tokenizer string // value tokenizer name: "default", "number", "geohash"
 }
 
@@ -50,6 +51,11 @@ type FieldMeta struct {
 	FieldOption
 	ID    uint64
 	Field BEField
+}
+
+// RangeRecord is the build-side interval record for ext_range containers.
+type RangeRecord struct {
+	Lo, Hi int64
 }
 
 // --------------------------------------------------------------------------------

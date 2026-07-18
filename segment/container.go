@@ -17,24 +17,39 @@ type ContainerReader interface {
 	Retrieve(postingBlock []byte, field core.BEField, query interface{}) ([]core.PostingIterator, error)
 }
 
-// ContainerBuilder accumulates terms and their PostingRefs during segment
-// construction and compiles them into a serialized byte block. Build is called
-// once per field; after Build the builder is discarded.
-//
-// If the builder also implements ContainerMetaBuilder (an optional interface),
-// the segment writer will call AddMeta when the encoder produced a Value in
-// its EncodedPosting, allowing custom containers to receive per-term metadata.
+// ContainerBuilder receives records and their associated EntryIDs during segment
+// construction. Build is called once per field after all records are consumed;
+// the container writes its own block bytes.
 type ContainerBuilder interface {
-	Add(term string, ref PostingRef)
 	Build() ([]byte, error)
 }
 
-// ContainerMetaBuilder is an optional interface that ContainerBuilder
-// implementations may satisfy. When a PredicateEncoder includes a Value in
-// its EncodedPosting, the segment writer passes it through AddMeta so the
-// container can capture term-specific build metadata.
-type ContainerMetaBuilder interface {
-	AddMeta(term string, ref PostingRef, meta any)
+// BatchBuilder is for containers that accumulate records in document insertion
+// order. The framework calls AddPosting for each record; after all records are
+// consumed, the framework calls Build.
+type BatchBuilder interface {
+	ContainerBuilder
+	AddPosting(record any, entries []core.EntryID) error
+}
+
+// SortableBuilder is for containers whose build benefits from framework-managed
+// external sort and grouping by key. The framework sorts records by (field, key,
+// entry), groups by key, writes a shared FlatPostingList per group, and calls
+// AddKeyedPosting with the resulting PostingRef.
+//
+// Only one of BatchBuilder or SortableBuilder should be implemented per container.
+// The framework detects the interface via type assertion: SortableBuilder first,
+// then BatchBuilder, then Dict fallback.
+type SortableBuilder interface {
+	ContainerBuilder
+	RecordToKey(record any) []byte
+	AddKeyedPosting(key []byte, ref PostingRef, entries []core.EntryID) error
+}
+
+// BlockWriter is the interface through which containers write blocks during Build.
+// The framework tracks offset, alignment, checksum, and BlockIndex registration.
+type BlockWriter interface {
+	WriteBlock(kind string, data []byte) error
 }
 
 // ContainerReaderFactory creates a ContainerReader from serialized block bytes.
@@ -43,45 +58,54 @@ type ContainerReaderFactory func(blockBytes []byte) (ContainerReader, error)
 // ContainerBuilderFactory creates a fresh ContainerBuilder.
 type ContainerBuilderFactory func() ContainerBuilder
 
-type containerEntry struct {
-	reader  ContainerReaderFactory
-	builder ContainerBuilderFactory
+// ContainerDef describes a registered container implementation.
+// Builder and Reader may be nil: a nil Builder means the container uses
+// the default Dict posting path (pure term posting without a separate
+// container block). A nil Reader means queries for this kind are not
+// dispatched via ContainerQuery.
+type ContainerDef struct {
+	Reader  ContainerReaderFactory
+	Builder ContainerBuilderFactory
 }
 
-var containers = map[string]containerEntry{}
+var containers = map[string]ContainerDef{}
 
 // RegisterContainer installs a named container implementation. kind is the
 // container name used in FieldMeta.Container (e.g. "ac_matcher", "ext_range").
-// Both factories must be non-nil. Registration must happen before schema
-// compilation or segment loading; it is not safe for concurrent use.
-func RegisterContainer(kind string, reader ContainerReaderFactory, builder ContainerBuilderFactory) {
-	if reader == nil {
-		panic(fmt.Sprintf("RegisterContainer(%q): nil reader factory", kind))
-	}
+// Registration must happen before schema compilation or segment loading;
+// it is not safe for concurrent use.
+func RegisterContainer(kind string, def ContainerDef) {
 	if _, dup := containers[kind]; dup {
 		panic(fmt.Sprintf("RegisterContainer(%q): duplicate registration", kind))
 	}
-	containers[kind] = containerEntry{reader: reader, builder: builder}
+	containers[kind] = def
 }
 
 // NewContainerReader creates a ContainerReader for the given kind from serialized
-// block bytes. Returns nil, false if the kind is not registered.
+// block bytes.
 func NewContainerReader(kind string, blockBytes []byte) (ContainerReader, error) {
 	e, ok := containers[kind]
 	if !ok {
 		return nil, fmt.Errorf("unknown container kind %q", kind)
 	}
-	return e.reader(blockBytes)
+	if e.Reader == nil {
+		return nil, fmt.Errorf("container kind %q has no reader", kind)
+	}
+	return e.Reader(blockBytes)
 }
 
 // NewContainerBuilder creates a fresh ContainerBuilder for the given kind.
-// Returns nil, false if the kind is not registered.
+// Returns (nil, nil) when the kind is registered but has no Builder
+// (pure Dict posting path). Returns error when the kind is not registered.
 func NewContainerBuilder(kind string) (ContainerBuilder, error) {
-	e, ok := containers[kind]
+	def, ok := containers[kind]
 	if !ok {
 		return nil, fmt.Errorf("unknown container kind %q", kind)
 	}
-	return e.builder(), nil
+	if def.Builder == nil {
+		return nil, nil
+	}
+	return def.Builder(), nil
 }
 
 // HasContainer reports whether a container kind is registered.

@@ -170,8 +170,8 @@ func (ac *ACMmapReader) Retrieve(postingBlock []byte, field core.BEField, query 
 }
 
 func init() {
-	RegisterContainer(core.IndexNameACMatcher,
-		func(b []byte) (ContainerReader, error) { return NewACMmapReader(b) },
-		func() ContainerBuilder { return NewStaticACBuilder() },
-	)
+	RegisterContainer(core.IndexNameACMatcher, ContainerDef{
+		Reader:  func(b []byte) (ContainerReader, error) { return NewACMmapReader(b) },
+		Builder: func() ContainerBuilder { return NewStaticACBuilder() },
+	})
 }

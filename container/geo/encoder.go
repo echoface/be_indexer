@@ -1,148 +1,157 @@
+// Package geo provides radius-based geo targeting ("within R meters of a
+// point") on top of the standard term dictionary — no custom container.
+//
+// Build: the circle (lat, lng, radius) is expanded into a covering set of
+// geohash cells via proximityhash; each cell code is stored as a plain term
+// posting in the field's FlatDict / FlatPostingList.
+//
+// Query: the query point (lat, lng) is geohash-encoded at max precision and
+// expanded into all prefixes of length [minPrecision, maxQueryPrecision];
+// each prefix is a normal term lookup. A non-empty intersection between the
+// query prefixes and any stored covering cell yields a candidate.
+//
+// Registration: only a PredicateEncoder is registered (container name
+// "proximitygeo"). No segment.RegisterContainer call — the segment writers
+// skip container-block building for unregistered kinds, so the field is a
+// pure dictionary field.
 package geo
 
 import (
 	"fmt"
+	"math"
 	"sort"
-	"strings"
+
+	"github.com/echoface/proximityhash"
+	"github.com/mmcloughlin/geohash"
 
 	"github.com/echoface/be_indexer/core"
 	"github.com/echoface/be_indexer/parser"
-	"github.com/echoface/be_indexer/segment"
+	"github.com/echoface/be_indexer/util"
 )
 
-// GeoParam is the build-time predicate value: a center point and radius in meters.
+// ContainerName is the FieldMeta.Container value that selects this encoder.
+const ContainerName = "proximitygeo"
+
+const (
+	// minPrecision bounds compression: stored covering codes are never
+	// shorter than this, and query prefixes start at this length.
+	minPrecision = 3
+	// maxQueryPrecision is the finest stored/queried geohash length (~38m cell).
+	maxQueryPrecision = 8
+	// maxRadiusMeters bounds the covering cell count (~128 cells at precision 3).
+	maxRadiusMeters = 1_000_000
+)
+
+// GeoParam is the build-time predicate value: circle center and radius in meters.
 type GeoParam struct {
 	Lat    float64
 	Lng    float64
-	Radius int // meters
+	Radius int // meters, (0, maxRadiusMeters]
 }
 
-// precisionTable maps cumulative geohash lengths to approximate cell dimensions.
-// Values are approximate (at the equator) and used only for precision selection.
-var precisionTable = []struct {
-	precision int
-	meters    int
-}{
-	{1, 5_000_000},
-	{2, 1_250_000},
-	{3, 156_000},
-	{4, 39_000},
-	{5, 4_900},
-	{6, 1_200},
-	{7, 152},
-	{8, 38},
-	{9, 5},
-	{10, 1},
-}
-
-// geohashBase32 maps 5-bit integers to geohash base32 characters.
-const geohashBase32 = "0123456789bcdefghjkmnpqrstuvwxyz"
-
-// Encoder translates geo predicates into geohash-based postings.
-//
-// Build: GeoParam{Lat, Lng, Radius} → EncodedPosting{Kind: "geo", Term: geohash, Value: GeoParam}
-// Query: GeoPoint{Lat, Lng} → EncodedQuery{Kind: "geo", Value: geohash string}
-type Encoder struct{}
-
-// GeoQuery is the query-side input: a latitude/longitude point.
+// GeoQuery is the query-time assignment value: a point.
 type GeoQuery struct {
 	Lat float64
 	Lng float64
 }
 
-// Build implements PredicateEncoder.Build. It tokenizes a geo predicate into
-// a single geohash term at the appropriate precision for the radius.
-func (e Encoder) Build(expr *core.ValueExpr) ([]parser.EncodedPosting, error) {
-	param, ok := expr.Value.(GeoParam)
-	if !ok {
-		return nil, fmt.Errorf("geo: expected GeoParam, got %T", expr.Value)
-	}
-
-	prec := precisionForRadius(param.Radius)
-	gh := encodeGeohash(param.Lat, param.Lng, prec)
-
-	return []parser.EncodedPosting{
-		{Kind: "geo", Term: gh, Value: param},
-	}, nil
+// precisionTable maps geohash precision (code length) to the approximate
+// cell width in meters (longitude direction at the equator). Values follow
+// proximityhash's grid table.
+var precisionTable = []struct {
+	precision int
+	meters    float64
+}{
+	{3, 156_500},
+	{4, 39_100},
+	{5, 4_900},
+	{6, 1_200},
+	{7, 152},
+	{8, 38},
 }
 
-// Query implements PredicateEncoder.Query. It encodes a query point as a geohash.
-func (e Encoder) Query(value interface{}) ([]parser.EncodedQuery, error) {
-	q, ok := value.(GeoQuery)
-	if !ok {
-		return nil, fmt.Errorf("geo: expected GeoQuery, got %T", value)
-	}
-	prec := 8 // query always uses high precision (cell ~38m)
-	gh := encodeGeohash(q.Lat, q.Lng, prec)
-
-	return []parser.EncodedQuery{
-		{Kind: "geo", Value: gh},
-	}, nil
-}
-
-// precisionForRadius returns the geohash precision that bounds a cell roughly
-// 2x the given radius, so that a prefix match covers the query region.
-func precisionForRadius(radiusMeters int) int {
-	target := radiusMeters * 4
+// PrecisionForRadius picks the coarsest precision whose cell width is at most
+// radius/2, so the over-coverage error (~half cell diagonal) stays a bounded
+// fraction of the radius. Falls back to the finest precision for tiny radii.
+// Callers must validate the radius first (Build enforces (0, maxRadiusMeters]);
+// out-of-range input falls back to the finest precision without error.
+// Reference points (matching docs/geo-design-v3.md §5.1):
+// 50km→5, 5km→6, 1km→7, 100m→8.
+func PrecisionForRadius(radiusMeters int) int {
+	half := float64(radiusMeters) / 2
 	for _, pt := range precisionTable {
-		if pt.meters <= target {
+		if pt.meters <= half {
 			return pt.precision
 		}
 	}
-	return precisionTable[len(precisionTable)-1].precision
+	return maxQueryPrecision
 }
 
-// encodeGeohash encodes (lat, lng) to a geohash string of given precision.
-// This is a simplified implementation with ~5m accuracy at the equator.
-func encodeGeohash(lat, lng float64, precision int) string {
-	var out strings.Builder
-	out.Grow(precision)
-
-	latLo, latHi := -90.0, 90.0
-	lngLo, lngHi := -180.0, 180.0
-	bit := 0
-	ch := 0
-
-	for out.Len() < precision {
-		if bit%2 == 0 {
-			mid := (lngLo + lngHi) / 2
-			if lng > mid {
-				ch = (ch << 1) | 1
-				lngLo = mid
-			} else {
-				ch = (ch << 1) | 0
-				lngHi = mid
-			}
-		} else {
-			mid := (latLo + latHi) / 2
-			if lat > mid {
-				ch = (ch << 1) | 1
-				latLo = mid
-			} else {
-				ch = (ch << 1) | 0
-				latHi = mid
-			}
-		}
-		bit++
-		if bit%5 == 0 {
-			out.WriteByte(geohashBase32[ch])
-			ch = 0
-		}
-	}
-	return out.String()
-}
-
-func init() {
-	parser.RegisterPredicateEncoder("geo", func(core.FieldMeta) (parser.PredicateEncoder, error) {
-		return Encoder{}, nil
-	})
-	segment.RegisterContainer("geo",
-		func(b []byte) (segment.ContainerReader, error) { return NewReader(b) },
-		func() segment.ContainerBuilder { return NewBuilder() },
-	)
-}
+// Encoder implements parser.PredicateEncoder for proximitygeo fields.
+type Encoder struct{}
 
 var _ parser.PredicateEncoder = Encoder{}
 
-// Ensure sort is used
-var _ = sort.Strings
+// Build expands the circle into covering geohash cells and emits one plain
+// term posting per cell. Output is deduplicated and sorted so built segments
+// stay deterministic (CreateGeohash emits duplicates; CompressGeoHash
+// returns map-ordered codes).
+func (e Encoder) Build(expr *core.ValueExpr) ([]parser.EncodedPosting, error) {
+	if expr == nil {
+		return nil, fmt.Errorf("proximitygeo: nil value expression")
+	}
+	param, ok := expr.Value.(GeoParam)
+	if !ok {
+		return nil, fmt.Errorf("proximitygeo: expected geo.GeoParam, got %T", expr.Value)
+	}
+	if err := validateLatLng(param.Lat, param.Lng); err != nil {
+		return nil, err
+	}
+	if param.Radius <= 0 || param.Radius > maxRadiusMeters {
+		return nil, fmt.Errorf("proximitygeo: radius %d out of range (0, %d]", param.Radius, maxRadiusMeters)
+	}
+
+	prec := PrecisionForRadius(param.Radius)
+	codes := proximityhash.CreateGeohash(param.Lat, param.Lng, float64(param.Radius), uint(prec))
+	codes = proximityhash.CompressGeoHash(codes, minPrecision, prec)
+	codes = util.DistinctString(codes)
+	sort.Strings(codes)
+
+	out := make([]parser.EncodedPosting, 0, len(codes))
+	for _, c := range codes {
+		out = append(out, parser.EncodedPosting{Record: c})
+	}
+	return out, nil
+}
+
+// Query geohash-encodes the point at max precision and emits one term lookup
+// per prefix length in [minPrecision, maxQueryPrecision].
+func (e Encoder) Query(value interface{}) ([]parser.EncodedQuery, error) {
+	q, ok := value.(GeoQuery)
+	if !ok {
+		return nil, fmt.Errorf("proximitygeo: expected geo.GeoQuery, got %T", value)
+	}
+	if err := validateLatLng(q.Lat, q.Lng); err != nil {
+		return nil, err
+	}
+
+	gh := geohash.EncodeWithPrecision(q.Lat, q.Lng, maxQueryPrecision)
+	out := make([]parser.EncodedQuery, 0, maxQueryPrecision-minPrecision+1)
+	for p := minPrecision; p <= len(gh); p++ {
+		out = append(out, parser.EncodedQuery{Kind: parser.QueryKindTerm, Value: gh[:p]})
+	}
+	return out, nil
+}
+
+func validateLatLng(lat, lng float64) error {
+	if math.IsNaN(lat) || math.IsNaN(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180 {
+		return fmt.Errorf("proximitygeo: invalid coordinate (%v, %v)", lat, lng)
+	}
+	return nil
+}
+
+func init() {
+	parser.RegisterPredicateEncoder(ContainerName, func(core.FieldMeta) (parser.PredicateEncoder, error) {
+		return Encoder{}, nil
+	})
+}

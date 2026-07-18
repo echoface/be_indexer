@@ -22,7 +22,7 @@ func buildOurAC(t testing.TB, patterns []string) *acHarness {
 	byRef := make(map[uint64]string, len(patterns))
 	for i, p := range patterns {
 		ref := PostingRef{Offset: uint64(i + 1), Count: 1}
-		b.Add(p, ref)
+		b.AddKeyedPosting([]byte(p), ref, nil)
 		byRef[ref.Offset] = p
 	}
 	bin, err := b.Compile()
@@ -189,7 +189,7 @@ func TestACDifferentialFuzz(t *testing.T) {
 func TestACReaderTruncated(t *testing.T) {
 	bin, _ := func() ([]byte, error) {
 		b := NewStaticACBuilder()
-		b.Add("abc", PostingRef{Offset: 1, Count: 1})
+		b.AddKeyedPosting([]byte("abc"), PostingRef{Offset: 1, Count: 1}, nil)
 		return b.Compile()
 	}()
 	if _, err := NewACMmapReader(bin[:6]); err == nil {
@@ -214,7 +214,7 @@ func BenchmarkACBuildChinese(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		bld := NewStaticACBuilder()
 		for j, p := range patterns {
-			bld.Add(p, PostingRef{Offset: uint64(j + 1), Count: 1})
+			bld.AddKeyedPosting([]byte(p), PostingRef{Offset: uint64(j + 1), Count: 1}, nil)
 		}
 		if _, err := bld.Compile(); err != nil {
 			b.Fatal(err)
@@ -226,7 +226,7 @@ func BenchmarkACSearchChinese(b *testing.B) {
 	patterns := []string{"北京", "上海", "广告", "定向广告", "京东", "投放"}
 	bld := NewStaticACBuilder()
 	for j, p := range patterns {
-		bld.Add(p, PostingRef{Offset: uint64(j + 1), Count: 1})
+		bld.AddKeyedPosting([]byte(p), PostingRef{Offset: uint64(j + 1), Count: 1}, nil)
 	}
 	bin, _ := bld.Compile()
 	r, _ := NewACMmapReader(bin)

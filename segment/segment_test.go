@@ -91,7 +91,7 @@ func TestBuilderRangeRoundTrip(t *testing.T) {
 		var sink interface {
 			SetDocCount(int)
 			AddField(core.FieldMeta)
-			AddRangePosting(int, string, int64, int64, core.EntryID) error
+			AddRecord(field, container string, record any, entries []core.EntryID) error
 			Write() error
 		}
 		if external {
@@ -102,7 +102,7 @@ func TestBuilderRangeRoundTrip(t *testing.T) {
 		sink.SetDocCount(4)
 		sink.AddField(field)
 		for _, r := range ranges {
-			if err := sink.AddRangePosting(1, "age", r.lo, r.hi, r.entry); err != nil {
+			if err := sink.AddRecord("age", "ext_range", core.RangeRecord{Lo: r.lo, Hi: r.hi}, []core.EntryID{r.entry}); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -260,7 +260,7 @@ func TestNewSegmentReaderRejectsSegmentV2ACChecksumMismatch(t *testing.T) {
 	writer := NewInMemorySegmentBuilder(buf)
 	writer.SetDocCount(1)
 	writer.AddField(core.FieldMeta{ID: 1, Field: "keyword", FieldOption: core.FieldOption{Container: core.IndexNameACMatcher}})
-	if err := writer.AddPosting(1, "keyword", "apple", []core.EntryID{makeE(1, 20)}); err != nil {
+	if err := writer.AddRecord("keyword", core.IndexNameACMatcher, "apple", []core.EntryID{makeE(1, 20)}); err != nil {
 		t.Fatal(err)
 	}
 	if err := writer.Write(); err != nil {

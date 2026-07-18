@@ -214,19 +214,13 @@ func (e *BooleanEngine) initCursors(
 			for _, q := range ef.queries {
 				switch q.Kind {
 				case parser.QueryKindTerm:
-					it, err := seg.GetPostingsByTerm(field, q.Term)
+					term, ok := q.Value.(string)
+					if !ok {
+						continue
+					}
+					it, err := seg.GetPostingsByTerm(field, term)
 					if err == nil && it != nil {
 						iterators = append(iterators, it)
-					}
-				case parser.QueryKindRange:
-					iters, err := seg.GetRangePostings(field, q.Point)
-					if err == nil && len(iters) > 0 {
-						iterators = append(iterators, iters...)
-					}
-				case parser.QueryKindAC:
-					iters, err := seg.MultiPatternSearch(field, q.Text)
-					if err == nil && len(iters) > 0 {
-						iterators = append(iterators, iters...)
 					}
 				default:
 					iters, err := seg.ContainerQuery(field, string(q.Kind), q.Value)

@@ -76,6 +76,9 @@ go vet ./...
 ├── engine/                 # 在线查询，执行布尔表达式匹配
 │   ├── searcher.go         # BooleanEngine 与 mergeCursors 算法
 │   └── composite.go        # CompositeEngine (full+delta merge)
+├── container/              # 包外容器与编码器
+│   ├── geo/                # proximitygeo: proximityhash 覆盖 cell → 纯 term 索引（无自定义容器）
+│   └── example/            # 自定义 container/encoder 扩展模板（含端到端测试）
 ├── segment/                # Mmap 存储结构管理
 │   ├── segment_builder_mem.go    # InMemorySegmentBuilder
 │   ├── segment_builder_external.go # ExternalBuilder (external sort)

@@ -15,10 +15,10 @@ func TestSegmentACMatcher(t *testing.T) {
 		FieldOption: core.FieldOption{Container: core.IndexNameACMatcher},
 	})
 
-	writer.AddPosting(1, "keyword", "apple", []core.EntryID{makeE(1, 1), makeE(1, 2)})
-	writer.AddPosting(1, "keyword", "app", []core.EntryID{makeE(1, 3), makeE(1, 4)})
-	writer.AddPosting(1, "keyword", "banana", []core.EntryID{makeE(1, 5)})
-	writer.AddPosting(1, "keyword", "tree", []core.EntryID{makeE(1, 6)})
+	writer.AddRecord("keyword", core.IndexNameACMatcher, "apple", []core.EntryID{makeE(1, 1), makeE(1, 2)})
+	writer.AddRecord("keyword", core.IndexNameACMatcher, "app", []core.EntryID{makeE(1, 3), makeE(1, 4)})
+	writer.AddRecord("keyword", core.IndexNameACMatcher, "banana", []core.EntryID{makeE(1, 5)})
+	writer.AddRecord("keyword", core.IndexNameACMatcher, "tree", []core.EntryID{makeE(1, 6)})
 
 	err := writer.Write()
 	if err != nil {

@@ -2,6 +2,8 @@ package segment
 
 import (
 	"encoding/binary"
+
+	"github.com/echoface/be_indexer/core"
 )
 
 // StaticACBuilder builds an Aho-Corasick automaton serialized as a Double-Array
@@ -54,15 +56,33 @@ func (b *StaticACBuilder) internSymbol(ch rune) uint32 {
 	return id
 }
 
-// Add inserts a pattern and associates it with the posting list ref emitted
-// whenever the pattern matches. Empty patterns are ignored.
-func (b *StaticACBuilder) Add(term string, ref PostingRef) {
+// RecordToKey returns the sort key for sortable containers.
+func (b *StaticACBuilder) RecordToKey(record any) []byte {
+	switch v := record.(type) {
+	case string:
+		return []byte(v)
+	case []byte:
+		return v
+	default:
+		return nil
+	}
+}
+
+// AddKeyedPosting receives a sorted, grouped, entry with its PostingRef.
+func (b *StaticACBuilder) AddKeyedPosting(key []byte, ref PostingRef, entries []core.EntryID) error {
+	term := string(key)
+	return b.addPosting(term, ref)
+}
+
+
+
+func (b *StaticACBuilder) addPosting(term string, ref PostingRef) error {
 	termID := uint32(len(b.refs))
 	b.refs = append(b.refs, ref)
 
 	runes := []rune(term)
 	if len(runes) == 0 {
-		return
+		return nil
 	}
 
 	curr := uint32(0)
@@ -72,6 +92,7 @@ func (b *StaticACBuilder) Add(term string, ref PostingRef) {
 	}
 
 	b.outputs[curr] = append(b.outputs[curr], termID)
+	return nil
 }
 
 func (b *StaticACBuilder) addChild(parentIdx uint32, ch rune) uint32 {

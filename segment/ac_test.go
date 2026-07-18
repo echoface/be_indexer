@@ -25,7 +25,7 @@ func TestACBuilderAndReader(t *testing.T) {
 	byRef := make(map[uint64]string, len(words))
 	for i, w := range words {
 		ref := PostingRef{Offset: uint64(i + 1), Count: 1}
-		builder.Add(w, ref)
+		builder.AddKeyedPosting([]byte(w), ref, nil)
 		byRef[ref.Offset] = w
 	}
 

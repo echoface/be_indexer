@@ -32,7 +32,7 @@ type ExternalBuilderOptions struct {
 	WildcardsBlockFile  string
 }
 
-// ExternalBuilder builds the same mmap segment format as Builder, but spills
+// ExternalBuilder builds the same mmap segment format as InMemorySegmentBuilder, but spills
 // sorted posting runs to disk and performs a k-way merge during Write(). It is
 // intended for full builds with millions of documents where materializing all
 // postings in memory is not acceptable.
@@ -47,7 +47,10 @@ type ExternalBuilder struct {
 	records  []postingRecord
 	runFiles []string
 
-	rangeData map[string][]Interval
+	// containers maps: Field -> ContainerBuilder for non-sortable containers
+	containers map[string]ContainerBuilder
+	// sortableFields tracks fields with SortableBuilder containers
+	sortableFields map[string]bool
 
 	// field <-> dense uint16 id used only inside on-disk run records to avoid
 	// repeating the full field name on every posting record.
@@ -76,6 +79,8 @@ func NewExternalBuilder(w io.Writer, tmpDir string, opts ExternalBuilderOptions)
 	}
 	return &ExternalBuilder{
 		fields:             make(map[string]FieldMetaDump),
+		containers:         make(map[string]ContainerBuilder),
+		sortableFields:     make(map[string]bool),
 		w:                  w,
 		tmpDir:             tmpDir,
 		maxRecs:            maxRecs,
@@ -123,33 +128,68 @@ func (b *ExternalBuilder) AddField(meta core.FieldMeta) {
 }
 
 func (b *ExternalBuilder) AddPosting(k int, field string, term string, entries []core.EntryID) error {
+	container := core.IndexNameDefault
+	if fd, ok := b.fields[field]; ok && fd.Container != "" {
+		container = fd.Container
+	}
+	return b.AddRecord(field, container, term, entries)
+}
+
+// AddRecord routes a record and its EntryIDs to the appropriate container
+// or spill record path.
+func (b *ExternalBuilder) AddRecord(field, container string, record any, entries []core.EntryID) error {
 	if _, ok := b.fields[field]; !ok {
 		return fmt.Errorf("field %s not found", field)
 	}
-	for _, entry := range entries {
-		b.records = append(b.records, postingRecord{Field: field, Term: term, Entry: entry})
-		if len(b.records) >= b.maxRecs {
-			if err := b.flushRun(); err != nil {
-				return err
+
+	cb, _ := NewContainerBuilder(container)
+	if _, ok := cb.(SortableBuilder); ok {
+		b.sortableFields[field] = true
+		b.ensureContainer(field, cb)
+		if term, ok := record.(string); ok {
+			for _, entry := range entries {
+				b.records = append(b.records, postingRecord{Field: field, Term: term, Entry: entry})
+				if len(b.records) >= b.maxRecs {
+					if err := b.flushRun(); err != nil {
+						return err
+					}
+				}
 			}
 		}
+		return nil
+	}
+	if cb == nil {
+		// No registered builder: Dict path via spill records
+		for _, entry := range entries {
+			term, ok := record.(string)
+			if !ok {
+				return fmt.Errorf("field %s: Dict posting requires string record, got %T", field, record)
+			}
+			b.records = append(b.records, postingRecord{Field: field, Term: term, Entry: entry})
+			if len(b.records) >= b.maxRecs {
+				if err := b.flushRun(); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}
+	// BatchBuilder or no-op container
+	existing, has := b.containers[field]
+	if !has {
+		b.containers[field] = cb
+		existing = cb
+	}
+	if bb, ok := existing.(BatchBuilder); ok {
+		return bb.AddPosting(record, entries)
 	}
 	return nil
 }
 
-// AddRangePosting records a closed interval for an ext_range field. Range
-// intervals are kept in memory (their count is bounded by the number of range
-// predicates, far smaller than the flattened EQ posting stream) and serialized
-// into a segment-tree block at Write.
-func (b *ExternalBuilder) AddRangePosting(k int, field string, lo, hi int64, entry core.EntryID) error {
-	if _, ok := b.fields[field]; !ok {
-		return fmt.Errorf("field %s not found", field)
+func (b *ExternalBuilder) ensureContainer(field string, cb ContainerBuilder) {
+	if _, ok := b.containers[field]; !ok {
+		b.containers[field] = cb
 	}
-	if b.rangeData == nil {
-		b.rangeData = make(map[string][]Interval)
-	}
-	b.rangeData[field] = append(b.rangeData[field], Interval{Lo: lo, Hi: hi, Entry: entry})
-	return nil
 }
 
 func (b *ExternalBuilder) Write() error {
@@ -169,7 +209,7 @@ func (b *ExternalBuilder) Write() error {
 		return err
 	}
 
-	if err := b.writeRangeBlocks(blockIndex); err != nil {
+	if err := b.writeContainerBlocks(blockIndex); err != nil {
 		return err
 	}
 
@@ -365,21 +405,31 @@ func (b *ExternalBuilder) writeMergedBlocks() (map[string]BlockDef, error) {
 		blockIndex[postingsBlockName] = BlockDef{Field: currentField, Kind: BlockKindPostings, Offset: postingsOffset, Size: postingsSize}
 
 		meta := b.fields[currentField]
-		if cb, err := NewContainerBuilder(meta.Container); err == nil && cb != nil {
+		cb, _ := NewContainerBuilder(meta.Container)
+		if sb, ok := cb.(SortableBuilder); ok {
 			for _, item := range dict.items {
 				term := string(dict.terms[item.termStart : item.termStart+item.termLen])
-				cb.Add(term, PostingRef{Offset: item.postingOff, Count: item.postingCount})
+				ref := PostingRef{Offset: item.postingOff, Count: item.postingCount}
+				if err := sb.AddKeyedPosting([]byte(term), ref, nil); err != nil {
+					return fmt.Errorf("failed to add keyed posting to %s for field %s: %w", meta.Container, currentField, err)
+				}
 			}
 			blockBytes, err := cb.Build()
 			if err != nil {
 				return fmt.Errorf("failed to build container %q for field %s: %w", meta.Container, currentField, err)
 			}
-			containerBlockName := blockName(currentField) + "_" + meta.Container
-			containerOffset := b.offset
-			if err := b.writeChecksummedBlock(containerBlockName, blockBytes); err != nil {
-				return err
+			if len(blockBytes) > 0 {
+				kind := meta.Container
+				if kind == "" {
+					kind = core.IndexNameDefault
+				}
+				containerBlockName := containerBlockName(currentField, kind)
+				containerOffset := b.offset
+				if err := b.writeChecksummedBlock(containerBlockName, blockBytes); err != nil {
+					return err
+				}
+				blockIndex[containerBlockName] = BlockDef{Field: currentField, Kind: kind, Offset: containerOffset, Size: b.offset - containerOffset}
 			}
-			blockIndex[containerBlockName] = BlockDef{Field: currentField, Kind: meta.Container, Offset: containerOffset, Size: b.offset - containerOffset}
 		}
 
 		dictOffset := b.offset
@@ -435,29 +485,36 @@ func (b *ExternalBuilder) writeMergedBlocks() (map[string]BlockDef, error) {
 	return blockIndex, nil
 }
 
-// writeRangeBlocks serializes ext_range segment-tree blocks (all K merged)
-// deterministically ordered by field and records them in blockIndex.
-func (b *ExternalBuilder) writeRangeBlocks(blockIndex map[string]BlockDef) error {
+// writeContainerBlocks builds blocks for non-sortable containers that accumulate data
+// during AddRecord, and records them in blockIndex.
+func (b *ExternalBuilder) writeContainerBlocks(blockIndex map[string]BlockDef) error {
 	var fields []string
-	for f := range b.rangeData {
+	for f := range b.containers {
+		if b.sortableFields[f] {
+			continue
+		}
 		fields = append(fields, f)
 	}
 	sort.Strings(fields)
 	for _, field := range fields {
-		intervals := b.rangeData[field]
-		rangeBytes, err := BuildRangeIndex(intervals)
+		cb := b.containers[field]
+		meta := b.fields[field]
+		blockBytes, err := cb.Build()
 		if err != nil {
-			return fmt.Errorf("failed to build range index for field %s: %w", field, err)
+			return fmt.Errorf("failed to build container for field %s: %w", field, err)
 		}
+		if len(blockBytes) == 0 {
+			continue
+		}
+		name := containerBlockName(field, meta.Container)
 		if err := b.alignTo8(); err != nil {
 			return err
 		}
-		name := containerBlockName(field, BlockKindRange)
 		offset := b.offset
-		if err := b.writeChecksummedBlock(name, rangeBytes); err != nil {
+		if err := b.writeChecksummedBlock(name, blockBytes); err != nil {
 			return err
 		}
-		blockIndex[name] = BlockDef{Field: field, Kind: BlockKindRange, Offset: offset, Size: b.offset - offset}
+		blockIndex[name] = BlockDef{Field: field, Kind: meta.Container, Offset: offset, Size: b.offset - offset}
 	}
 	return nil
 }

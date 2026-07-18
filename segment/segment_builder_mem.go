@@ -35,8 +35,10 @@ type InMemorySegmentBuilder struct {
 	fields   map[string]FieldMetaDump
 	// fieldData maps: Field -> FieldData (all K values merged)
 	fieldData map[string]*FieldData
-	// rangeData maps: Field -> intervals for ext_range fields (all K merged).
-	rangeData map[string][]Interval
+	// containers maps: Field -> ContainerBuilder for non-sortable containers
+	containers map[string]ContainerBuilder
+	// sortableFields tracks which fields have SortableBuilder containers
+	sortableFields map[string]bool
 
 	// Output
 	w      io.Writer
@@ -58,7 +60,8 @@ func NewInMemorySegmentBuilderWithOptions(w io.Writer, opts InMemorySegmentBuild
 	return &InMemorySegmentBuilder{
 		fields:         make(map[string]FieldMetaDump),
 		fieldData:      make(map[string]*FieldData),
-		rangeData:      make(map[string][]Interval),
+		containers:     make(map[string]ContainerBuilder),
+		sortableFields: make(map[string]bool),
 		w:              w,
 		schemaHash:     opts.SchemaHash,
 		wildcards:      append(core.Entries(nil), opts.Wildcards...),
@@ -99,32 +102,64 @@ func (sw *InMemorySegmentBuilder) ensureFieldData(field string) *FieldData {
 	return fd
 }
 
-func (sw *InMemorySegmentBuilder) AddPosting(k int, field string, term string, entries []core.EntryID) error {
+func (sw *InMemorySegmentBuilder) ensureContainer(field string, cb ContainerBuilder) {
+	if _, ok := sw.containers[field]; !ok {
+		sw.containers[field] = cb
+	}
+}
+
+// AddRecord routes a record and its EntryIDs to the appropriate container or Dict posting path.
+func (sw *InMemorySegmentBuilder) AddRecord(field, container string, record any, entries []core.EntryID) error {
 	if _, ok := sw.fields[field]; !ok {
 		return fmt.Errorf("field %s not found", field)
 	}
-	fd := sw.ensureFieldData(field)
-	fd.Postings[term] = append(fd.Postings[term], entries...)
+
+	cb, _ := NewContainerBuilder(container)
+	if cb == nil {
+		// No registered builder: Dict path via term postings
+		term, ok := record.(string)
+		if !ok {
+			return fmt.Errorf("field %s: Dict posting requires string record, got %T", field, record)
+		}
+		fd := sw.ensureFieldData(field)
+		fd.Postings[term] = append(fd.Postings[term], entries...)
+		return nil
+	}
+	if _, ok := cb.(SortableBuilder); ok {
+		sw.sortableFields[field] = true
+		if term, ok := record.(string); ok {
+			fd := sw.ensureFieldData(field)
+			fd.Postings[term] = append(fd.Postings[term], entries...)
+		}
+		sw.ensureContainer(field, cb)
+		return nil
+	}
+	// BatchBuilder or no-op container
+	existing, has := sw.containers[field]
+	if !has {
+		sw.containers[field] = cb
+		existing = cb
+	}
+	if bb, ok := existing.(BatchBuilder); ok {
+		return bb.AddPosting(record, entries)
+	}
 	return nil
 }
 
-// AddRangePosting records a closed interval [lo, hi] -> entry mapping for an
-// ext_range field. Intervals are materialized into a segment-tree block at Write.
-func (sw *InMemorySegmentBuilder) AddRangePosting(k int, field string, lo, hi int64, entry core.EntryID) error {
-	if _, ok := sw.fields[field]; !ok {
-		return fmt.Errorf("field %s not found", field)
+// AddPosting is deprecated; use AddRecord instead.
+func (sw *InMemorySegmentBuilder) AddPosting(k int, field string, term string, entries []core.EntryID) error {
+	container := core.IndexNameDefault
+	if fd, ok := sw.fields[field]; ok && fd.Container != "" {
+		container = fd.Container
 	}
-	sw.rangeData[field] = append(sw.rangeData[field], Interval{Lo: lo, Hi: hi, Entry: entry})
-	return nil
+	return sw.AddRecord(field, container, term, entries)
 }
 
 func (sw *InMemorySegmentBuilder) Write() error {
-	// 1. Write Magic Number
 	if err := sw.writeBytes(MagicNumber); err != nil {
 		return err
 	}
 
-	// Sort postings before writing
 	for _, fd := range sw.fieldData {
 		for _, entries := range fd.Postings {
 			sort.Slice(entries, func(i, j int) bool {
@@ -141,100 +176,82 @@ func (sw *InMemorySegmentBuilder) Write() error {
 	}
 	sort.Strings(sortedFields)
 
-	// Write Postings and Dict for each field (all K merged)
 	for _, field := range sortedFields {
-		fd, ok := sw.fieldData[field]
-		if !ok {
-			continue
-		}
 		meta := sw.fields[field]
 
-		// Sort terms to write postings deterministically
-		var terms []string
-		for term := range fd.Postings {
-			terms = append(terms, term)
-		}
-		sort.Strings(terms)
+		// Write Dict + Postings blocks for fields with fieldData
+		if fd, ok := sw.fieldData[field]; ok {
+			var terms []string
+			for term := range fd.Postings {
+				terms = append(terms, term)
+			}
+			sort.Strings(terms)
 
-		// A: Write Postings Block (all K merged, sorted by EntryID)
-		postingsBlockName := plBlockName(field)
-		if err := sw.alignTo8(); err != nil {
-			return err
-		}
-		postingsOffset := sw.offset
-		sw.beginBlock()
-		for _, term := range terms {
-			entries := fd.Postings[term]
-			fd.Dict[term] = PostingRef{Offset: sw.offset - postingsOffset, Count: uint32(len(entries))}
-			plBytes := WriteFlatPostingList(entries)
-			if err := sw.writeBytes(plBytes); err != nil {
+			postingsBlockName := plBlockName(field)
+			if err := sw.alignTo8(); err != nil {
 				return err
 			}
-		}
-		postingsSize := sw.offset - postingsOffset
-		sw.finishBlock(postingsBlockName)
-		blockIndex[postingsBlockName] = BlockDef{Field: field, Kind: BlockKindPostings, Offset: postingsOffset, Size: postingsSize}
+			postingsOffset := sw.offset
+			sw.beginBlock()
+			for _, term := range terms {
+				entries := fd.Postings[term]
+				fd.Dict[term] = PostingRef{Offset: sw.offset - postingsOffset, Count: uint32(len(entries))}
+				plBytes := WriteFlatPostingList(entries)
+				if err := sw.writeBytes(plBytes); err != nil {
+					return err
+				}
+			}
+			postingsSize := sw.offset - postingsOffset
+			sw.finishBlock(postingsBlockName)
+			blockIndex[postingsBlockName] = BlockDef{Field: field, Kind: BlockKindPostings, Offset: postingsOffset, Size: postingsSize}
 
-		if meta.Container != "" && meta.Container != core.IndexNameDefault {
-			cb, err := NewContainerBuilder(meta.Container)
-			switch {
-			case err != nil:
-				// container not registered or has no builder — skip
-			case cb != nil:
-				for _, term := range terms {
-					cb.Add(term, fd.Dict[term])
+			dictBlockName := dictBlockName(field)
+			dictOffset := sw.offset
+			dictBytes := WriteFlatDict(fd.Dict)
+			sw.beginBlock()
+			if err := sw.writeBytes(dictBytes); err != nil {
+				return err
+			}
+			sw.finishBlock(dictBlockName)
+			blockIndex[dictBlockName] = BlockDef{Field: field, Kind: BlockKindDict, Offset: dictOffset, Size: sw.offset - dictOffset}
+
+			// Feed SortableContainer with sorted (term, ref) pairs
+			if sw.sortableFields[field] {
+				if cb, ok := sw.containers[field]; ok {
+					if sb, ok2 := cb.(SortableBuilder); ok2 {
+						for _, term := range terms {
+							ref := fd.Dict[term]
+							entries := fd.Postings[term]
+							if err := sb.AddKeyedPosting([]byte(term), ref, entries); err != nil {
+								return fmt.Errorf("failed to add keyed posting to %s for field %s: %w", meta.Container, field, err)
+							}
+						}
+					}
 				}
-				blockBytes, err := cb.Build()
-				if err != nil {
-					return fmt.Errorf("failed to build container %q for field %s: %w", meta.Container, field, err)
+			}
+		}
+
+		// Write container block for fields with registered containers
+		if cb, ok := sw.containers[field]; ok {
+			blockBytes, err := cb.Build()
+			if err != nil {
+				return fmt.Errorf("failed to build container %q for field %s: %w", meta.Container, field, err)
+			}
+			if len(blockBytes) > 0 {
+				kind := meta.Container
+				if kind == "" {
+					kind = core.IndexNameDefault
 				}
-				containerBlockName := blockName(field) + "_" + meta.Container
+				containerBlockName := containerBlockName(field, kind)
 				containerOffset := sw.offset
 				sw.beginBlock()
 				if err := sw.writeBytes(blockBytes); err != nil {
 					return err
 				}
 				sw.finishBlock(containerBlockName)
-				blockIndex[containerBlockName] = BlockDef{Field: field, Kind: meta.Container, Offset: containerOffset, Size: sw.offset - containerOffset}
+				blockIndex[containerBlockName] = BlockDef{Field: field, Kind: kind, Offset: containerOffset, Size: sw.offset - containerOffset}
 			}
 		}
-
-		// B: Write Dictionary Block
-		dictBlockName := dictBlockName(field)
-		dictOffset := sw.offset
-		dictBytes := WriteFlatDict(fd.Dict)
-		sw.beginBlock()
-		if err := sw.writeBytes(dictBytes); err != nil {
-			return err
-		}
-		dictSize := sw.offset - dictOffset
-		sw.finishBlock(dictBlockName)
-		blockIndex[dictBlockName] = BlockDef{Field: field, Kind: BlockKindDict, Offset: dictOffset, Size: dictSize}
-	}
-
-	// Write range (segment-tree) blocks for ext_range fields (all K merged)
-	var rfields []string
-	for f := range sw.rangeData {
-		rfields = append(rfields, f)
-	}
-	sort.Strings(rfields)
-	for _, field := range rfields {
-		intervals := sw.rangeData[field]
-		rangeBytes, err := BuildRangeIndex(intervals)
-		if err != nil {
-			return fmt.Errorf("failed to build range index for field %s: %w", field, err)
-		}
-		name := containerBlockName(field, BlockKindRange)
-		if err := sw.alignTo8(); err != nil {
-			return err
-		}
-		rangeOffset := sw.offset
-		sw.beginBlock()
-		if err := sw.writeBytes(rangeBytes); err != nil {
-			return err
-		}
-		sw.finishBlock(name)
-		blockIndex[name] = BlockDef{Field: field, Kind: BlockKindRange, Offset: rangeOffset, Size: sw.offset - rangeOffset}
 	}
 
 	wildcards := append(core.Entries(nil), sw.wildcards...)
@@ -251,7 +268,6 @@ func (sw *InMemorySegmentBuilder) Write() error {
 	sw.finishBlock(wildcardsBlockName)
 	blockIndex[wildcardsBlockName] = BlockDef{Kind: BlockKindWildcards, Offset: wildcardOffset, Size: sw.offset - wildcardOffset}
 
-	// 2. Prepare Metadata
 	for name, sum := range sw.blockChecksums {
 		if def, ok := blockIndex[name]; ok {
 			def.Checksum = sum
@@ -274,20 +290,14 @@ func (sw *InMemorySegmentBuilder) Write() error {
 		return err
 	}
 
-	// 3. Write Metadata
 	metaOffset := sw.offset
 	if err := sw.writeBytes(metaBytes); err != nil {
 		return err
 	}
 
-	// 4. Write Footer
 	footer := make([]byte, 8)
 	binary.LittleEndian.PutUint64(footer, metaOffset)
-	if err := sw.writeBytes(footer); err != nil {
-		return err
-	}
-
-	return nil
+	return sw.writeBytes(footer)
 }
 
 func (sw *InMemorySegmentBuilder) writeBytes(b []byte) error {
@@ -309,9 +319,6 @@ func (sw *InMemorySegmentBuilder) beginBlock() {
 	sw.currentBlockChecksum = sha256.New()
 }
 
-// alignTo8 writes zero padding (outside any checksummed block) so that the next
-// block starts on an 8-byte boundary. Padding bytes are not part of any block
-// and are never read back; readers only index blocks via their recorded offset.
 func (sw *InMemorySegmentBuilder) alignTo8() error {
 	pad := (8 - int(sw.offset%8)) % 8
 	if pad == 0 {

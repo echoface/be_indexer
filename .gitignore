@@ -4,3 +4,4 @@ go.sum
 .DS_Store
 .opencode
 example/playground.go
+.superpowers/

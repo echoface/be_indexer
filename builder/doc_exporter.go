@@ -11,8 +11,7 @@ import (
 )
 
 type postingSink interface {
-	AddPosting(k int, field string, term string, entries []core.EntryID) error
-	AddRangePosting(k int, field string, lo, hi int64, entry core.EntryID) error
+	AddRecord(field string, container string, record any, entries []core.EntryID) error
 }
 
 // BuildSegmentsFromDocsOptions controls memory usage by splitting build into multiple segments.
@@ -184,21 +183,8 @@ func exportDocToSink(sink postingSink, codec *parser.SchemaCodec, doc *core.Docu
 					return nil, fmt.Errorf("field %s encode predicate: %w", field, err)
 				}
 				for _, posting := range postings {
-					switch posting.Kind {
-					case parser.PostingKindTerm, parser.PostingKindAC:
-						if err := sink.AddPosting(incSize, string(field), posting.Term, []core.EntryID{eid}); err != nil {
-							return nil, err
-						}
-					case parser.PostingKindRange:
-						if err := sink.AddRangePosting(incSize, string(field), posting.Lo, posting.Hi, eid); err != nil {
-							return nil, err
-						}
-					default:
-						// Custom container: standard term→posting path. Container-specific
-						// metadata (posting.Value) is stored alongside for the builder.
-						if err := sink.AddPosting(incSize, string(field), posting.Term, []core.EntryID{eid}); err != nil {
-							return nil, err
-						}
+					if err := sink.AddRecord(string(field), fieldCodec.Meta.Container, posting.Record, []core.EntryID{eid}); err != nil {
+						return nil, err
 					}
 				}
 			}

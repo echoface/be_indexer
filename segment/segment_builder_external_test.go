@@ -95,7 +95,7 @@ func TestExternalBuilderACMatcherAcrossRuns(t *testing.T) {
 		{term: "tree", entry: mkE(1, 4)},
 	}
 	for _, posting := range postings {
-		if err := b.AddPosting(1, "keyword", posting.term, []core.EntryID{posting.entry}); err != nil {
+		if err := b.AddRecord("keyword", core.IndexNameACMatcher, posting.term, []core.EntryID{posting.entry}); err != nil {
 			t.Fatal(err)
 		}
 	}

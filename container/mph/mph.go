@@ -3,8 +3,8 @@
 //
 // Users opt in per-field via FieldMeta.FieldOption{Container: "mph_dict"}.
 // No custom encoder is needed — the default ExactTermEncoder handles value
-// encoding, and the engine routes QueryKindTerm queries through the mph
-// container when the field's Container is "mph_dict".
+// encoding, and the engine routes queries through the mph container when
+// the field's Container is "mph_dict".
 //
 // The mph table maps term strings to PostingRef values; it is built at segment
 // construction using the Compress-Hash-Displace algorithm and loaded at query

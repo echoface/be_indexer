@@ -147,9 +147,9 @@ func (ac *ACMmapReader) readOutputs(offset uint32, dst []PostingRef) []PostingRe
 	return dst
 }
 
-// Retrieve implements ContainerReader by performing AC matching against the
+// MatchQuery implements ContainerReader by performing AC matching against the
 // query text and returning posting cursors into the posting block.
-func (ac *ACMmapReader) Retrieve(postingBlock []byte, field core.BEField, query interface{}) ([]core.PostingIterator, error) {
+func (ac *ACMmapReader) MatchQuery(ctx BlockContext, field core.BEField, query interface{}) ([]core.PostingIterator, error) {
 	text, ok := query.(string)
 	if !ok {
 		return nil, fmt.Errorf("ac container expects string query, got %T", query)
@@ -160,7 +160,7 @@ func (ac *ACMmapReader) Retrieve(postingBlock []byte, field core.BEField, query 
 	}
 	iters := make([]core.PostingIterator, 0, len(refs))
 	for _, ref := range refs {
-		pl, err := NewPostingListAt(postingBlock, ref)
+		pl, err := NewPostingListAt(ctx.Pl, ref)
 		if err != nil {
 			continue
 		}

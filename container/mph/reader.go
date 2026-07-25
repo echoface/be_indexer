@@ -39,7 +39,7 @@ func decodePostingRef(val []byte) (segment.PostingRef, error) {
 	}, nil
 }
 
-func (r *Reader) Retrieve(postingBlock []byte, field core.BEField, query interface{}) ([]core.PostingIterator, error) {
+func (r *Reader) MatchQuery(ctx segment.BlockContext, field core.BEField, query interface{}) ([]core.PostingIterator, error) {
 	term, ok := query.(string)
 	if !ok {
 		return nil, fmt.Errorf("mph: query must be string, got %T", query)
@@ -52,7 +52,7 @@ func (r *Reader) Retrieve(postingBlock []byte, field core.BEField, query interfa
 	if err != nil {
 		return nil, err
 	}
-	pl, err := segment.NewPostingListAt(postingBlock, ref)
+	pl, err := segment.NewPostingListAt(ctx.Pl, ref)
 	if err != nil {
 		return nil, fmt.Errorf("mph: term %q posting: %w", term, err)
 	}

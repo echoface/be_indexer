@@ -16,7 +16,7 @@
 //	        → segment writer → ContainerBuilder.Add(term, ref) → block bytes
 //	Query:  engine initCursors
 //	        → SegmentReader.ContainerQuery(field, containerName, Value)
-//	        → ContainerReader.Retrieve → PostingIterators → K-Groups merge
+//	        → ContainerReader.MatchQuery → PostingIterators → K-Groups merge
 //
 // The demo semantic: stored terms are path prefixes; a query string matches
 // every stored term that prefixes it (e.g. stored "/api" matches query
@@ -189,10 +189,10 @@ func NewReader(b []byte) (segment.ContainerReader, error) {
 	return r, nil
 }
 
-// Retrieve returns posting cursors for every stored prefix that prefixes the
+// MatchQuery returns posting cursors for every stored prefix that prefixes the
 // query string. Linear scan keeps the template simple; production containers
 // should exploit their layout (binary search, trie, interval tree...).
-func (r *Reader) Retrieve(postingBlock []byte, field core.BEField, query interface{}) ([]core.PostingIterator, error) {
+func (r *Reader) MatchQuery(ctx segment.BlockContext, field core.BEField, query interface{}) ([]core.PostingIterator, error) {
 	q, ok := query.(string)
 	if !ok {
 		return nil, fmt.Errorf("example: query must be string, got %T", query)
@@ -202,7 +202,7 @@ func (r *Reader) Retrieve(postingBlock []byte, field core.BEField, query interfa
 		if !strings.HasPrefix(q, e.term) {
 			continue
 		}
-		pl, err := segment.NewPostingListAt(postingBlock, e.ref)
+		pl, err := segment.NewPostingListAt(ctx.Pl, e.ref)
 		if err != nil {
 			return nil, fmt.Errorf("example: term %q posting: %w", e.term, err)
 		}

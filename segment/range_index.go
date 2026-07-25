@@ -307,9 +307,9 @@ func (ri *RangeIndex) Stab(field core.BEField, q int64) ([]core.PostingIterator,
 	return iters, nil
 }
 
-// Retrieve implements ContainerReader by performing a stabbing query on the
-// segment tree, returning posting cursors into the provided posting block.
-func (ri *RangeIndex) Retrieve(postingBlock []byte, field core.BEField, query interface{}) ([]core.PostingIterator, error) {
+// MatchQuery implements ContainerReader by performing a stabbing query on the
+// segment tree, returning posting cursors.
+func (ri *RangeIndex) MatchQuery(ctx BlockContext, field core.BEField, query interface{}) ([]core.PostingIterator, error) {
 	point, ok := query.(int64)
 	if !ok {
 		return nil, fmt.Errorf("range container expects int64 query, got %T", query)

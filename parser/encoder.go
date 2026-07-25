@@ -17,7 +17,7 @@ type EncodedPosting struct {
 }
 
 // EncodedQuery is the query-side physical representation of one assignment.
-// Value is container-defined and passed directly to ContainerReader.Retrieve.
+// Value is container-defined and passed directly to ContainerReader.MatchQuery.
 type EncodedQuery struct {
 	Value any
 }

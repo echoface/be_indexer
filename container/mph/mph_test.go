@@ -158,7 +158,7 @@ func TestContainerRoundTrip(t *testing.T) {
 
 func TestExtensionEndToEnd(t *testing.T) {
 	fields := map[be_indexer.BEField]*be_indexer.FieldMeta{
-		"city": {Field: "city", FieldOption: be_indexer.FieldOption{Container: mph.ContainerName}},
+		"city": {Field: "city", FieldOption: be_indexer.FieldOption{Container: mph.ContainerName, Encoder: "default"}},
 		"tag":  {Field: "tag", FieldOption: be_indexer.FieldOption{Container: "default"}},
 	}
 	docs := []*be_indexer.Document{
@@ -221,7 +221,7 @@ func TestExtensionEndToEnd(t *testing.T) {
 func TestLargeDictionary(t *testing.T) {
 	convey.Convey("large mph dict end-to-end", t, func() {
 		fields := map[be_indexer.BEField]*be_indexer.FieldMeta{
-			"term": {Field: "term", FieldOption: be_indexer.FieldOption{Container: mph.ContainerName}},
+			"term": {Field: "term", FieldOption: be_indexer.FieldOption{Container: mph.ContainerName, Encoder: "default"}},
 		}
 
 		n := 5000
@@ -262,7 +262,7 @@ func TestLargeDictionary(t *testing.T) {
 func TestExcludePredicate(t *testing.T) {
 	convey.Convey("mph with exclude predicates", t, func() {
 		fields := map[be_indexer.BEField]*be_indexer.FieldMeta{
-			"city": {Field: "city", FieldOption: be_indexer.FieldOption{Container: mph.ContainerName}},
+			"city": {Field: "city", FieldOption: be_indexer.FieldOption{Container: mph.ContainerName, Encoder: "default"}},
 		}
 		docs := []*be_indexer.Document{
 			be_indexer.NewDocument(1).AddConjunction(

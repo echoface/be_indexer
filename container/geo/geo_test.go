@@ -176,11 +176,11 @@ func TestRegistration(t *testing.T) {
 	convey.Convey("proximitygeo registers encoder only, no container", t, func() {
 		enc, err := parser.NewPredicateEncoder(core.FieldMeta{
 			Field:       "loc",
-			FieldOption: core.FieldOption{Container: geo.ContainerName},
+			FieldOption: core.FieldOption{Encoder: geo.EncoderName},
 		})
 		convey.So(err, convey.ShouldBeNil)
 		convey.So(enc, convey.ShouldNotBeNil)
-		convey.So(segment.HasContainer(geo.ContainerName), convey.ShouldBeFalse)
+		convey.So(segment.HasContainer(geo.EncoderName), convey.ShouldBeFalse)
 	})
 }
 
@@ -198,7 +198,7 @@ func retrieve(t *testing.T, eng *be_indexer.Engine, assigns be_indexer.Assignmen
 
 func TestGeoEndToEnd(t *testing.T) {
 	fields := map[be_indexer.BEField]*be_indexer.FieldMeta{
-		"location": {Field: "location", FieldOption: be_indexer.FieldOption{Container: geo.ContainerName}},
+		"location": {Field: "location", FieldOption: be_indexer.FieldOption{Encoder: geo.EncoderName}},
 		"city":     {Field: "city", FieldOption: be_indexer.FieldOption{Container: "default", Tokenizer: "default"}},
 	}
 

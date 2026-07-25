@@ -128,16 +128,18 @@ func RegisterPredicateEncoder(container string, factory EncoderFactory) {
 	predicateEncoderFactories[container] = factory
 }
 
-// NewPredicateEncoder creates the encoder implied by FieldMeta. Empty container
-// and tokenizer names default to the regular term index and default tokenizer.
+// NewPredicateEncoder creates the encoder specified by FieldOption.Encoder.
+// If empty, the default ExactTermEncoder is used. Encoder and Container are
+// independent choices — an encoder describes how values become terms, a
+// container describes how terms are stored and queried.
 func NewPredicateEncoder(meta core.FieldMeta) (PredicateEncoder, error) {
-	container := meta.Container
-	if container == "" {
-		container = core.IndexNameDefault
+	encoder := meta.Encoder
+	if encoder == "" {
+		encoder = core.IndexNameDefault
 	}
-	factory, ok := predicateEncoderFactories[container]
+	factory, ok := predicateEncoderFactories[encoder]
 	if !ok || factory == nil {
-		return nil, fmt.Errorf("%w: %s", core.ErrUnknownContainer, container)
+		return nil, fmt.Errorf("%w: %s", core.ErrUnknownContainer, encoder)
 	}
 	return factory(meta)
 }

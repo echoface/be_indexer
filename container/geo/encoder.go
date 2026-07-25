@@ -29,8 +29,8 @@ import (
 	"github.com/echoface/be_indexer/util"
 )
 
-// ContainerName is the FieldMeta.Container value that selects this encoder.
-const ContainerName = "proximitygeo"
+// EncoderName is the predicate encoder name registered under this package.
+const EncoderName = "proximitygeo"
 
 const (
 	// minPrecision bounds compression: stored covering codes are never
@@ -151,7 +151,7 @@ func validateLatLng(lat, lng float64) error {
 }
 
 func init() {
-	parser.RegisterPredicateEncoder(ContainerName, func(core.FieldMeta) (parser.PredicateEncoder, error) {
+	parser.RegisterPredicateEncoder(EncoderName, func(core.FieldMeta) (parser.PredicateEncoder, error) {
 		return Encoder{}, nil
 	})
 }

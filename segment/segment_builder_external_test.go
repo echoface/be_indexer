@@ -83,7 +83,7 @@ func TestExternalBuilderACMatcherAcrossRuns(t *testing.T) {
 	b.SetDocCount(4)
 	b.AddField(core.FieldMeta{
 		Field:       core.BEField("keyword"),
-		FieldOption: core.FieldOption{Container: core.IndexNameACMatcher},
+		FieldOption: core.FieldOption{Container: core.IndexNameACMatcher, Encoder: core.IndexNameACMatcher},
 	})
 	postings := []struct {
 		term  string

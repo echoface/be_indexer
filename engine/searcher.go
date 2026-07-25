@@ -208,8 +208,19 @@ func (e *BooleanEngine) initCursors(
 	fieldCount := 0
 	for _, ef := range encoded {
 		field := ef.field
-		var iterators []core.PostingIterator
 
+		// Determine the field's container type once per field.
+		// When the default encoder produces QueryKindTerm, a custom container
+		// (e.g. mph_dict) routes through ContainerQuery rather than FlatDict.
+		containerName := ""
+		if fc, ok := e.schemaCodec.Field(field); ok {
+			c := fc.Meta.Container
+			if c != "" && c != core.IndexNameDefault && segment.HasContainer(c) {
+				containerName = c
+			}
+		}
+
+		var iterators []core.PostingIterator
 		for _, seg := range e.segments {
 			for _, q := range ef.queries {
 				switch q.Kind {
@@ -218,9 +229,16 @@ func (e *BooleanEngine) initCursors(
 					if !ok {
 						continue
 					}
-					it, err := seg.GetPostingsByTerm(field, term)
-					if err == nil && it != nil {
-						iterators = append(iterators, it)
+					if containerName != "" {
+						iters, err := seg.ContainerQuery(field, containerName, term)
+						if err == nil && len(iters) > 0 {
+							iterators = append(iterators, iters...)
+						}
+					} else {
+						it, err := seg.GetPostingsByTerm(field, term)
+						if err == nil && it != nil {
+							iterators = append(iterators, it)
+						}
 					}
 				default:
 					iters, err := seg.ContainerQuery(field, string(q.Kind), q.Value)

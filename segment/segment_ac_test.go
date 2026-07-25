@@ -12,7 +12,7 @@ func TestSegmentACMatcher(t *testing.T) {
 
 	writer.AddField(core.FieldMeta{
 		Field:       core.BEField("keyword"),
-		FieldOption: core.FieldOption{Container: core.IndexNameACMatcher},
+		FieldOption: core.FieldOption{Container: core.IndexNameACMatcher, Encoder: core.IndexNameACMatcher},
 	})
 
 	writer.AddRecord("keyword", core.IndexNameACMatcher, "apple", []core.EntryID{makeE(1, 1), makeE(1, 2)})

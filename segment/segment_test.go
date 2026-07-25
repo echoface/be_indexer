@@ -75,7 +75,7 @@ func TestBuilderReader(t *testing.T) {
 // TestBuilderRangeRoundTrip verifies ext_range blocks survive write/read and
 // that Builder and ExternalBuilder produce byte-identical segments.
 func TestBuilderRangeRoundTrip(t *testing.T) {
-	field := core.FieldMeta{ID: 1, Field: "age", FieldOption: core.FieldOption{Container: core.IndexNameExtendRange}}
+	field := core.FieldMeta{ID: 1, Field: "age", FieldOption: core.FieldOption{Container: core.IndexNameExtendRange, Encoder: core.IndexNameExtendRange}}
 	type rng struct {
 		lo, hi int64
 		entry  core.EntryID
@@ -259,7 +259,7 @@ func TestNewSegmentReaderRejectsSegmentV2ACChecksumMismatch(t *testing.T) {
 	buf := new(bytes.Buffer)
 	writer := NewInMemorySegmentBuilder(buf)
 	writer.SetDocCount(1)
-	writer.AddField(core.FieldMeta{ID: 1, Field: "keyword", FieldOption: core.FieldOption{Container: core.IndexNameACMatcher}})
+	writer.AddField(core.FieldMeta{ID: 1, Field: "keyword", FieldOption: core.FieldOption{Container: core.IndexNameACMatcher, Encoder: core.IndexNameACMatcher}})
 	if err := writer.AddRecord("keyword", core.IndexNameACMatcher, "apple", []core.EntryID{makeE(1, 20)}); err != nil {
 		t.Fatal(err)
 	}

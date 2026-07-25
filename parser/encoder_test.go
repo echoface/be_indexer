@@ -33,7 +33,7 @@ func TestExactTermEncoderUsesTokenizerInBothDirections(t *testing.T) {
 func TestRangeEncoderBuildAndQuery(t *testing.T) {
 	enc, err := NewPredicateEncoder(core.FieldMeta{
 		Field:       "age",
-		FieldOption: core.FieldOption{Container: core.IndexNameExtendRange},
+		FieldOption: core.FieldOption{Container: core.IndexNameExtendRange, Encoder: core.IndexNameExtendRange},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -61,7 +61,7 @@ func TestRangeEncoderBuildAndQuery(t *testing.T) {
 func TestACEncoderBuildAndQuery(t *testing.T) {
 	enc, err := NewPredicateEncoder(core.FieldMeta{
 		Field:       "keyword",
-		FieldOption: core.FieldOption{Container: core.IndexNameACMatcher},
+		FieldOption: core.FieldOption{Container: core.IndexNameACMatcher, Encoder: core.IndexNameACMatcher},
 	})
 	if err != nil {
 		t.Fatal(err)

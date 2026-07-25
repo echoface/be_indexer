@@ -169,6 +169,19 @@ func NewSegmentReaderWithOptions(b []byte, opts ReaderOptions) (*SegmentReader, 
 		}
 	}
 
+	// Ensure fields with a dict get the default DictContainer registered
+	// so ContainerQuery("default", ...) works for the default path.
+	for _, blk := range blocks {
+		if blk.dict != nil {
+			if blk.containers == nil {
+				blk.containers = make(map[string]ContainerReader)
+			}
+			if _, ok := blk.containers[core.IndexNameDefault]; !ok {
+				blk.containers[core.IndexNameDefault] = DictContainer{}
+			}
+		}
+	}
+
 	return &SegmentReader{
 		b:         b,
 		meta:      &meta,
@@ -264,29 +277,22 @@ func (sr *SegmentReader) lookupBlock(field core.BEField) (*blockLookup, bool) {
 }
 
 // GetPostingsByTerm returns a posting iterator for a physical term in the
-// merged (all-K) posting list. The engine performs K-range filtering
-// dynamically via EntryID inspection rather than at the segment layer.
+// merged (all-K) posting list. This is a convenience wrapper around
+// ContainerQuery with the default dict container.
 func (sr *SegmentReader) GetPostingsByTerm(field core.BEField, term string) (core.PostingIterator, error) {
-	blk, ok := sr.lookupBlock(field)
-	if !ok || blk.dict == nil {
-		return nil, core.ErrUnknownQueryField
+	iters, err := sr.ContainerQuery(field, core.IndexNameDefault, term)
+	if err != nil {
+		return nil, err
 	}
-
-	ref, found := blk.dict.Find([]byte(term))
-	if !found {
+	if len(iters) == 0 {
 		return nil, nil
 	}
-
-	pl, err := NewPostingListAt(blk.pl, ref)
-	if err != nil {
-		return nil, fmt.Errorf("field %s: %w", field, err)
-	}
-
-	return pl.NewPostingCursor(core.NewTerm(field, term)), nil
+	return iters[0], nil
 }
 
 // ContainerQuery dispatches a query to a registered container and returns
-// posting iterators. kind is the container type (e.g. "ac_matcher", "ext_range").
+// posting iterators. kind is the container type (e.g. "default",
+// "ac_matcher", "ext_range").
 func (sr *SegmentReader) ContainerQuery(field core.BEField, kind string, query interface{}) ([]core.PostingIterator, error) {
 	blk, ok := sr.lookupBlock(field)
 	if !ok {
@@ -296,7 +302,8 @@ func (sr *SegmentReader) ContainerQuery(field core.BEField, kind string, query i
 	if !ok {
 		return nil, nil
 	}
-	return cr.Retrieve(blk.pl, field, query)
+	ctx := BlockContext{Dict: blk.dict, Pl: blk.pl}
+	return cr.MatchQuery(ctx, field, query)
 }
 
 // MultiPatternSearch performs AC automaton matching on the input text and

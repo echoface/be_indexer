@@ -130,7 +130,6 @@ func TestEncoderQuery(t *testing.T) {
 
 		full := geohash.EncodeWithPrecision(39.9042, 116.4074, 8)
 		for i, q := range out {
-			convey.So(q.Kind, convey.ShouldEqual, parser.QueryKindTerm)
 			convey.So(q.Value, convey.ShouldEqual, full[:3+i])
 		}
 	})

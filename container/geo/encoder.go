@@ -138,7 +138,7 @@ func (e Encoder) Query(value interface{}) ([]parser.EncodedQuery, error) {
 	gh := geohash.EncodeWithPrecision(q.Lat, q.Lng, maxQueryPrecision)
 	out := make([]parser.EncodedQuery, 0, maxQueryPrecision-minPrecision+1)
 	for p := minPrecision; p <= len(gh); p++ {
-		out = append(out, parser.EncodedQuery{Kind: parser.QueryKindTerm, Value: gh[:p]})
+		out = append(out, parser.EncodedQuery{Value: gh[:p]})
 	}
 	return out, nil
 }

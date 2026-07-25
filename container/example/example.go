@@ -3,7 +3,7 @@
 // WITHOUT touching engine/segment/builder code:
 //
 //  1. Implement parser.PredicateEncoder: translate business predicates into
-//     EncodedPosting (build) and EncodedQuery (query) with a custom Kind.
+//     EncodedPosting (build) and EncodedQuery (query).
 //  2. Implement segment.ContainerBuilder/ContainerReader: serialize the
 //     per-field term→PostingRef table into a byte block and answer queries
 //     against it with zero-copy posting cursors.
@@ -12,10 +12,10 @@
 //
 // Data flow:
 //
-//	Build:  doc_exporter (default Kind branch) → sink.AddPosting(term)
+//	Build:  doc_exporter → sink.AddRecord(field, container, record, entries)
 //	        → segment writer → ContainerBuilder.Add(term, ref) → block bytes
-//	Query:  engine initCursors (default Kind branch)
-//	        → SegmentReader.ContainerQuery(field, Kind, Value)
+//	Query:  engine initCursors
+//	        → SegmentReader.ContainerQuery(field, containerName, Value)
 //	        → ContainerReader.Retrieve → PostingIterators → K-Groups merge
 //
 // The demo semantic: stored terms are path prefixes; a query string matches
@@ -47,10 +47,8 @@ type Encoder struct{}
 
 var _ parser.PredicateEncoder = Encoder{}
 
-// Build emits one posting per distinct prefix pattern. Kind is the custom
-// container name: doc_exporter routes non-builtin kinds through the standard
-// term→posting path, and the segment writer hands every (term, PostingRef)
-// of the field to our ContainerBuilder.
+// Build emits one posting per distinct prefix pattern. The segment writer
+// hands every (term, PostingRef) of the field to our ContainerBuilder.
 func (Encoder) Build(expr *core.ValueExpr) ([]parser.EncodedPosting, error) {
 	if expr == nil {
 		return nil, fmt.Errorf("example: nil value expression")
@@ -77,9 +75,8 @@ func (Encoder) Build(expr *core.ValueExpr) ([]parser.EncodedPosting, error) {
 	return out, nil
 }
 
-// Query emits one container lookup per assignment string. Kind must equal the
-// registered container name: the engine's default branch dispatches it via
-// SegmentReader.ContainerQuery(field, Kind, Value).
+// Query emits one container lookup per assignment string. The engine routes
+// via the field's schema Container, so the encoder only produces values.
 func (Encoder) Query(value interface{}) ([]parser.EncodedQuery, error) {
 	texts, err := parser.ValuesToStrings(value)
 	if err != nil {
@@ -87,7 +84,7 @@ func (Encoder) Query(value interface{}) ([]parser.EncodedQuery, error) {
 	}
 	out := make([]parser.EncodedQuery, 0, len(texts))
 	for _, s := range texts {
-		out = append(out, parser.EncodedQuery{Kind: parser.QueryKind(ContainerName), Value: s})
+		out = append(out, parser.EncodedQuery{Value: s})
 	}
 	return out, nil
 }

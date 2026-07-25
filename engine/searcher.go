@@ -210,13 +210,10 @@ func (e *BooleanEngine) initCursors(
 		field := ef.field
 
 		// Determine the field's container type once per field.
-		// Routing is driven entirely by the schema: a non-default Container
-		// sends all query values through ContainerQuery; the default path
-		// uses FlatDict for string term lookups.
-		containerName := ""
+		containerName := core.IndexNameDefault
 		if fc, ok := e.schemaCodec.Field(field); ok {
 			c := fc.Meta.Container
-			if c != "" && c != core.IndexNameDefault && segment.HasContainer(c) {
+			if c != "" && segment.HasContainer(c) {
 				containerName = c
 			}
 		}
@@ -224,20 +221,9 @@ func (e *BooleanEngine) initCursors(
 		var iterators []core.PostingIterator
 		for _, seg := range e.segments {
 			for _, q := range ef.queries {
-				if containerName != "" {
-					iters, err := seg.ContainerQuery(field, containerName, q.Value)
-					if err == nil && len(iters) > 0 {
-						iterators = append(iterators, iters...)
-					}
-				} else {
-					term, ok := q.Value.(string)
-					if !ok {
-						continue
-					}
-					it, err := seg.GetPostingsByTerm(field, term)
-					if err == nil && it != nil {
-						iterators = append(iterators, it)
-					}
+				iters, err := seg.ContainerQuery(field, containerName, q.Value)
+				if err == nil && len(iters) > 0 {
+					iterators = append(iterators, iters...)
 				}
 			}
 		}

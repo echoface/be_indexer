@@ -25,7 +25,7 @@ func TestExactTermEncoderUsesTokenizerInBothDirections(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(queries) != 1 || queries[0].Kind != QueryKindTerm || queries[0].Value != "18" {
+	if len(queries) != 1 || queries[0].Value != "18" {
 		t.Fatalf("unexpected query keys: %#v", queries)
 	}
 }
@@ -53,7 +53,7 @@ func TestRangeEncoderBuildAndQuery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(queries) != 1 || queries[0].Kind != QueryKind(core.IndexNameExtendRange) || queries[0].Value != int64(25) {
+	if len(queries) != 1 || queries[0].Value != int64(25) {
 		t.Fatalf("unexpected range query: %#v", queries)
 	}
 }
@@ -77,7 +77,7 @@ func TestACEncoderBuildAndQuery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(queries) != 1 || queries[0].Kind != QueryKind(core.IndexNameACMatcher) || queries[0].Value != "I love apple" {
+	if len(queries) != 1 || queries[0].Value != "I love apple" {
 		t.Fatalf("unexpected ac query: %#v", queries)
 	}
 }

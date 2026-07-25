@@ -9,14 +9,6 @@ import (
 	"github.com/echoface/be_indexer/util"
 )
 
-// QueryKind describes the physical lookup key produced from an assignment.
-// The engine routes each kind to the corresponding ContainerReader via ContainerQuery.
-type QueryKind string
-
-const (
-	QueryKindTerm QueryKind = "term" // Dict fast path via FlatDict binary search
-)
-
 // EncodedPosting is the build-side physical representation of one predicate.
 // Record is a container-defined value; the framework routes it to the
 // container's AddPosting or AddKeyedPosting method.
@@ -25,10 +17,8 @@ type EncodedPosting struct {
 }
 
 // EncodedQuery is the query-side physical representation of one assignment.
-// Kind maps to the container name; Value is container-defined and passed
-// directly to ContainerReader.Retrieve.
+// Value is container-defined and passed directly to ContainerReader.Retrieve.
 type EncodedQuery struct {
-	Kind  QueryKind
 	Value any
 }
 
@@ -189,7 +179,7 @@ func (e ExactTermEncoder) Query(value interface{}) ([]EncodedQuery, error) {
 	terms = util.DistinctString(terms)
 	out := make([]EncodedQuery, 0, len(terms))
 	for _, term := range terms {
-		out = append(out, EncodedQuery{Kind: QueryKindTerm, Value: term})
+		out = append(out, EncodedQuery{Value: term})
 	}
 	return out, nil
 }
@@ -218,7 +208,7 @@ func (RangeEncoder) Query(value interface{}) ([]EncodedQuery, error) {
 	if err != nil {
 		return nil, err
 	}
-	return []EncodedQuery{{Kind: QueryKind(core.IndexNameExtendRange), Value: point}}, nil
+	return []EncodedQuery{{Value: point}}, nil
 }
 
 // ACEncoder translates build-side patterns and query-side text for the AC
@@ -253,5 +243,5 @@ func (ACEncoder) Query(value interface{}) ([]EncodedQuery, error) {
 	if len(parts) == 0 {
 		return nil, nil
 	}
-	return []EncodedQuery{{Kind: QueryKind(core.IndexNameACMatcher), Value: strings.Join(parts, " ")}}, nil
+	return []EncodedQuery{{Value: strings.Join(parts, " ")}}, nil
 }

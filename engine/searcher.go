@@ -210,8 +210,9 @@ func (e *BooleanEngine) initCursors(
 		field := ef.field
 
 		// Determine the field's container type once per field.
-		// When the default encoder produces QueryKindTerm, a custom container
-		// (e.g. mph_dict) routes through ContainerQuery rather than FlatDict.
+		// Routing is driven entirely by the schema: a non-default Container
+		// sends all query values through ContainerQuery; the default path
+		// uses FlatDict for string term lookups.
 		containerName := ""
 		if fc, ok := e.schemaCodec.Field(field); ok {
 			c := fc.Meta.Container
@@ -223,27 +224,19 @@ func (e *BooleanEngine) initCursors(
 		var iterators []core.PostingIterator
 		for _, seg := range e.segments {
 			for _, q := range ef.queries {
-				switch q.Kind {
-				case parser.QueryKindTerm:
+				if containerName != "" {
+					iters, err := seg.ContainerQuery(field, containerName, q.Value)
+					if err == nil && len(iters) > 0 {
+						iterators = append(iterators, iters...)
+					}
+				} else {
 					term, ok := q.Value.(string)
 					if !ok {
 						continue
 					}
-					if containerName != "" {
-						iters, err := seg.ContainerQuery(field, containerName, term)
-						if err == nil && len(iters) > 0 {
-							iterators = append(iterators, iters...)
-						}
-					} else {
-						it, err := seg.GetPostingsByTerm(field, term)
-						if err == nil && it != nil {
-							iterators = append(iterators, it)
-						}
-					}
-				default:
-					iters, err := seg.ContainerQuery(field, string(q.Kind), q.Value)
-					if err == nil && len(iters) > 0 {
-						iterators = append(iterators, iters...)
+					it, err := seg.GetPostingsByTerm(field, term)
+					if err == nil && it != nil {
+						iterators = append(iterators, it)
 					}
 				}
 			}

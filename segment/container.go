@@ -6,15 +6,25 @@ import (
 	"github.com/echoface/be_indexer/core"
 )
 
+// BlockContext carries the field-level storage data that containers need to
+// resolve posting references. Dict is non-nil only for fields that use the
+// default FlatDict path; custom containers ignore it. Pl is the shared
+// posting block byte slice used by all containers to create zero-copy
+// PostingCursor views.
+type BlockContext struct {
+	Dict *FlatDict
+	Pl   []byte
+}
+
 // ContainerReader reads a serialized container block and provides query access.
 // Instances are created during SegmentReader construction (cold path, once per
 // block) and queried during retrieval (hot path). Implementations must be safe
-// for concurrent Retrieve calls.
+// for concurrent MatchQuery calls.
 //
-// postingBlock is the field's posting block bytes, from which containers can
-// create zero-copy PostingCursor views without carrying the block as mutable state.
+// ctx carries field-level storage (dict + posting block) so that containers can
+// resolve posting references without the engine orchestrating multi-step lookups.
 type ContainerReader interface {
-	Retrieve(postingBlock []byte, field core.BEField, query interface{}) ([]core.PostingIterator, error)
+	MatchQuery(ctx BlockContext, field core.BEField, query interface{}) ([]core.PostingIterator, error)
 }
 
 // ContainerBuilder receives records and their associated EntryIDs during segment

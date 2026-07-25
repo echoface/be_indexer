@@ -4,6 +4,7 @@ go 1.24.0
 
 require (
 	github.com/RoaringBitmap/roaring v0.9.4
+	github.com/alecthomas/mph v0.0.0-20240904185214-2a0c46a2ff46
 	github.com/anknown/ahocorasick v0.0.0-20190904063843-d75dbd5169c0
 	github.com/blevesearch/mmap-go v1.2.0
 	github.com/echoface/proximityhash v0.0.0-20230211105152-91366992edfe
@@ -12,6 +13,7 @@ require (
 )
 
 require (
+	github.com/alecthomas/unsafeslice v0.2.0 // indirect
 	github.com/anknown/darts v0.0.0-20151216065714-83ff685239e6 // indirect
 	github.com/bits-and-blooms/bitset v1.24.2 // indirect
 	github.com/gopherjs/gopherjs v0.0.0-20181017120253-0766667cb4d1 // indirect

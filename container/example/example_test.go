@@ -33,20 +33,20 @@ func TestContainerRoundTrip(t *testing.T) {
 		convey.So(err, convey.ShouldBeNil)
 
 		convey.Convey("prefix hit returns the matching posting", func() {
-			iters, err := cr.Retrieve(postingBlock, "path", "/api/v1/users")
+			iters, err := cr.MatchQuery(segment.BlockContext{Pl: postingBlock}, "path", "/api/v1/users")
 			convey.So(err, convey.ShouldBeNil)
 			convey.So(len(iters), convey.ShouldEqual, 1)
 			convey.So(iters[0].Current(), convey.ShouldEqual, eidA)
 		})
 
 		convey.Convey("no prefix match returns nothing", func() {
-			iters, err := cr.Retrieve(postingBlock, "path", "/other")
+			iters, err := cr.MatchQuery(segment.BlockContext{Pl: postingBlock}, "path", "/other")
 			convey.So(err, convey.ShouldBeNil)
 			convey.So(len(iters), convey.ShouldEqual, 0)
 		})
 
 		convey.Convey("non-string query is an error", func() {
-			_, err := cr.Retrieve(postingBlock, "path", 42)
+			_, err := cr.MatchQuery(segment.BlockContext{Pl: postingBlock}, "path", 42)
 			convey.So(err, convey.ShouldNotBeNil)
 		})
 
@@ -74,7 +74,7 @@ func retrieve(t *testing.T, eng *be_indexer.Engine, assigns be_indexer.Assignmen
 // TestExtensionEndToEnd guards the full custom-container chain for library
 // users: RegisterPredicateEncoder + RegisterContainer → doc_exporter default
 // branch → segment container block → SegmentReader load → engine
-// default branch → ContainerQuery → Retrieve.
+// default branch → ContainerQuery → MatchQuery.
 func TestExtensionEndToEnd(t *testing.T) {
 	fields := map[be_indexer.BEField]*be_indexer.FieldMeta{
 		"path": {Field: "path", FieldOption: be_indexer.FieldOption{Container: example.ContainerName}},

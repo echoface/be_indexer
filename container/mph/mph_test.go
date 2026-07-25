@@ -42,7 +42,7 @@ func TestContainerRoundTrip(t *testing.T) {
 			cr, err := mph.NewReader(blob)
 			convey.So(err, convey.ShouldBeNil)
 
-			iters, err := cr.Retrieve(pl, "field", "hello")
+			iters, err := cr.MatchQuery(segment.BlockContext{Pl: pl}, "field", "hello")
 			convey.So(err, convey.ShouldBeNil)
 			convey.So(len(iters), convey.ShouldEqual, 1)
 			convey.So(iters[0].Current(), convey.ShouldEqual, eid)
@@ -72,19 +72,19 @@ func TestContainerRoundTrip(t *testing.T) {
 			convey.So(err, convey.ShouldBeNil)
 
 			convey.Convey("hit alpha", func() {
-				iters, err := cr.Retrieve(postingBlock, "f", "alpha")
+				iters, err := cr.MatchQuery(segment.BlockContext{Pl: postingBlock}, "f", "alpha")
 				convey.So(err, convey.ShouldBeNil)
 				convey.So(len(iters), convey.ShouldEqual, 1)
 				convey.So(iters[0].Current(), convey.ShouldEqual, eidA)
 			})
 			convey.Convey("hit gamma", func() {
-				iters, err := cr.Retrieve(postingBlock, "f", "gamma")
+				iters, err := cr.MatchQuery(segment.BlockContext{Pl: postingBlock}, "f", "gamma")
 				convey.So(err, convey.ShouldBeNil)
 				convey.So(len(iters), convey.ShouldEqual, 1)
 				convey.So(iters[0].Current(), convey.ShouldEqual, eidC)
 			})
 			convey.Convey("miss", func() {
-				iters, err := cr.Retrieve(postingBlock, "f", "delta")
+				iters, err := cr.MatchQuery(segment.BlockContext{Pl: postingBlock}, "f", "delta")
 				convey.So(err, convey.ShouldBeNil)
 				convey.So(len(iters), convey.ShouldEqual, 0)
 			})
@@ -96,7 +96,7 @@ func TestContainerRoundTrip(t *testing.T) {
 			blob, _ := cb.Build()
 			cr, _ := mph.NewReader(blob)
 
-			iters, err := cr.Retrieve(nil, "f", "notfound")
+			iters, err := cr.MatchQuery(segment.BlockContext{}, "f", "notfound")
 			convey.So(err, convey.ShouldBeNil)
 			convey.So(len(iters), convey.ShouldEqual, 0)
 		})
@@ -107,7 +107,7 @@ func TestContainerRoundTrip(t *testing.T) {
 			blob, _ := cb.Build()
 			cr, _ := mph.NewReader(blob)
 
-			_, err := cr.Retrieve(nil, "f", 42)
+			_, err := cr.MatchQuery(segment.BlockContext{}, "f", 42)
 			convey.So(err, convey.ShouldNotBeNil)
 		})
 
@@ -144,12 +144,12 @@ func TestContainerRoundTrip(t *testing.T) {
 
 			for i := 0; i < size; i++ {
 				term := fmt.Sprintf("term_%06d", i)
-				iters, err := cr.Retrieve(usePosting, "f", term)
+				iters, err := cr.MatchQuery(segment.BlockContext{Pl: usePosting}, "f", term)
 				convey.So(err, convey.ShouldBeNil)
 				convey.So(len(iters), convey.ShouldEqual, 1)
 			}
 
-			iters, err := cr.Retrieve(usePosting, "f", "not_a_term")
+			iters, err := cr.MatchQuery(segment.BlockContext{Pl: usePosting}, "f", "not_a_term")
 			convey.So(err, convey.ShouldBeNil)
 			convey.So(len(iters), convey.ShouldEqual, 0)
 		})
@@ -349,11 +349,11 @@ func BenchmarkMPH_Find(b *testing.B) {
 				case 0:
 					term := keys[size/2]
 					for i := 0; i < b.N; i++ {
-						_, _ = cr.Retrieve(usePosting, "f", term)
+						_, _ = cr.MatchQuery(segment.BlockContext{Pl: usePosting}, "f", term)
 					}
 				case 1:
 					for i := 0; i < b.N; i++ {
-						_, _ = cr.Retrieve(usePosting, "f", "zzzz_nonexistent")
+						_, _ = cr.MatchQuery(segment.BlockContext{Pl: usePosting}, "f", "zzzz_nonexistent")
 					}
 				case 2:
 					idx := make([]string, b.N)
@@ -366,7 +366,7 @@ func BenchmarkMPH_Find(b *testing.B) {
 					}
 					b.ResetTimer()
 					for i := 0; i < b.N; i++ {
-						_, _ = cr.Retrieve(usePosting, "f", idx[i])
+						_, _ = cr.MatchQuery(segment.BlockContext{Pl: usePosting}, "f", idx[i])
 					}
 				}
 			})

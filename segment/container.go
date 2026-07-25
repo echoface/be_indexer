@@ -6,14 +6,11 @@ import (
 	"github.com/echoface/be_indexer/core"
 )
 
-// BlockContext carries the field-level storage data that containers need to
-// resolve posting references. Dict is non-nil only for fields that use the
-// default FlatDict path; custom containers ignore it. Pl is the shared
-// posting block byte slice used by all containers to create zero-copy
-// PostingCursor views.
+// BlockContext carries the posting block shared by all containers for zero-copy
+// PostingCursor creation. Containers that need additional data (e.g. the
+// default FlatDict) hold it as internal state initialized at segment load time.
 type BlockContext struct {
-	Dict *FlatDict
-	Pl   []byte
+	Pl []byte
 }
 
 // ContainerReader reads a serialized container block and provides query access.

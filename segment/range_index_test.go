@@ -57,7 +57,7 @@ func buildRI(t *testing.T, intervals []Interval) *RangeIndex {
 	if err != nil {
 		t.Fatalf("build: %v", err)
 	}
-	ri, err := NewRangeIndexReader(raw)
+	ri, err := NewRangeReader(raw)
 	if err != nil {
 		t.Fatalf("read: %v", err)
 	}
@@ -181,12 +181,12 @@ func TestRangeIndexReaderTruncated(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := NewRangeIndexReader(raw[:10]); err == nil {
+	if _, err := NewRangeReader(raw[:10]); err == nil {
 		t.Fatal("expected truncated error")
 	}
 	bad := append([]byte(nil), raw...)
 	bad[0] = 'X'
-	if _, err := NewRangeIndexReader(bad); err == nil {
+	if _, err := NewRangeReader(bad); err == nil {
 		t.Fatal("expected magic error")
 	}
 }

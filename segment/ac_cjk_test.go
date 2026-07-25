@@ -12,13 +12,13 @@ import (
 // can still assert on matched term strings (AC now returns posting refs, not
 // terms). Each pattern is assigned PostingRef{Offset: index+1}.
 type acHarness struct {
-	r      *ACMmapReader
+	r      *ACIndex
 	byRef  map[uint64]string
 }
 
 func buildOurAC(t testing.TB, patterns []string) *acHarness {
 	t.Helper()
-	b := NewStaticACBuilder()
+	b := NewACBuilder()
 	byRef := make(map[uint64]string, len(patterns))
 	for i, p := range patterns {
 		ref := PostingRef{Offset: uint64(i + 1), Count: 1}
@@ -29,7 +29,7 @@ func buildOurAC(t testing.TB, patterns []string) *acHarness {
 	if err != nil {
 		t.Fatalf("compile: %v", err)
 	}
-	r, err := NewACMmapReader(bin)
+	r, err := NewACReader(bin)
 	if err != nil {
 		t.Fatalf("read: %v", err)
 	}
@@ -188,11 +188,11 @@ func TestACDifferentialFuzz(t *testing.T) {
 
 func TestACReaderTruncated(t *testing.T) {
 	bin, _ := func() ([]byte, error) {
-		b := NewStaticACBuilder()
+		b := NewACBuilder()
 		b.AddKeyedPosting([]byte("abc"), PostingRef{Offset: 1, Count: 1}, nil)
 		return b.Compile()
 	}()
-	if _, err := NewACMmapReader(bin[:6]); err == nil {
+	if _, err := NewACReader(bin[:6]); err == nil {
 		t.Fatal("expected truncated error")
 	}
 }
@@ -212,7 +212,7 @@ func BenchmarkACBuildChinese(b *testing.B) {
 	}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		bld := NewStaticACBuilder()
+		bld := NewACBuilder()
 		for j, p := range patterns {
 			bld.AddKeyedPosting([]byte(p), PostingRef{Offset: uint64(j + 1), Count: 1}, nil)
 		}
@@ -224,12 +224,12 @@ func BenchmarkACBuildChinese(b *testing.B) {
 
 func BenchmarkACSearchChinese(b *testing.B) {
 	patterns := []string{"北京", "上海", "广告", "定向广告", "京东", "投放"}
-	bld := NewStaticACBuilder()
+	bld := NewACBuilder()
 	for j, p := range patterns {
 		bld.AddKeyedPosting([]byte(p), PostingRef{Offset: uint64(j + 1), Count: 1}, nil)
 	}
 	bin, _ := bld.Compile()
-	r, _ := NewACMmapReader(bin)
+	r, _ := NewACReader(bin)
 	// MatchPostingRefs iterates the string directly (no []rune alloc) and returns
 	// posting refs, so there is neither a rune-slice allocation nor a per-match
 	// term string allocation.

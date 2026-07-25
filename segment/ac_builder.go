@@ -6,7 +6,7 @@ import (
 	"github.com/echoface/be_indexer/core"
 )
 
-// StaticACBuilder builds an Aho-Corasick automaton serialized as a Double-Array
+// ACBuilder builds an Aho-Corasick automaton serialized as a Double-Array
 // Trie (DAT) for zero-copy mmap matching.
 //
 // Alphabet compression
@@ -19,7 +19,7 @@ import (
 // 0x10FFFF), which is what makes Chinese / emoji / arbitrary-codepoint patterns
 // practical: array size and findBase cost scale with distinct characters used,
 // not with the maximum codepoint value.
-type StaticACBuilder struct {
+type ACBuilder struct {
 	nodes   []flatNode
 	outputs [][]uint32
 	refs    []PostingRef // term id -> posting list ref emitted on match
@@ -35,8 +35,8 @@ type flatNode struct {
 	fail       uint32
 }
 
-func NewStaticACBuilder() *StaticACBuilder {
-	builder := &StaticACBuilder{
+func NewACBuilder() *ACBuilder {
+	builder := &ACBuilder{
 		nodes:   make([]flatNode, 1, 1024),
 		outputs: make([][]uint32, 1, 1024),
 		symOf:   make(map[rune]uint32),
@@ -46,7 +46,7 @@ func NewStaticACBuilder() *StaticACBuilder {
 }
 
 // internSymbol returns the dense symbol id for ch, allocating one on first use.
-func (b *StaticACBuilder) internSymbol(ch rune) uint32 {
+func (b *ACBuilder) internSymbol(ch rune) uint32 {
 	if id, ok := b.symOf[ch]; ok {
 		return id
 	}
@@ -57,7 +57,7 @@ func (b *StaticACBuilder) internSymbol(ch rune) uint32 {
 }
 
 // RecordToKey returns the sort key for sortable containers.
-func (b *StaticACBuilder) RecordToKey(record any) []byte {
+func (b *ACBuilder) RecordToKey(record any) []byte {
 	switch v := record.(type) {
 	case string:
 		return []byte(v)
@@ -69,14 +69,14 @@ func (b *StaticACBuilder) RecordToKey(record any) []byte {
 }
 
 // AddKeyedPosting receives a sorted, grouped, entry with its PostingRef.
-func (b *StaticACBuilder) AddKeyedPosting(key []byte, ref PostingRef, entries []core.EntryID) error {
+func (b *ACBuilder) AddKeyedPosting(key []byte, ref PostingRef, entries []core.EntryID) error {
 	term := string(key)
 	return b.addPosting(term, ref)
 }
 
 
 
-func (b *StaticACBuilder) addPosting(term string, ref PostingRef) error {
+func (b *ACBuilder) addPosting(term string, ref PostingRef) error {
 	termID := uint32(len(b.refs))
 	b.refs = append(b.refs, ref)
 
@@ -95,7 +95,7 @@ func (b *StaticACBuilder) addPosting(term string, ref PostingRef) error {
 	return nil
 }
 
-func (b *StaticACBuilder) addChild(parentIdx uint32, ch rune) uint32 {
+func (b *ACBuilder) addChild(parentIdx uint32, ch rune) uint32 {
 	parent := &b.nodes[parentIdx]
 
 	if parent.firstChild == 0 {
@@ -138,7 +138,7 @@ func (b *StaticACBuilder) addChild(parentIdx uint32, ch rune) uint32 {
 	return newIdx
 }
 
-func (b *StaticACBuilder) buildFailPointers() {
+func (b *ACBuilder) buildFailPointers() {
 	queue := make([]uint32, 0, 1024)
 
 	child := b.nodes[0].firstChild
@@ -182,7 +182,7 @@ func (b *StaticACBuilder) buildFailPointers() {
 	}
 }
 
-func (b *StaticACBuilder) findChild(state uint32, ch rune) uint32 {
+func (b *ACBuilder) findChild(state uint32, ch rune) uint32 {
 	child := b.nodes[state].firstChild
 	for child != 0 {
 		if b.nodes[child].char == ch {
@@ -202,7 +202,7 @@ func (b *StaticACBuilder) findChild(state uint32, ch rune) uint32 {
 // the underlying Unicode codepoints, so the classic nextCheckPos-anchored linear
 // probe in findBase stays cheap (probe distance is bounded by the small dense
 // alphabet, not by raw rune values).
-func (b *StaticACBuilder) buildDAT() (base, check, stateMap, revMap []uint32, used []bool) {
+func (b *ACBuilder) buildDAT() (base, check, stateMap, revMap []uint32, used []bool) {
 	base = make([]uint32, 1, len(b.nodes)*2)
 	check = make([]uint32, 1, len(b.nodes)*2)
 	used = make([]bool, 1, len(b.nodes)*2)
@@ -306,7 +306,7 @@ func findBase(used []bool, startPos uint32, syms []uint32) uint32 {
 	}
 }
 
-func (b *StaticACBuilder) Compile() ([]byte, error) {
+func (b *ACBuilder) Compile() ([]byte, error) {
 	b.buildFailPointers()
 
 	base, check, stateMap, revMap, used := b.buildDAT()
@@ -387,6 +387,6 @@ func (b *StaticACBuilder) Compile() ([]byte, error) {
 }
 
 // Build satisfies the ContainerBuilder interface by delegating to Compile.
-func (b *StaticACBuilder) Build() ([]byte, error) {
+func (b *ACBuilder) Build() ([]byte, error) {
 	return b.Compile()
 }

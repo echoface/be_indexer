@@ -33,13 +33,13 @@ func TestContainerRoundTrip(t *testing.T) {
 			eid := core.NewEntryID(core.NewConjID(1, 0, 1), true)
 			pl := segment.WriteFlatPostingList(core.Entries{eid})
 
-			cb := mph.NewBuilder()
+			cb := mph.NewMPHBuilder()
 			sb := cb
 			sb.AddKeyedPosting([]byte("hello"), segment.PostingRef{Offset: 0, Count: 1}, nil)
 			blob, err := cb.Build()
 			convey.So(err, convey.ShouldBeNil)
 
-			cr, err := mph.NewReader(blob)
+			cr, err := mph.NewMPHReader(blob)
 			convey.So(err, convey.ShouldBeNil)
 
 			iters, err := cr.MatchQuery(segment.BlockContext{Pl: pl}, "field", "hello")
@@ -61,14 +61,14 @@ func TestContainerRoundTrip(t *testing.T) {
 			offC := offB + uint64(len(plB))
 			postingBlock := append(append(append([]byte{}, plA...), plB...), plC...)
 
-			cb := mph.NewBuilder()
+			cb := mph.NewMPHBuilder()
 			cb.AddKeyedPosting([]byte("alpha"), segment.PostingRef{Offset: 0, Count: 1}, nil)
 			cb.AddKeyedPosting([]byte("beta"), segment.PostingRef{Offset: offB, Count: 1}, nil)
 			cb.AddKeyedPosting([]byte("gamma"), segment.PostingRef{Offset: offC, Count: 1}, nil)
 			blob, err := cb.Build()
 			convey.So(err, convey.ShouldBeNil)
 
-			cr, err := mph.NewReader(blob)
+			cr, err := mph.NewMPHReader(blob)
 			convey.So(err, convey.ShouldBeNil)
 
 			convey.Convey("hit alpha", func() {
@@ -91,10 +91,10 @@ func TestContainerRoundTrip(t *testing.T) {
 		})
 
 		convey.Convey("term not found returns empty", func() {
-			cb := mph.NewBuilder()
+			cb := mph.NewMPHBuilder()
 			cb.AddKeyedPosting([]byte("apple"), segment.PostingRef{Offset: 0, Count: 1}, nil)
 			blob, _ := cb.Build()
-			cr, _ := mph.NewReader(blob)
+			cr, _ := mph.NewMPHReader(blob)
 
 			iters, err := cr.MatchQuery(segment.BlockContext{}, "f", "notfound")
 			convey.So(err, convey.ShouldBeNil)
@@ -102,24 +102,24 @@ func TestContainerRoundTrip(t *testing.T) {
 		})
 
 		convey.Convey("non-string query is an error", func() {
-			cb := mph.NewBuilder()
+			cb := mph.NewMPHBuilder()
 			cb.AddKeyedPosting([]byte("x"), segment.PostingRef{Offset: 0, Count: 1}, nil)
 			blob, _ := cb.Build()
-			cr, _ := mph.NewReader(blob)
+			cr, _ := mph.NewMPHReader(blob)
 
 			_, err := cr.MatchQuery(segment.BlockContext{}, "f", 42)
 			convey.So(err, convey.ShouldNotBeNil)
 		})
 
 		convey.Convey("empty builder produces nil blob", func() {
-			cb := mph.NewBuilder()
+			cb := mph.NewMPHBuilder()
 			blob, err := cb.Build()
 			convey.So(err, convey.ShouldBeNil)
 			convey.So(blob, convey.ShouldBeNil)
 		})
 
 		convey.Convey("too short blob returns error", func() {
-			_, err := mph.NewReader([]byte{0})
+			_, err := mph.NewMPHReader([]byte{0})
 			convey.So(err, convey.ShouldNotBeNil)
 		})
 
@@ -128,7 +128,7 @@ func TestContainerRoundTrip(t *testing.T) {
 			perEntry := 16 // posting header(8) + one EntryID(8)
 			usePosting := make([]byte, size*perEntry) // header(8) + entry(8) per term
 			var off uint64 = 0
-			cb := mph.NewBuilder()
+			cb := mph.NewMPHBuilder()
 			for i := 0; i < size; i++ {
 				term := fmt.Sprintf("term_%06d", i)
 				ref := segment.PostingRef{Offset: off, Count: 1}
@@ -139,7 +139,7 @@ func TestContainerRoundTrip(t *testing.T) {
 			convey.So(err, convey.ShouldBeNil)
 			convey.So(len(blob), convey.ShouldBeGreaterThan, 0)
 
-			cr, err := mph.NewReader(blob)
+			cr, err := mph.NewMPHReader(blob)
 			convey.So(err, convey.ShouldBeNil)
 
 			for i := 0; i < size; i++ {
@@ -295,8 +295,8 @@ func TestExcludePredicate(t *testing.T) {
 }
 
 func TestRecordToKey(t *testing.T) {
-	convey.Convey("Builder.RecordToKey", t, func() {
-		cb := mph.NewBuilder()
+	convey.Convey("MPHBuilder.RecordToKey", t, func() {
+		cb := mph.NewMPHBuilder()
 
 		convey.So(string(cb.RecordToKey("hello")), convey.ShouldEqual, "hello")
 		convey.So(string(cb.RecordToKey([]byte("world"))), convey.ShouldEqual, "world")
@@ -321,7 +321,7 @@ func BenchmarkMPH_Find(b *testing.B) {
 		for _, sc := range scenarios {
 			name := fmt.Sprintf("size=%d/%s", size, sc.name)
 			b.Run(name, func(b *testing.B) {
-				cb := mph.NewBuilder()
+				cb := mph.NewMPHBuilder()
 				keys := make([]string, 0, size)
 				for i := 0; i < size; i++ {
 					k := fmt.Sprintf("term_%08x", i)
@@ -335,7 +335,7 @@ func BenchmarkMPH_Find(b *testing.B) {
 				if err != nil {
 					b.Fatal(err)
 				}
-				cr, err := mph.NewReader(blob)
+				cr, err := mph.NewMPHReader(blob)
 				if err != nil {
 					b.Fatal(err)
 				}
@@ -395,7 +395,7 @@ func BenchmarkMPH_Build(b *testing.B) {
 			b.ResetTimer()
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
-				cb := mph.NewBuilder()
+				cb := mph.NewMPHBuilder()
 				for _, p := range pairs {
 					cb.AddKeyedPosting([]byte(p.term), p.ref, nil)
 				}

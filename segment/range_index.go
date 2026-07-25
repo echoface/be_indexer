@@ -19,19 +19,19 @@ import (
 //
 // Design
 //
-//	1. Elementary intervals. All distinct interval endpoints are collected and
-//	   sorted. They partition the int64 line into "elementary intervals" that
-//	   alternate between a single point and the open gap between adjacent points
-//	   (plus the two unbounded ends). Every indexed interval is exactly a union
-//	   of consecutive elementary intervals (leaves).
-//	2. Segment tree. A balanced binary tree is built over the leaves. Each
-//	   indexed interval is decomposed into O(log m) canonical nodes whose covered
-//	   value range is fully contained in the interval; the EntryID is stored on
-//	   those nodes only.
-//	3. Stabbing. To answer a point query we descend from the root to the leaf
-//	   covering q, unioning the posting list of every node on the path. Because
-//	   canonical coverage is disjoint along any root-leaf path, an EntryID is
-//	   collected at most once (correctness invariant).
+//  1. Elementary intervals. All distinct interval endpoints are collected and
+//     sorted. They partition the int64 line into "elementary intervals" that
+//     alternate between a single point and the open gap between adjacent points
+//     (plus the two unbounded ends). Every indexed interval is exactly a union
+//     of consecutive elementary intervals (leaves).
+//  2. Segment tree. A balanced binary tree is built over the leaves. Each
+//     indexed interval is decomposed into O(log m) canonical nodes whose covered
+//     value range is fully contained in the interval; the EntryID is stored on
+//     those nodes only.
+//  3. Stabbing. To answer a point query we descend from the root to the leaf
+//     covering q, unioning the posting list of every node on the path. Because
+//     canonical coverage is disjoint along any root-leaf path, an EntryID is
+//     collected at most once (correctness invariant).
 //
 // Binary layout (all little-endian; the posting region reuses the 8-byte
 // aligned FlatPostingList format):
@@ -236,8 +236,8 @@ func encodeRangeIndex(nodes []nodeRecord, postingRegion []byte) []byte {
 	return buf
 }
 
-// NewRangeIndexReader maps a serialized RangeIndex block.
-func NewRangeIndexReader(b []byte) (*RangeIndex, error) {
+// NewRangeReader maps a serialized RangeIndex block.
+func NewRangeReader(b []byte) (*RangeIndex, error) {
 	if len(b) < 16 {
 		return nil, fmt.Errorf("truncated range index header")
 	}
@@ -319,7 +319,9 @@ func (ri *RangeIndex) MatchQuery(ctx BlockContext, field core.BEField, query int
 
 func init() {
 	RegisterContainer(core.IndexNameExtendRange, ContainerDef{
-		Reader: func(b []byte) (ContainerReader, error) { return NewRangeIndexReader(b) },
+		Reader: func(b []byte) (ContainerReader, error) {
+			return NewRangeReader(b)
+		},
 		Builder: func() ContainerBuilder { return NewRangeBuilder() },
 	})
 }

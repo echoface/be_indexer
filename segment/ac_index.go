@@ -8,7 +8,7 @@ import (
 	"github.com/echoface/be_indexer/core"
 )
 
-type ACMmapReader struct {
+type ACIndex struct {
 	b          []byte
 	stateCount uint32
 	base       []uint32
@@ -19,7 +19,7 @@ type ACMmapReader struct {
 	symOf      map[rune]uint32 // rune -> dense symbol id (matches builder)
 }
 
-func NewACMmapReader(b []byte) (*ACMmapReader, error) {
+func NewACReader(b []byte) (*ACIndex, error) {
 	if len(b) < 12 {
 		return nil, fmt.Errorf("truncated AC mmap block")
 	}
@@ -27,7 +27,7 @@ func NewACMmapReader(b []byte) (*ACMmapReader, error) {
 	stateCount := binary.LittleEndian.Uint32(b[0:4])
 	symCount := binary.LittleEndian.Uint32(b[4:8])
 	if stateCount == 0 {
-		return &ACMmapReader{}, nil
+		return &ACIndex{}, nil
 	}
 
 	headerSize := 12
@@ -53,7 +53,7 @@ func NewACMmapReader(b []byte) (*ACMmapReader, error) {
 	failPtr := unsafe.Pointer(&b[arrBase+arrayBytes*2])
 	outputPtrsPtr := unsafe.Pointer(&b[arrBase+arrayBytes*3])
 
-	return &ACMmapReader{
+	return &ACIndex{
 		b:          b,
 		stateCount: stateCount,
 		base:       unsafe.Slice((*uint32)(basePtr), stateCount),
@@ -69,7 +69,7 @@ func NewACMmapReader(b []byte) (*ACMmapReader, error) {
 // or 0 if there is no such transition. The bound check uses a 64-bit
 // intermediate so base+sym can never overflow uint32 and forge a spurious
 // in-range index.
-func (ac *ACMmapReader) transition(state, sym uint32) uint32 {
+func (ac *ACIndex) transition(state, sym uint32) uint32 {
 	if sym == 0 {
 		return 0
 	}
@@ -89,7 +89,7 @@ func (ac *ACMmapReader) transition(state, sym uint32) uint32 {
 // posting-list refs of every matched pattern. Each ref points straight into the
 // posting block, so the caller builds a cursor without a second dictionary
 // lookup or term string allocation.
-func (ac *ACMmapReader) MatchPostingRefs(text string) []PostingRef {
+func (ac *ACIndex) MatchPostingRefs(text string) []PostingRef {
 	if ac.stateCount == 0 {
 		return nil
 	}
@@ -105,7 +105,7 @@ func (ac *ACMmapReader) MatchPostingRefs(text string) []PostingRef {
 // step advances the automaton by one rune from `state`, appending any matched
 // posting refs at the resulting state, and returns the new state and result
 // slice.
-func (ac *ACMmapReader) step(state uint32, r rune, results []PostingRef) (uint32, []PostingRef) {
+func (ac *ACIndex) step(state uint32, r rune, results []PostingRef) (uint32, []PostingRef) {
 	sym := ac.symOf[r] // 0 if the rune never appears in any pattern
 	for {
 		nextState := ac.transition(state, sym)
@@ -128,7 +128,7 @@ func (ac *ACMmapReader) step(state uint32, r rune, results []PostingRef) (uint32
 // readOutputs decodes the posting refs stored at the output payload `offset`
 // and appends them to dst. Payload layout: [count u16] then count *
 // [postingOffset u64][postingCount u32].
-func (ac *ACMmapReader) readOutputs(offset uint32, dst []PostingRef) []PostingRef {
+func (ac *ACIndex) readOutputs(offset uint32, dst []PostingRef) []PostingRef {
 	if int(offset)+2 > len(ac.outputData) {
 		return dst
 	}
@@ -149,7 +149,7 @@ func (ac *ACMmapReader) readOutputs(offset uint32, dst []PostingRef) []PostingRe
 
 // MatchQuery implements ContainerReader by performing AC matching against the
 // query text and returning posting cursors into the posting block.
-func (ac *ACMmapReader) MatchQuery(ctx BlockContext, field core.BEField, query interface{}) ([]core.PostingIterator, error) {
+func (ac *ACIndex) MatchQuery(ctx BlockContext, field core.BEField, query interface{}) ([]core.PostingIterator, error) {
 	text, ok := query.(string)
 	if !ok {
 		return nil, fmt.Errorf("ac container expects string query, got %T", query)
@@ -171,7 +171,7 @@ func (ac *ACMmapReader) MatchQuery(ctx BlockContext, field core.BEField, query i
 
 func init() {
 	RegisterContainer(core.IndexNameACMatcher, ContainerDef{
-		Reader:  func(b []byte) (ContainerReader, error) { return NewACMmapReader(b) },
-		Builder: func() ContainerBuilder { return NewStaticACBuilder() },
+		Reader:  func(b []byte) (ContainerReader, error) { return NewACReader(b) },
+		Builder: func() ContainerBuilder { return NewACBuilder() },
 	})
 }

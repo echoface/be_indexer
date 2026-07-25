@@ -91,7 +91,7 @@ func (Encoder) Query(value interface{}) ([]parser.EncodedQuery, error) {
 
 // --- build side (segment serialization) ---
 
-// Builder accumulates (term, PostingRef) pairs via SortableBuilder and
+// PrefixBuilder accumulates (term, PostingRef) pairs via SortableBuilder and
 // serializes them. Registered as Sortable=true so the framework sorts
 // and groups by key before calling AddKeyedPosting.
 //
@@ -100,7 +100,7 @@ func (Encoder) Query(value interface{}) ([]parser.EncodedQuery, error) {
 //	[count uint32]
 //	repeat count times, sorted by term ascending:
 //	  [termLen uint8][term bytes][offset uint64][entryCount uint32]
-type Builder struct {
+type PrefixBuilder struct {
 	terms []termRef
 }
 
@@ -109,12 +109,12 @@ type termRef struct {
 	ref  segment.PostingRef
 }
 
-// NewBuilder creates a fresh builder; the segment writer calls it once per field.
-func NewBuilder() segment.ContainerBuilder {
-	return &Builder{}
+// NewPrefixBuilder creates a fresh builder; the segment writer calls it once per field.
+func NewPrefixBuilder() segment.ContainerBuilder {
+	return &PrefixBuilder{}
 }
 
-func (b *Builder) RecordToKey(record any) []byte {
+func (b *PrefixBuilder) RecordToKey(record any) []byte {
 	switch v := record.(type) {
 	case string:
 		return []byte(v)
@@ -125,12 +125,12 @@ func (b *Builder) RecordToKey(record any) []byte {
 	}
 }
 
-func (b *Builder) AddKeyedPosting(key []byte, ref segment.PostingRef, entries []core.EntryID) error {
+func (b *PrefixBuilder) AddKeyedPosting(key []byte, ref segment.PostingRef, entries []core.EntryID) error {
 	b.terms = append(b.terms, termRef{term: string(key), ref: ref})
 	return nil
 }
 
-func (b *Builder) Build() ([]byte, error) {
+func (b *PrefixBuilder) Build() ([]byte, error) {
 	sort.Slice(b.terms, func(i, j int) bool { return b.terms[i].term < b.terms[j].term })
 
 	size := 4
@@ -153,20 +153,20 @@ func (b *Builder) Build() ([]byte, error) {
 
 // --- query side (zero-copy reader) ---
 
-// Reader answers prefix queries over the serialized block. Created once at
-// SegmentReader construction; Retrieve must be safe for concurrent use
+// PrefixIndex answers prefix queries over the serialized block. Created once at
+// SegmentReader construction; MatchQuery must be safe for concurrent use
 // (read-only state).
-type Reader struct {
+type PrefixIndex struct {
 	entries []termRef
 }
 
-// NewReader decodes the block produced by Builder.Build.
-func NewReader(b []byte) (segment.ContainerReader, error) {
+// NewPrefixReader decodes the block produced by PrefixBuilder.Build.
+func NewPrefixReader(b []byte) (segment.ContainerReader, error) {
 	if len(b) < 4 {
 		return nil, fmt.Errorf("example: truncated header")
 	}
 	count := binary.LittleEndian.Uint32(b[0:4])
-	r := &Reader{entries: make([]termRef, 0, count)}
+	r := &PrefixIndex{entries: make([]termRef, 0, count)}
 	off := 4
 	for i := uint32(0); i < count; i++ {
 		if off+1 > len(b) {
@@ -192,7 +192,7 @@ func NewReader(b []byte) (segment.ContainerReader, error) {
 // MatchQuery returns posting cursors for every stored prefix that prefixes the
 // query string. Linear scan keeps the template simple; production containers
 // should exploit their layout (binary search, trie, interval tree...).
-func (r *Reader) MatchQuery(ctx segment.BlockContext, field core.BEField, query interface{}) ([]core.PostingIterator, error) {
+func (r *PrefixIndex) MatchQuery(ctx segment.BlockContext, field core.BEField, query interface{}) ([]core.PostingIterator, error) {
 	q, ok := query.(string)
 	if !ok {
 		return nil, fmt.Errorf("example: query must be string, got %T", query)
@@ -216,7 +216,7 @@ func init() {
 		return Encoder{}, nil
 	})
 	segment.RegisterContainer(ContainerName, segment.ContainerDef{
-		Reader:  func(b []byte) (segment.ContainerReader, error) { return NewReader(b) },
-		Builder: func() segment.ContainerBuilder { return NewBuilder() },
+		Reader:  func(b []byte) (segment.ContainerReader, error) { return NewPrefixReader(b) },
+		Builder: func() segment.ContainerBuilder { return NewPrefixBuilder() },
 	})
 }

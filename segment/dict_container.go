@@ -6,18 +6,23 @@ import (
 	"github.com/echoface/be_indexer/core"
 )
 
-// DictContainer is the default ContainerReader for fields that use
+// DictIndex is the default ContainerReader for fields that use
 // FlatDict + FlatPostingList. It performs dictionary binary search and
 // zero-copy posting list access. The dict is immutable and set once
 // during segment loading.
-type DictContainer struct {
+type DictIndex struct {
 	dict *FlatDict
 }
 
-func (c DictContainer) MatchQuery(ctx BlockContext, field core.BEField, query interface{}) ([]core.PostingIterator, error) {
+// NewDictReader creates a DictIndex backed by the given FlatDict.
+func NewDictReader(dict *FlatDict) DictIndex {
+	return DictIndex{dict: dict}
+}
+
+func (c DictIndex) MatchQuery(ctx BlockContext, field core.BEField, query interface{}) ([]core.PostingIterator, error) {
 	term, ok := query.(string)
 	if !ok {
-		return nil, fmt.Errorf("dict container: query must be string, got %T", query)
+		return nil, fmt.Errorf("dict index: query must be string, got %T", query)
 	}
 	if c.dict == nil {
 		return nil, nil

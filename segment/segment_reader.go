@@ -169,7 +169,7 @@ func NewSegmentReaderWithOptions(b []byte, opts ReaderOptions) (*SegmentReader, 
 		}
 	}
 
-	// Ensure fields with a dict get a DictContainer with the loaded dict
+	// Ensure fields with a dict get a DictIndex with the loaded dict
 	// so ContainerQuery("default", ...) works for the default path.
 	for _, blk := range blocks {
 		if blk.dict != nil {
@@ -177,7 +177,7 @@ func NewSegmentReaderWithOptions(b []byte, opts ReaderOptions) (*SegmentReader, 
 				blk.containers = make(map[string]ContainerReader)
 			}
 			if _, ok := blk.containers[core.IndexNameDefault]; !ok {
-				blk.containers[core.IndexNameDefault] = DictContainer{dict: blk.dict}
+				blk.containers[core.IndexNameDefault] = NewDictReader(blk.dict)
 			}
 		}
 	}

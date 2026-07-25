@@ -11,14 +11,16 @@ import (
 )
 
 func newReaderFactory(b []byte) (segment.ContainerReader, error) {
-	return NewReader(b)
+	return NewMPHReader(b)
 }
 
-type Reader struct {
+// MPHIndex is a minimal-perfect-hash container for exact-term lookups.
+type MPHIndex struct {
 	chd *mph.CHD
 }
 
-func NewReader(b []byte) (*Reader, error) {
+// NewMPHReader creates an MPHIndex from a serialized CHD block.
+func NewMPHReader(b []byte) (*MPHIndex, error) {
 	if len(b) < 4 {
 		return nil, fmt.Errorf("mph: blob too short: len=%d", len(b))
 	}
@@ -26,7 +28,7 @@ func NewReader(b []byte) (*Reader, error) {
 	if err != nil {
 		return nil, fmt.Errorf("mph: mmap CHD: %w", err)
 	}
-	return &Reader{chd: chd}, nil
+	return &MPHIndex{chd: chd}, nil
 }
 
 func decodePostingRef(val []byte) (segment.PostingRef, error) {
@@ -39,7 +41,7 @@ func decodePostingRef(val []byte) (segment.PostingRef, error) {
 	}, nil
 }
 
-func (r *Reader) MatchQuery(ctx segment.BlockContext, field core.BEField, query interface{}) ([]core.PostingIterator, error) {
+func (r *MPHIndex) MatchQuery(ctx segment.BlockContext, field core.BEField, query interface{}) ([]core.PostingIterator, error) {
 	term, ok := query.(string)
 	if !ok {
 		return nil, fmt.Errorf("mph: query must be string, got %T", query)

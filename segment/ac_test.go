@@ -17,7 +17,7 @@ func TestACBuilderAndReader(t *testing.T) {
 		"x",
 	}
 
-	builder := NewStaticACBuilder()
+	builder := NewACBuilder()
 	// Adding works best if sorted (simplifies the Trie), but should work anyway
 	sort.Strings(words)
 	// Assign each word a recognizable PostingRef (Offset = index+1) and remember
@@ -36,9 +36,9 @@ func TestACBuilderAndReader(t *testing.T) {
 	}
 
 	// Read the binary format using zero-copy reader
-	reader, err := NewACMmapReader(bin)
+	reader, err := NewACReader(bin)
 	if err != nil {
-		t.Fatalf("ACMmapReader failed: %v", err)
+		t.Fatalf("ACIndex failed: %v", err)
 	}
 
 	tests := []struct {

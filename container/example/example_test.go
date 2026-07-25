@@ -22,14 +22,14 @@ func TestContainerRoundTrip(t *testing.T) {
 		plB := segment.WriteFlatPostingList(core.Entries{eidB})
 		postingBlock := append(append([]byte{}, plA...), plB...)
 
-		cb := example.NewBuilder()
+		cb := example.NewPrefixBuilder()
 		sb := cb.(segment.SortableBuilder)
 		sb.AddKeyedPosting([]byte("/api"), segment.PostingRef{Offset: 0, Count: 1}, nil)
 		sb.AddKeyedPosting([]byte("/static"), segment.PostingRef{Offset: uint64(len(plA)), Count: 1}, nil)
 		blob, err := cb.Build()
 		convey.So(err, convey.ShouldBeNil)
 
-		cr, err := example.NewReader(blob)
+		cr, err := example.NewPrefixReader(blob)
 		convey.So(err, convey.ShouldBeNil)
 
 		convey.Convey("prefix hit returns the matching posting", func() {
@@ -51,9 +51,9 @@ func TestContainerRoundTrip(t *testing.T) {
 		})
 
 		convey.Convey("truncated blob is an error", func() {
-			_, err := example.NewReader(blob[:len(blob)-3])
+			_, err := example.NewPrefixReader(blob[:len(blob)-3])
 			convey.So(err, convey.ShouldNotBeNil)
-			_, err = example.NewReader([]byte{1})
+			_, err = example.NewPrefixReader([]byte{1})
 			convey.So(err, convey.ShouldNotBeNil)
 		})
 	})

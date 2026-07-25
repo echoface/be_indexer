@@ -12,14 +12,17 @@ import (
 )
 
 func newBuilderFactory() segment.ContainerBuilder {
-	return NewBuilder()
+	return NewMPHBuilder()
 }
 
-func NewBuilder() *Builder {
-	return &Builder{}
+// NewMPHBuilder creates a fresh MPHBuilder.
+func NewMPHBuilder() *MPHBuilder {
+	return &MPHBuilder{}
 }
 
-type Builder struct {
+// MPHBuilder accumulates (term, PostingRef) pairs and serializes them
+// into a CHD minimal-perfect-hash block.
+type MPHBuilder struct {
 	terms []termRef
 }
 
@@ -28,7 +31,7 @@ type termRef struct {
 	ref  segment.PostingRef
 }
 
-func (b *Builder) RecordToKey(record any) []byte {
+func (b *MPHBuilder) RecordToKey(record any) []byte {
 	switch v := record.(type) {
 	case string:
 		return []byte(v)
@@ -39,7 +42,7 @@ func (b *Builder) RecordToKey(record any) []byte {
 	}
 }
 
-func (b *Builder) AddKeyedPosting(key []byte, ref segment.PostingRef, entries []core.EntryID) error {
+func (b *MPHBuilder) AddKeyedPosting(key []byte, ref segment.PostingRef, entries []core.EntryID) error {
 	b.terms = append(b.terms, termRef{term: string(key), ref: ref})
 	return nil
 }
@@ -51,7 +54,7 @@ func encodePostingRef(ref segment.PostingRef) []byte {
 	return buf[:]
 }
 
-func (b *Builder) Build() ([]byte, error) {
+func (b *MPHBuilder) Build() ([]byte, error) {
 	if len(b.terms) == 0 {
 		return nil, nil
 	}

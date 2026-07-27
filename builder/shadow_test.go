@@ -23,9 +23,9 @@ func TestBuildSegmentsFromDocs_ShadowTest(t *testing.T) {
 	rng := rand.New(rand.NewSource(seed))
 
 	fields := map[core.BEField]*core.FieldMeta{
-		"age":  {ID: 1, Field: "age", FieldOption: core.FieldOption{Tokenizer: "number"}},
-		"city": {ID: 2, Field: "city", FieldOption: core.FieldOption{Tokenizer: "default"}},
-		"tag":  {ID: 3, Field: "tag", FieldOption: core.FieldOption{Tokenizer: "default"}},
+		"age":  {ID: 1, Field: "age", FieldOption: core.FieldOption{Encoder: "number"}},
+		"city": {ID: 2, Field: "city", FieldOption: core.FieldOption{}},
+		"tag":  {ID: 3, Field: "tag", FieldOption: core.FieldOption{}},
 	}
 
 	cities := []string{"bj", "sh", "gz", "sz", "cd", "hz"}

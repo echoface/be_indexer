@@ -307,7 +307,7 @@ func (ri *RangeIndex) Stab(field core.BEField, q int64) ([]core.PostingIterator,
 	return iters, nil
 }
 
-// MatchQuery implements ContainerReader by performing a stabbing query on the
+// MatchQuery implements IndexReader by performing a stabbing query on the
 // segment tree, returning posting cursors.
 func (ri *RangeIndex) MatchQuery(ctx BlockContext, field core.BEField, query interface{}) ([]core.PostingIterator, error) {
 	point, ok := query.(int64)
@@ -318,10 +318,10 @@ func (ri *RangeIndex) MatchQuery(ctx BlockContext, field core.BEField, query int
 }
 
 func init() {
-	RegisterContainer(core.IndexNameExtendRange, ContainerDef{
-		Reader: func(b []byte) (ContainerReader, error) {
+	RegisterIndex(core.IndexNameExtendRange, IndexDef{
+		Reader: func(b []byte) (IndexReader, error) {
 			return NewRangeReader(b)
 		},
-		Builder: func() ContainerBuilder { return NewRangeBuilder() },
+		Builder: func(env BuilderEnv) IndexBuilder { return NewRangeBuilder(env) },
 	})
 }

@@ -212,8 +212,8 @@ func (e *BooleanEngine) initCursors(
 		// Determine the field's container type once per field.
 		containerName := core.IndexNameDefault
 		if fc, ok := e.schemaCodec.Field(field); ok {
-			c := fc.Meta.Container
-			if c != "" && segment.HasContainer(c) {
+			c := fc.Meta.IndexType
+			if c != "" && segment.HasIndex(c) {
 				containerName = c
 			}
 		}
@@ -221,7 +221,7 @@ func (e *BooleanEngine) initCursors(
 		var iterators []core.PostingIterator
 		for _, seg := range e.segments {
 			for _, q := range ef.queries {
-				iters, err := seg.ContainerQuery(field, containerName, q.Value)
+				iters, err := seg.IndexQuery(field, containerName, q.Value)
 				if err == nil && len(iters) > 0 {
 					iterators = append(iterators, iters...)
 				}

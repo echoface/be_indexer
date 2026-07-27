@@ -11,7 +11,7 @@
 // query prefixes and any stored covering cell yields a candidate.
 //
 // Registration: only a PredicateEncoder is registered (container name
-// "proximitygeo"). No segment.RegisterContainer call — the segment writers
+// "proximitygeo"). No segment.RegisterIndex call — the segment writers
 // skip container-block building for unregistered kinds, so the field is a
 // pure dictionary field.
 package geo

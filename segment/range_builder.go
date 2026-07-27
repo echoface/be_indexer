@@ -6,8 +6,8 @@ import (
 	"github.com/echoface/be_indexer/core"
 )
 
-// RangeBuilder accumulates interval entries and builds a RangeIndex segment tree
-// block at Build time. It implements ContainerBuilder for the "ext_range" container.
+// RangeBuilder accumulates interval entries and builds a RangeIndex segment
+// tree block at Build time.
 type RangeBuilder struct {
 	intervals []intervalEntry
 }
@@ -18,13 +18,12 @@ type intervalEntry struct {
 }
 
 // NewRangeBuilder creates a fresh RangeBuilder.
-func NewRangeBuilder() *RangeBuilder {
+func NewRangeBuilder(env BuilderEnv) IndexBuilder {
 	return &RangeBuilder{}
 }
 
-// AddPosting receives a record and its associated EntryIDs. The record is
-// expected to be a core.RangeRecord.
-func (b *RangeBuilder) AddPosting(record any, entries []core.EntryID) error {
+// AddRecord receives a record and its associated EntryIDs.
+func (b *RangeBuilder) AddRecord(record any, entries []core.EntryID) error {
 	rr, ok := record.(core.RangeRecord)
 	if !ok {
 		return fmt.Errorf("ext_range: expected core.RangeRecord, got %T", record)
@@ -33,8 +32,8 @@ func (b *RangeBuilder) AddPosting(record any, entries []core.EntryID) error {
 	return nil
 }
 
-// Build merges accumulated intervals and serializes a RangeIndex byte block.
-func (b *RangeBuilder) Build() ([]byte, error) {
+// Build merges accumulated intervals and writes a RangeIndex block.
+func (b *RangeBuilder) Build(bw BlockWriter) error {
 	merged := mergeIntervalEntries(b.intervals)
 	intervals := make([]Interval, 0, len(merged))
 	for _, e := range merged {
@@ -42,7 +41,14 @@ func (b *RangeBuilder) Build() ([]byte, error) {
 			intervals = append(intervals, Interval{Lo: e.lo, Hi: e.hi, Entry: eid})
 		}
 	}
-	return BuildRangeIndex(intervals)
+	data, err := BuildRangeIndex(intervals)
+	if err != nil {
+		return err
+	}
+	if len(data) == 0 {
+		return nil
+	}
+	return bw.WriteBlock(core.IndexNameExtendRange, data)
 }
 
 // mergeIntervalEntries groups intervalEntry by (lo, hi) and merges their entry lists.

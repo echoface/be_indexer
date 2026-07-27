@@ -13,13 +13,13 @@ func mkE(k int, id core.DocID) core.EntryID {
 }
 
 func TestExternalBuilderMatchesBuilderAcrossRuns(t *testing.T) {
-	fields := []core.FieldMeta{{ID: 1, Field: "a", FieldOption: core.FieldOption{Tokenizer: "number"}}}
+	fields := []core.FieldMeta{{ID: 1, Field: "a", FieldOption: core.FieldOption{Encoder: "number"}}}
 	build := func(useExternal bool) []byte {
 		buf := new(bytes.Buffer)
 		var sink interface {
 			SetDocCount(int)
-			AddField(core.FieldMeta)
-			AddPosting(int, string, string, []core.EntryID) error
+			AddField(core.FieldMeta) error
+			AddRecord(string, any, []core.EntryID) error
 			Write() error
 		}
 		if useExternal {
@@ -42,7 +42,7 @@ func TestExternalBuilderMatchesBuilderAcrossRuns(t *testing.T) {
 			{term: "3", entry: mkE(1, 6)},
 		}
 		for _, posting := range postings {
-			if err := sink.AddPosting(1, "a", posting.term, []core.EntryID{posting.entry}); err != nil {
+			if err := sink.AddRecord("a", posting.term, []core.EntryID{posting.entry}); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -83,7 +83,7 @@ func TestExternalBuilderACMatcherAcrossRuns(t *testing.T) {
 	b.SetDocCount(4)
 	b.AddField(core.FieldMeta{
 		Field:       core.BEField("keyword"),
-		FieldOption: core.FieldOption{Container: core.IndexNameACMatcher, Encoder: core.IndexNameACMatcher},
+		FieldOption: core.FieldOption{IndexType: core.IndexNameACMatcher, Encoder: core.IndexNameACMatcher},
 	})
 	postings := []struct {
 		term  string
@@ -95,7 +95,7 @@ func TestExternalBuilderACMatcherAcrossRuns(t *testing.T) {
 		{term: "tree", entry: mkE(1, 4)},
 	}
 	for _, posting := range postings {
-		if err := b.AddRecord("keyword", core.IndexNameACMatcher, posting.term, []core.EntryID{posting.entry}); err != nil {
+		if err := b.AddRecord("keyword", posting.term, []core.EntryID{posting.entry}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -138,7 +138,7 @@ func TestExternalBuilderSegmentV2EmbedsWildcards(t *testing.T) {
 		Wildcards:           core.Entries{30, 10},
 	})
 	b.SetDocCount(2)
-	b.AddField(core.FieldMeta{ID: 1, Field: "a", FieldOption: core.FieldOption{Tokenizer: "number"}})
+	b.AddField(core.FieldMeta{ID: 1, Field: "a", FieldOption: core.FieldOption{Encoder: "number"}})
 	if err := b.AddPosting(1, "a", "1", []core.EntryID{mkE(1, 20)}); err != nil {
 		t.Fatal(err)
 	}
@@ -164,7 +164,7 @@ func TestExternalBuilderSegmentV2MatchesBuilderAcrossRuns(t *testing.T) {
 		var sink interface {
 			SetDocCount(int)
 			SetWildcards(core.Entries)
-			AddField(core.FieldMeta)
+			AddField(core.FieldMeta) error
 			AddPosting(int, string, string, []core.EntryID) error
 			Write() error
 		}
@@ -175,8 +175,8 @@ func TestExternalBuilderSegmentV2MatchesBuilderAcrossRuns(t *testing.T) {
 		}
 		sink.SetDocCount(2)
 		sink.SetWildcards(core.Entries{30, 10})
-		sink.AddField(core.FieldMeta{ID: 2, Field: "b", FieldOption: core.FieldOption{Tokenizer: "number"}})
-		sink.AddField(core.FieldMeta{ID: 1, Field: "a", FieldOption: core.FieldOption{Tokenizer: "number"}})
+		sink.AddField(core.FieldMeta{ID: 2, Field: "b", FieldOption: core.FieldOption{Encoder: "number"}})
+		sink.AddField(core.FieldMeta{ID: 1, Field: "a", FieldOption: core.FieldOption{Encoder: "number"}})
 		for _, posting := range []struct {
 			term  string
 			entry core.EntryID

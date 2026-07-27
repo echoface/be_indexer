@@ -75,7 +75,7 @@ func TestBuilderReader(t *testing.T) {
 // TestBuilderRangeRoundTrip verifies ext_range blocks survive write/read and
 // that Builder and ExternalBuilder produce byte-identical segments.
 func TestBuilderRangeRoundTrip(t *testing.T) {
-	field := core.FieldMeta{ID: 1, Field: "age", FieldOption: core.FieldOption{Container: core.IndexNameExtendRange, Encoder: core.IndexNameExtendRange}}
+	field := core.FieldMeta{ID: 1, Field: "age", FieldOption: core.FieldOption{IndexType: core.IndexNameExtendRange, Encoder: core.IndexNameExtendRange}}
 	type rng struct {
 		lo, hi int64
 		entry  core.EntryID
@@ -90,8 +90,8 @@ func TestBuilderRangeRoundTrip(t *testing.T) {
 		buf := new(bytes.Buffer)
 		var sink interface {
 			SetDocCount(int)
-			AddField(core.FieldMeta)
-			AddRecord(field, container string, record any, entries []core.EntryID) error
+			AddField(core.FieldMeta) error
+			AddRecord(field string, record any, entries []core.EntryID) error
 			Write() error
 		}
 		if external {
@@ -102,7 +102,7 @@ func TestBuilderRangeRoundTrip(t *testing.T) {
 		sink.SetDocCount(4)
 		sink.AddField(field)
 		for _, r := range ranges {
-			if err := sink.AddRecord("age", "ext_range", core.RangeRecord{Lo: r.lo, Hi: r.hi}, []core.EntryID{r.entry}); err != nil {
+			if err := sink.AddRecord("age", core.RangeRecord{Lo: r.lo, Hi: r.hi}, []core.EntryID{r.entry}); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -259,8 +259,8 @@ func TestNewSegmentReaderRejectsSegmentV2ACChecksumMismatch(t *testing.T) {
 	buf := new(bytes.Buffer)
 	writer := NewInMemorySegmentBuilder(buf)
 	writer.SetDocCount(1)
-	writer.AddField(core.FieldMeta{ID: 1, Field: "keyword", FieldOption: core.FieldOption{Container: core.IndexNameACMatcher, Encoder: core.IndexNameACMatcher}})
-	if err := writer.AddRecord("keyword", core.IndexNameACMatcher, "apple", []core.EntryID{makeE(1, 20)}); err != nil {
+	writer.AddField(core.FieldMeta{ID: 1, Field: "keyword", FieldOption: core.FieldOption{IndexType: core.IndexNameACMatcher, Encoder: core.IndexNameACMatcher}})
+	if err := writer.AddRecord("keyword", "apple", []core.EntryID{makeE(1, 20)}); err != nil {
 		t.Fatal(err)
 	}
 	if err := writer.Write(); err != nil {

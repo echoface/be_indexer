@@ -41,8 +41,8 @@ const schemaHash = "sha256:push-builder-example"
 // fields defines the index schema: two exact-match numeric fields.
 func fields() map[core.BEField]*core.FieldMeta {
 	return map[core.BEField]*core.FieldMeta{
-		"city": {ID: 1, Field: "city", FieldOption: core.FieldOption{Tokenizer: "number"}},
-		"age":  {ID: 2, Field: "age", FieldOption: core.FieldOption{Tokenizer: "number"}},
+		"city": {ID: 1, Field: "city", FieldOption: core.FieldOption{Encoder: "number"}},
+		"age":  {ID: 2, Field: "age", FieldOption: core.FieldOption{Encoder: "number"}},
 	}
 }
 

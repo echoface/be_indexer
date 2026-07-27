@@ -11,7 +11,7 @@ import (
 )
 
 type postingSink interface {
-	AddRecord(field string, container string, record any, entries []core.EntryID) error
+	AddRecord(field string, record any, entries []core.EntryID) error
 }
 
 // BuildSegmentsFromDocsOptions controls memory usage by splitting build into multiple segments.
@@ -183,7 +183,7 @@ func exportDocToSink(sink postingSink, codec *parser.SchemaCodec, doc *core.Docu
 					return nil, fmt.Errorf("field %s encode predicate: %w", field, err)
 				}
 				for _, posting := range postings {
-					if err := sink.AddRecord(string(field), fieldCodec.Meta.Container, posting.Record, []core.EntryID{eid}); err != nil {
+					if err := sink.AddRecord(string(field), posting.Record, []core.EntryID{eid}); err != nil {
 						return nil, err
 					}
 				}

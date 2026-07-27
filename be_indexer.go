@@ -122,11 +122,10 @@ const (
 )
 
 var (
-	ErrFieldNotConfigured     = core.ErrFieldNotConfigured
-	ErrUnknownQueryField      = core.ErrUnknownQueryField
-	ErrFieldIndexMissing      = core.ErrFieldIndexMissing
-	ErrUnsupportedPredicate   = core.ErrUnsupportedPredicate
-	ErrTokenizerNotConfigured = core.ErrTokenizerNotConfigured
+	ErrFieldNotConfigured   = core.ErrFieldNotConfigured
+	ErrUnknownQueryField    = core.ErrUnknownQueryField
+	ErrFieldIndexMissing    = core.ErrFieldIndexMissing
+	ErrUnsupportedPredicate = core.ErrUnsupportedPredicate
 )
 
 // Factory functions from core.
@@ -222,18 +221,6 @@ func BuildSegment(w io.Writer, fields map[BEField]*FieldMeta, docs []*Document) 
 // features such as segment v2 embedded Z-list, schema hash and block checksums.
 func BuildSegmentWithOptions(w io.Writer, fields map[BEField]*FieldMeta, docs []*Document, opts BuildSegmentOptions) (Entries, error) {
 	return builder.BuildSegmentFromDocsWithOptions(w, fields, docs, opts)
-}
-
-// BuildSegments builds one or more segments from documents, splitting when
-// MaxDocsPerSegment is exceeded. newWriter is called once per segment (segIdx starts at 0).
-// Returns wildcard entries for all segments and the segment count.
-func BuildSegments(
-	newWriter func(segIdx int) (io.Writer, error),
-	fields map[BEField]*FieldMeta,
-	docs []*Document,
-	opts BuildOptions,
-) (Entries, int, error) {
-	return builder.BuildSegmentsFromDocs(newWriter, fields, docs, opts)
 }
 
 // --------------------------------------------------------------------------------

@@ -45,8 +45,7 @@ type MetaBlock struct {
 type FieldMetaDump struct {
 	Name      string `json:"name"`
 	ID        uint64 `json:"id"`
-	Container string `json:"container"`
-	Parser    string `json:"parser"`
+	IndexType string `json:"index_type"`
 }
 
 // BlockDef describes one data block. Field/Kind are the structured identity

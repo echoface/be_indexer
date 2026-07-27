@@ -4,19 +4,19 @@
 //
 //  1. Implement parser.PredicateEncoder: translate business predicates into
 //     EncodedPosting (build) and EncodedQuery (query).
-//  2. Implement segment.ContainerBuilder/ContainerReader: serialize the
+//  2. Implement segment.IndexBuilder/IndexReader: serialize the
 //     per-field term→PostingRef table into a byte block and answer queries
 //     against it with zero-copy posting cursors.
 //  3. Register both in init() under the same name; users select it via
-//     FieldMeta.FieldOption{Container: ContainerName}.
+//     FieldMeta.FieldOption{IndexType: IndexName}.
 //
 // Data flow:
 //
 //	Build:  doc_exporter → sink.AddRecord(field, container, record, entries)
-//	        → segment writer → ContainerBuilder.Add(term, ref) → block bytes
+//	        → segment writer → IndexBuilder.Add(term, ref) → block bytes
 //	Query:  engine initCursors
-//	        → SegmentReader.ContainerQuery(field, containerName, Value)
-//	        → ContainerReader.MatchQuery → PostingIterators → K-Groups merge
+//	        → SegmentReader.IndexQuery(field, containerName, Value)
+//	        → IndexReader.MatchQuery → PostingIterators → K-Groups merge
 //
 // The demo semantic: stored terms are path prefixes; a query string matches
 // every stored term that prefixes it (e.g. stored "/api" matches query
@@ -36,8 +36,8 @@ import (
 	"github.com/echoface/be_indexer/util"
 )
 
-// ContainerName selects this container/encoder pair in FieldMeta.Container.
-const ContainerName = "example_prefix"
+// IndexName selects this index/encoder pair in FieldMeta.Index.
+const IndexName = "example_prefix"
 
 // --- encoder (build/query translation boundary) ---
 
@@ -48,7 +48,7 @@ type Encoder struct{}
 var _ parser.PredicateEncoder = Encoder{}
 
 // Build emits one posting per distinct prefix pattern. The segment writer
-// hands every (term, PostingRef) of the field to our ContainerBuilder.
+// hands every (term, PostingRef) of the field to our IndexBuilder.
 func (Encoder) Build(expr *core.ValueExpr) ([]parser.EncodedPosting, error) {
 	if expr == nil {
 		return nil, fmt.Errorf("example: nil value expression")
@@ -91,17 +91,10 @@ func (Encoder) Query(value interface{}) ([]parser.EncodedQuery, error) {
 
 // --- build side (segment serialization) ---
 
-// PrefixBuilder accumulates (term, PostingRef) pairs via SortableBuilder and
-// serializes them. Registered as Sortable=true so the framework sorts
-// and groups by key before calling AddKeyedPosting.
-//
-// Binary layout (all integers little-endian, matching segment conventions):
-//
-//	[count uint32]
-//	repeat count times, sorted by term ascending:
-//	  [termLen uint8][term bytes][offset uint64][entryCount uint32]
+// PrefixBuilder accumulates entries via AddRecord (full pipeline) or AddPosting (direct PostingRef).
 type PrefixBuilder struct {
-	terms []termRef
+	collector *segment.KeyedPostingCollector
+	terms     []termRef // direct PostingRef references (test/advanced path)
 }
 
 type termRef struct {
@@ -109,34 +102,53 @@ type termRef struct {
 	ref  segment.PostingRef
 }
 
-// NewPrefixBuilder creates a fresh builder; the segment writer calls it once per field.
-func NewPrefixBuilder() segment.ContainerBuilder {
-	return &PrefixBuilder{}
-}
-
-func (b *PrefixBuilder) RecordToKey(record any) []byte {
-	switch v := record.(type) {
-	case string:
-		return []byte(v)
-	case []byte:
-		return v
-	default:
-		return nil
+func NewPrefixBuilder(env segment.BuilderEnv) *PrefixBuilder {
+	return &PrefixBuilder{
+		collector: segment.NewKeyedPostingCollector(env.MaxPostingsInMemory, env.TmpDir),
 	}
 }
 
-func (b *PrefixBuilder) AddKeyedPosting(key []byte, ref segment.PostingRef, entries []core.EntryID) error {
-	b.terms = append(b.terms, termRef{term: string(key), ref: ref})
-	return nil
+func (b *PrefixBuilder) AddRecord(record any, entries []core.EntryID) error {
+	term, ok := record.(string)
+	if !ok {
+		termBytes, ok2 := record.([]byte)
+		if !ok2 {
+			return fmt.Errorf("PrefixBuilder: expected string or []byte record, got %T", record)
+		}
+		return b.collector.Add(termBytes, entries)
+	}
+	return b.collector.Add([]byte(term), entries)
 }
 
-func (b *PrefixBuilder) Build() ([]byte, error) {
-	sort.Slice(b.terms, func(i, j int) bool { return b.terms[i].term < b.terms[j].term })
+func (b *PrefixBuilder) AddPosting(term string, ref segment.PostingRef) {
+	b.terms = append(b.terms, termRef{term: term, ref: ref})
+}
 
+func (b *PrefixBuilder) Build(bw segment.BlockWriter) error {
+	if b.collector != nil {
+		sorted, err := b.collector.Merge()
+		if err != nil {
+			return err
+		}
+		if len(sorted) > 0 {
+			writer := &segment.DictPostingsWriter{}
+			refs, err := writer.Write(sorted, bw)
+			if err != nil {
+				return err
+			}
+			for _, rec := range sorted {
+				b.terms = append(b.terms, termRef{term: string(rec.Key), ref: refs[string(rec.Key)]})
+			}
+		}
+	}
+	if len(b.terms) == 0 {
+		return nil
+	}
+	sort.Slice(b.terms, func(i, j int) bool { return b.terms[i].term < b.terms[j].term })
 	size := 4
 	for _, t := range b.terms {
 		if len(t.term) > 255 {
-			return nil, fmt.Errorf("example: term %q longer than 255 bytes", t.term)
+			return fmt.Errorf("example: term %q longer than 255 bytes", t.term)
 		}
 		size += 1 + len(t.term) + 8 + 4
 	}
@@ -148,7 +160,7 @@ func (b *PrefixBuilder) Build() ([]byte, error) {
 		buf = binary.LittleEndian.AppendUint64(buf, t.ref.Offset)
 		buf = binary.LittleEndian.AppendUint32(buf, t.ref.Count)
 	}
-	return buf, nil
+	return bw.WriteBlock(IndexName, buf)
 }
 
 // --- query side (zero-copy reader) ---
@@ -161,7 +173,7 @@ type PrefixIndex struct {
 }
 
 // NewPrefixReader decodes the block produced by PrefixBuilder.Build.
-func NewPrefixReader(b []byte) (segment.ContainerReader, error) {
+func NewPrefixReader(b []byte) (segment.IndexReader, error) {
 	if len(b) < 4 {
 		return nil, fmt.Errorf("example: truncated header")
 	}
@@ -212,11 +224,11 @@ func (r *PrefixIndex) MatchQuery(ctx segment.BlockContext, field core.BEField, q
 }
 
 func init() {
-	parser.RegisterPredicateEncoder(ContainerName, func(core.FieldMeta) (parser.PredicateEncoder, error) {
+	parser.RegisterPredicateEncoder(IndexName, func(core.FieldMeta) (parser.PredicateEncoder, error) {
 		return Encoder{}, nil
 	})
-	segment.RegisterContainer(ContainerName, segment.ContainerDef{
-		Reader:  func(b []byte) (segment.ContainerReader, error) { return NewPrefixReader(b) },
-		Builder: func() segment.ContainerBuilder { return NewPrefixBuilder() },
+	segment.RegisterIndex(IndexName, segment.IndexDef{
+		Reader:  func(b []byte) (segment.IndexReader, error) { return NewPrefixReader(b) },
+		Builder: func(env segment.BuilderEnv) segment.IndexBuilder { return NewPrefixBuilder(env) },
 	})
 }

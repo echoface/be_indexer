@@ -37,7 +37,7 @@ func BenchmarkRetrieveHighK(b *testing.B) {
 	fields := map[core.BEField]*core.FieldMeta{}
 	for i := 0; i < numFields; i++ {
 		name := fmt.Sprintf("f%d", i)
-		fields[name] = &core.FieldMeta{ID: uint64(i + 1), Field: name, FieldOption: core.FieldOption{Tokenizer: "number"}}
+		fields[name] = &core.FieldMeta{ID: uint64(i + 1), Field: name, FieldOption: core.FieldOption{Encoder: "number"}}
 	}
 
 	// Documents: each conjunction includes every field, producing high-K conjunctions.

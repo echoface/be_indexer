@@ -17,7 +17,7 @@ func TestACBuilderAndReader(t *testing.T) {
 		"x",
 	}
 
-	builder := NewACBuilder()
+	builder := NewACBuilder(BuilderEnv{})
 	// Adding works best if sorted (simplifies the Trie), but should work anyway
 	sort.Strings(words)
 	// Assign each word a recognizable PostingRef (Offset = index+1) and remember
@@ -25,7 +25,7 @@ func TestACBuilderAndReader(t *testing.T) {
 	byRef := make(map[uint64]string, len(words))
 	for i, w := range words {
 		ref := PostingRef{Offset: uint64(i + 1), Count: 1}
-		builder.AddKeyedPosting([]byte(w), ref, nil)
+		builder.AddPosting(w, ref)
 		byRef[ref.Offset] = w
 	}
 

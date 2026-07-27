@@ -10,7 +10,7 @@ import (
 	"github.com/echoface/be_indexer/segment"
 )
 
-func newReaderFactory(b []byte) (segment.ContainerReader, error) {
+func newReaderFactory(b []byte) (segment.IndexReader, error) {
 	return NewMPHReader(b)
 }
 

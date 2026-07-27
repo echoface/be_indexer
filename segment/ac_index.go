@@ -147,7 +147,7 @@ func (ac *ACIndex) readOutputs(offset uint32, dst []PostingRef) []PostingRef {
 	return dst
 }
 
-// MatchQuery implements ContainerReader by performing AC matching against the
+// MatchQuery implements IndexReader by performing AC matching against the
 // query text and returning posting cursors into the posting block.
 func (ac *ACIndex) MatchQuery(ctx BlockContext, field core.BEField, query interface{}) ([]core.PostingIterator, error) {
 	text, ok := query.(string)
@@ -170,8 +170,8 @@ func (ac *ACIndex) MatchQuery(ctx BlockContext, field core.BEField, query interf
 }
 
 func init() {
-	RegisterContainer(core.IndexNameACMatcher, ContainerDef{
-		Reader:  func(b []byte) (ContainerReader, error) { return NewACReader(b) },
-		Builder: func() ContainerBuilder { return NewACBuilder() },
+	RegisterIndex(core.IndexNameACMatcher, IndexDef{
+		Reader:  func(b []byte) (IndexReader, error) { return NewACReader(b) },
+		Builder: func(env BuilderEnv) IndexBuilder { return NewACBuilder(env) },
 	})
 }

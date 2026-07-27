@@ -27,16 +27,34 @@ func retrieve(t *testing.T, eng *be_indexer.Engine, assigns be_indexer.Assignmen
 	return ids
 }
 
+
+type testBW struct {
+	blocks map[string][]byte
+}
+
+func newTestBW() *testBW { return &testBW{blocks: make(map[string][]byte)} }
+func (w *testBW) WriteBlock(kind string, data []byte) error {
+	w.blocks[kind] = data
+	return nil
+}
+
+func buildMPH(b *mph.MPHBuilder) ([]byte, error) {
+	bw := newTestBW()
+	if err := b.Build(bw); err != nil {
+		return nil, err
+	}
+	return bw.blocks[mph.IndexName], nil
+}
+
 func TestContainerRoundTrip(t *testing.T) {
 	convey.Convey("mph builder -> bytes -> reader -> retrieve", t, func() {
 		convey.Convey("single term hit", func() {
 			eid := core.NewEntryID(core.NewConjID(1, 0, 1), true)
 			pl := segment.WriteFlatPostingList(core.Entries{eid})
 
-			cb := mph.NewMPHBuilder()
-			sb := cb
-			sb.AddKeyedPosting([]byte("hello"), segment.PostingRef{Offset: 0, Count: 1}, nil)
-			blob, err := cb.Build()
+			cb := mph.NewMPHBuilder(segment.BuilderEnv{})
+					cb.AddPosting(string("hello"), segment.PostingRef{Offset: 0, Count: 1})
+			blob, err := buildMPH(cb)
 			convey.So(err, convey.ShouldBeNil)
 
 			cr, err := mph.NewMPHReader(blob)
@@ -61,11 +79,11 @@ func TestContainerRoundTrip(t *testing.T) {
 			offC := offB + uint64(len(plB))
 			postingBlock := append(append(append([]byte{}, plA...), plB...), plC...)
 
-			cb := mph.NewMPHBuilder()
-			cb.AddKeyedPosting([]byte("alpha"), segment.PostingRef{Offset: 0, Count: 1}, nil)
-			cb.AddKeyedPosting([]byte("beta"), segment.PostingRef{Offset: offB, Count: 1}, nil)
-			cb.AddKeyedPosting([]byte("gamma"), segment.PostingRef{Offset: offC, Count: 1}, nil)
-			blob, err := cb.Build()
+			cb := mph.NewMPHBuilder(segment.BuilderEnv{})
+			cb.AddPosting(string("alpha"), segment.PostingRef{Offset: 0, Count: 1})
+			cb.AddPosting(string("beta"), segment.PostingRef{Offset: offB, Count: 1})
+			cb.AddPosting(string("gamma"), segment.PostingRef{Offset: offC, Count: 1})
+			blob, err := buildMPH(cb)
 			convey.So(err, convey.ShouldBeNil)
 
 			cr, err := mph.NewMPHReader(blob)
@@ -91,9 +109,9 @@ func TestContainerRoundTrip(t *testing.T) {
 		})
 
 		convey.Convey("term not found returns empty", func() {
-			cb := mph.NewMPHBuilder()
-			cb.AddKeyedPosting([]byte("apple"), segment.PostingRef{Offset: 0, Count: 1}, nil)
-			blob, _ := cb.Build()
+			cb := mph.NewMPHBuilder(segment.BuilderEnv{})
+			cb.AddPosting(string("apple"), segment.PostingRef{Offset: 0, Count: 1})
+			blob, _ := buildMPH(cb)
 			cr, _ := mph.NewMPHReader(blob)
 
 			iters, err := cr.MatchQuery(segment.BlockContext{}, "f", "notfound")
@@ -102,9 +120,9 @@ func TestContainerRoundTrip(t *testing.T) {
 		})
 
 		convey.Convey("non-string query is an error", func() {
-			cb := mph.NewMPHBuilder()
-			cb.AddKeyedPosting([]byte("x"), segment.PostingRef{Offset: 0, Count: 1}, nil)
-			blob, _ := cb.Build()
+			cb := mph.NewMPHBuilder(segment.BuilderEnv{})
+			cb.AddPosting(string("x"), segment.PostingRef{Offset: 0, Count: 1})
+			blob, _ := buildMPH(cb)
 			cr, _ := mph.NewMPHReader(blob)
 
 			_, err := cr.MatchQuery(segment.BlockContext{}, "f", 42)
@@ -112,8 +130,8 @@ func TestContainerRoundTrip(t *testing.T) {
 		})
 
 		convey.Convey("empty builder produces nil blob", func() {
-			cb := mph.NewMPHBuilder()
-			blob, err := cb.Build()
+			cb := mph.NewMPHBuilder(segment.BuilderEnv{})
+			blob, err := buildMPH(cb)
 			convey.So(err, convey.ShouldBeNil)
 			convey.So(blob, convey.ShouldBeNil)
 		})
@@ -128,14 +146,14 @@ func TestContainerRoundTrip(t *testing.T) {
 			perEntry := 16 // posting header(8) + one EntryID(8)
 			usePosting := make([]byte, size*perEntry) // header(8) + entry(8) per term
 			var off uint64 = 0
-			cb := mph.NewMPHBuilder()
+			cb := mph.NewMPHBuilder(segment.BuilderEnv{})
 			for i := 0; i < size; i++ {
 				term := fmt.Sprintf("term_%06d", i)
 				ref := segment.PostingRef{Offset: off, Count: 1}
 				off += uint64(perEntry)
-				cb.AddKeyedPosting([]byte(term), ref, nil)
+				cb.AddPosting(string(term), ref)
 			}
-			blob, err := cb.Build()
+			blob, err := buildMPH(cb)
 			convey.So(err, convey.ShouldBeNil)
 			convey.So(len(blob), convey.ShouldBeGreaterThan, 0)
 
@@ -158,8 +176,8 @@ func TestContainerRoundTrip(t *testing.T) {
 
 func TestExtensionEndToEnd(t *testing.T) {
 	fields := map[be_indexer.BEField]*be_indexer.FieldMeta{
-		"city": {Field: "city", FieldOption: be_indexer.FieldOption{Container: mph.ContainerName, Encoder: "default"}},
-		"tag":  {Field: "tag", FieldOption: be_indexer.FieldOption{Container: "default"}},
+		"city": {Field: "city", FieldOption: be_indexer.FieldOption{IndexType: mph.IndexName, Encoder: "default"}},
+		"tag":  {Field: "tag", FieldOption: be_indexer.FieldOption{IndexType: "default"}},
 	}
 	docs := []*be_indexer.Document{
 		be_indexer.NewDocument(1).AddConjunction(
@@ -211,7 +229,7 @@ func TestExtensionEndToEnd(t *testing.T) {
 		})
 
 		convey.Convey("container block exists and answers directly", func() {
-			iters, err := reader.ContainerQuery("city", mph.ContainerName, "bj")
+			iters, err := reader.IndexQuery("city", mph.IndexName, "bj")
 			convey.So(err, convey.ShouldBeNil)
 			convey.So(len(iters), convey.ShouldEqual, 1)
 		})
@@ -221,7 +239,7 @@ func TestExtensionEndToEnd(t *testing.T) {
 func TestLargeDictionary(t *testing.T) {
 	convey.Convey("large mph dict end-to-end", t, func() {
 		fields := map[be_indexer.BEField]*be_indexer.FieldMeta{
-			"term": {Field: "term", FieldOption: be_indexer.FieldOption{Container: mph.ContainerName, Encoder: "default"}},
+			"term": {Field: "term", FieldOption: be_indexer.FieldOption{IndexType: mph.IndexName, Encoder: "default"}},
 		}
 
 		n := 5000
@@ -262,7 +280,7 @@ func TestLargeDictionary(t *testing.T) {
 func TestExcludePredicate(t *testing.T) {
 	convey.Convey("mph with exclude predicates", t, func() {
 		fields := map[be_indexer.BEField]*be_indexer.FieldMeta{
-			"city": {Field: "city", FieldOption: be_indexer.FieldOption{Container: mph.ContainerName, Encoder: "default"}},
+			"city": {Field: "city", FieldOption: be_indexer.FieldOption{IndexType: mph.IndexName, Encoder: "default"}},
 		}
 		docs := []*be_indexer.Document{
 			be_indexer.NewDocument(1).AddConjunction(
@@ -294,15 +312,7 @@ func TestExcludePredicate(t *testing.T) {
 	})
 }
 
-func TestRecordToKey(t *testing.T) {
-	convey.Convey("MPHBuilder.RecordToKey", t, func() {
-		cb := mph.NewMPHBuilder()
 
-		convey.So(string(cb.RecordToKey("hello")), convey.ShouldEqual, "hello")
-		convey.So(string(cb.RecordToKey([]byte("world"))), convey.ShouldEqual, "world")
-		convey.So(cb.RecordToKey(42), convey.ShouldBeNil)
-	})
-}
 
 // --- benchmarks ---
 
@@ -321,17 +331,17 @@ func BenchmarkMPH_Find(b *testing.B) {
 		for _, sc := range scenarios {
 			name := fmt.Sprintf("size=%d/%s", size, sc.name)
 			b.Run(name, func(b *testing.B) {
-				cb := mph.NewMPHBuilder()
+				cb := mph.NewMPHBuilder(segment.BuilderEnv{})
 				keys := make([]string, 0, size)
 				for i := 0; i < size; i++ {
 					k := fmt.Sprintf("term_%08x", i)
 					keys = append(keys, k)
-					cb.AddKeyedPosting([]byte(k), segment.PostingRef{
+					cb.AddPosting(string(k), segment.PostingRef{
 						Offset: uint64(i * 16), // stride=16: header(8)+EntryID(8)
 						Count:  1,
-					}, nil)
+					})
 				}
-				blob, err := cb.Build()
+				blob, err := buildMPH(cb)
 				if err != nil {
 					b.Fatal(err)
 				}
@@ -395,11 +405,11 @@ func BenchmarkMPH_Build(b *testing.B) {
 			b.ResetTimer()
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
-				cb := mph.NewMPHBuilder()
+				cb := mph.NewMPHBuilder(segment.BuilderEnv{})
 				for _, p := range pairs {
-					cb.AddKeyedPosting([]byte(p.term), p.ref, nil)
+					cb.AddPosting(string(p.term), p.ref)
 				}
-				cb.Build()
+				buildMPH(cb)
 			}
 		})
 	}

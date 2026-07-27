@@ -11,19 +11,8 @@ import (
 	"github.com/echoface/be_indexer/segment"
 )
 
-func newBuilderFactory() segment.ContainerBuilder {
-	return NewMPHBuilder()
-}
-
-// NewMPHBuilder creates a fresh MPHBuilder.
-func NewMPHBuilder() *MPHBuilder {
-	return &MPHBuilder{}
-}
-
-// MPHBuilder accumulates (term, PostingRef) pairs and serializes them
-// into a CHD minimal-perfect-hash block.
-type MPHBuilder struct {
-	terms []termRef
+func newBuilderFactory(env segment.BuilderEnv) segment.IndexBuilder {
+	return NewMPHBuilder(env)
 }
 
 type termRef struct {
@@ -31,20 +20,32 @@ type termRef struct {
 	ref  segment.PostingRef
 }
 
-func (b *MPHBuilder) RecordToKey(record any) []byte {
-	switch v := record.(type) {
-	case string:
-		return []byte(v)
-	case []byte:
-		return v
-	default:
-		return nil
+// MPHBuilder accumulates entries via AddRecord (full pipeline) or AddPosting (direct PostingRef).
+type MPHBuilder struct {
+	collector *segment.KeyedPostingCollector
+	terms     []termRef // direct PostingRef references (test/advanced path)
+}
+
+func NewMPHBuilder(env segment.BuilderEnv) *MPHBuilder {
+	return &MPHBuilder{
+		collector: segment.NewKeyedPostingCollector(env.MaxPostingsInMemory, env.TmpDir),
 	}
 }
 
-func (b *MPHBuilder) AddKeyedPosting(key []byte, ref segment.PostingRef, entries []core.EntryID) error {
-	b.terms = append(b.terms, termRef{term: string(key), ref: ref})
-	return nil
+func (b *MPHBuilder) AddRecord(record any, entries []core.EntryID) error {
+	term, ok := record.(string)
+	if !ok {
+		termBytes, ok2 := record.([]byte)
+		if !ok2 {
+			return fmt.Errorf("MPHBuilder: expected string or []byte record, got %T", record)
+		}
+		return b.collector.Add(termBytes, entries)
+	}
+	return b.collector.Add([]byte(term), entries)
+}
+
+func (b *MPHBuilder) AddPosting(term string, ref segment.PostingRef) {
+	b.terms = append(b.terms, termRef{term: term, ref: ref})
 }
 
 func encodePostingRef(ref segment.PostingRef) []byte {
@@ -54,9 +55,25 @@ func encodePostingRef(ref segment.PostingRef) []byte {
 	return buf[:]
 }
 
-func (b *MPHBuilder) Build() ([]byte, error) {
+func (b *MPHBuilder) Build(bw segment.BlockWriter) error {
+	if b.collector != nil {
+		sorted, err := b.collector.Merge()
+		if err != nil {
+			return err
+		}
+		if len(sorted) > 0 {
+			writer := &segment.DictPostingsWriter{}
+			refs, err := writer.Write(sorted, bw)
+			if err != nil {
+				return err
+			}
+			for _, rec := range sorted {
+				b.terms = append(b.terms, termRef{term: string(rec.Key), ref: refs[string(rec.Key)]})
+			}
+		}
+	}
 	if len(b.terms) == 0 {
-		return nil, nil
+		return nil
 	}
 	chdBuilder := mph.Builder()
 	for _, t := range b.terms {
@@ -64,11 +81,11 @@ func (b *MPHBuilder) Build() ([]byte, error) {
 	}
 	chd, err := chdBuilder.Build()
 	if err != nil {
-		return nil, fmt.Errorf("mph: build CHD: %w", err)
+		return fmt.Errorf("mph: build CHD: %w", err)
 	}
 	var buf bytes.Buffer
 	if err := chd.Write(&buf); err != nil {
-		return nil, fmt.Errorf("mph: serialize CHD: %w", err)
+		return fmt.Errorf("mph: serialize CHD: %w", err)
 	}
-	return buf.Bytes(), nil
+	return bw.WriteBlock(IndexName, buf.Bytes())
 }

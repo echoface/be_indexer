@@ -2,6 +2,7 @@ package segment
 
 import (
 	"encoding/binary"
+	"fmt"
 
 	"github.com/echoface/be_indexer/core"
 )
@@ -22,10 +23,12 @@ import (
 type ACBuilder struct {
 	nodes   []flatNode
 	outputs [][]uint32
-	refs    []PostingRef // term id -> posting list ref emitted on match
+	refs    []PostingRef
 
-	symOf map[rune]uint32 // rune -> dense symbol id (>=1)
-	syms  []rune          // dense id (1-based) -> rune; syms[0] unused sentinel
+	symOf map[rune]uint32
+	syms  []rune
+
+	collector *KeyedPostingCollector
 }
 
 type flatNode struct {
@@ -35,12 +38,13 @@ type flatNode struct {
 	fail       uint32
 }
 
-func NewACBuilder() *ACBuilder {
+func NewACBuilder(env BuilderEnv) *ACBuilder {
 	builder := &ACBuilder{
 		nodes:   make([]flatNode, 1, 1024),
 		outputs: make([][]uint32, 1, 1024),
 		symOf:   make(map[rune]uint32),
-		syms:    []rune{0}, // index 0 reserved
+		syms:    []rune{0},
+		collector: NewKeyedPostingCollector(env.MaxPostingsInMemory, env.TmpDir),
 	}
 	return builder
 }
@@ -56,27 +60,20 @@ func (b *ACBuilder) internSymbol(ch rune) uint32 {
 	return id
 }
 
-// RecordToKey returns the sort key for sortable containers.
-func (b *ACBuilder) RecordToKey(record any) []byte {
-	switch v := record.(type) {
-	case string:
-		return []byte(v)
-	case []byte:
-		return v
-	default:
-		return nil
+// AddRecord accumulates term → entry mappings via the collector.
+func (b *ACBuilder) AddRecord(record any, entries []core.EntryID) error {
+	term, ok := record.(string)
+	if !ok {
+		termBytes, ok2 := record.([]byte)
+		if !ok2 {
+			return fmt.Errorf("ACBuilder: expected string or []byte record, got %T", record)
+		}
+		return b.collector.Add(termBytes, entries)
 	}
+	return b.collector.Add([]byte(term), entries)
 }
 
-// AddKeyedPosting receives a sorted, grouped, entry with its PostingRef.
-func (b *ACBuilder) AddKeyedPosting(key []byte, ref PostingRef, entries []core.EntryID) error {
-	term := string(key)
-	return b.addPosting(term, ref)
-}
-
-
-
-func (b *ACBuilder) addPosting(term string, ref PostingRef) error {
+func (b *ACBuilder) AddPosting(term string, ref PostingRef) error {
 	termID := uint32(len(b.refs))
 	b.refs = append(b.refs, ref)
 
@@ -386,7 +383,29 @@ func (b *ACBuilder) Compile() ([]byte, error) {
 	return buf, nil
 }
 
-// Build satisfies the ContainerBuilder interface by delegating to Compile.
-func (b *ACBuilder) Build() ([]byte, error) {
-	return b.Compile()
+// Build writes the Dict + Postings blocks, then builds the AC automaton and
+// writes it as a container block.
+func (b *ACBuilder) Build(bw BlockWriter) error {
+	sorted, err := b.collector.Merge()
+	if err != nil {
+		return err
+	}
+	if len(sorted) == 0 {
+		return nil
+	}
+	writer := &DictPostingsWriter{}
+	refs, err := writer.Write(sorted, bw)
+	if err != nil {
+		return err
+	}
+	for _, rec := range sorted {
+		if err := b.AddPosting(string(rec.Key), refs[string(rec.Key)]); err != nil {
+			return err
+		}
+	}
+	acData, err := b.Compile()
+	if err != nil {
+		return err
+	}
+	return bw.WriteBlock(core.IndexNameACMatcher, acData)
 }

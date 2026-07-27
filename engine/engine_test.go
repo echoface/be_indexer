@@ -17,17 +17,17 @@ import (
 
 func testFields() map[core.BEField]*core.FieldMeta {
 	return map[core.BEField]*core.FieldMeta{
-		"age":  {ID: 1, Field: "age", FieldOption: core.FieldOption{Tokenizer: "number"}},
-		"city": {ID: 2, Field: "city", FieldOption: core.FieldOption{Tokenizer: "default"}},
-		"tag":  {ID: 3, Field: "tag", FieldOption: core.FieldOption{Tokenizer: "default"}},
+		"age":  {ID: 1, Field: "age", FieldOption: core.FieldOption{Encoder: "number"}},
+		"city": {ID: 2, Field: "city", FieldOption: core.FieldOption{}},
+		"tag":  {ID: 3, Field: "tag", FieldOption: core.FieldOption{}},
 	}
 }
 
 func simpleFields() map[core.BEField]*core.FieldMeta {
 	return map[core.BEField]*core.FieldMeta{
-		"a": {ID: 1, Field: "a", FieldOption: core.FieldOption{Tokenizer: "number"}},
-		"b": {ID: 2, Field: "b", FieldOption: core.FieldOption{Tokenizer: "number"}},
-		"c": {ID: 3, Field: "c", FieldOption: core.FieldOption{Tokenizer: "number"}},
+		"a": {ID: 1, Field: "a", FieldOption: core.FieldOption{Encoder: "number"}},
+		"b": {ID: 2, Field: "b", FieldOption: core.FieldOption{Encoder: "number"}},
+		"c": {ID: 3, Field: "c", FieldOption: core.FieldOption{Encoder: "number"}},
 	}
 }
 
@@ -117,8 +117,8 @@ func (o *testObserver) OnCursorInit(int)                   { o.cursorInit++ }
 func TestEngine_BasicQuery(t *testing.T) {
 
 	fields := map[core.BEField]*core.FieldMeta{
-		"age":  {ID: 1, Field: "age", FieldOption: core.FieldOption{Tokenizer: "number"}},
-		"city": {ID: 2, Field: "city", FieldOption: core.FieldOption{Tokenizer: "default"}},
+		"age":  {ID: 1, Field: "age", FieldOption: core.FieldOption{Encoder: "number"}},
+		"city": {ID: 2, Field: "city", FieldOption: core.FieldOption{}},
 	}
 	docs := []*core.Document{
 		// Doc 1: K=2 (age + city)
@@ -411,9 +411,9 @@ func TestEngine_LiveDocsAllDeleted(t *testing.T) {
 
 func TestEngine_MultiKLevels(t *testing.T) {
 	fields := map[core.BEField]*core.FieldMeta{
-		"a": {ID: 1, Field: "a", FieldOption: core.FieldOption{Tokenizer: "number"}},
-		"b": {ID: 2, Field: "b", FieldOption: core.FieldOption{Tokenizer: "number"}},
-		"c": {ID: 3, Field: "c", FieldOption: core.FieldOption{Tokenizer: "number"}},
+		"a": {ID: 1, Field: "a", FieldOption: core.FieldOption{Encoder: "number"}},
+		"b": {ID: 2, Field: "b", FieldOption: core.FieldOption{Encoder: "number"}},
+		"c": {ID: 3, Field: "c", FieldOption: core.FieldOption{Encoder: "number"}},
 	}
 	docs := []*core.Document{
 		core.NewDocument(1).AddConjunction(core.NewConjunction().In("a", 1).In("b", 2).In("c", 3)), // K=3
@@ -531,7 +531,7 @@ func TestEngine_PoolReuse(t *testing.T) {
 
 func TestEngine_MultiValueQuery(t *testing.T) {
 	fields := map[core.BEField]*core.FieldMeta{
-		"age": {ID: 1, Field: "age", FieldOption: core.FieldOption{Tokenizer: "number"}},
+		"age": {ID: 1, Field: "age", FieldOption: core.FieldOption{Encoder: "number"}},
 	}
 	docs := []*core.Document{
 		core.NewDocument(1).AddConjunction(core.NewConjunction().In("age", 25)),

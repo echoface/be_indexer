@@ -17,7 +17,7 @@ type EncodedPosting struct {
 }
 
 // EncodedQuery is the query-side physical representation of one assignment.
-// Value is container-defined and passed directly to ContainerReader.MatchQuery.
+// Value is container-defined and passed directly to IndexReader.MatchQuery.
 type EncodedQuery struct {
 	Value any
 }
@@ -106,22 +106,27 @@ type EncoderFactory func(meta core.FieldMeta) (PredicateEncoder, error)
 var predicateEncoderFactories = map[string]EncoderFactory{}
 
 func init() {
-	RegisterPredicateEncoder(core.IndexNameDefault, newExactTermEncoder)
+	RegisterPredicateEncoder(core.IndexNameDefault, func(core.FieldMeta) (PredicateEncoder, error) {
+		return newExactTermEncoder("default")
+	})
+	RegisterPredicateEncoder("number", func(core.FieldMeta) (PredicateEncoder, error) {
+		return newExactTermEncoder("number")
+	})
 	RegisterPredicateEncoder(core.IndexNameACMatcher, func(core.FieldMeta) (PredicateEncoder, error) { return ACEncoder{}, nil })
 	RegisterPredicateEncoder(core.IndexNameExtendRange, func(core.FieldMeta) (PredicateEncoder, error) { return RangeEncoder{}, nil })
 }
 
-// RegisterPredicateEncoder installs or replaces the encoder factory for a
-// container type. New physical index types should register here instead of
+// RegisterPredicateEncoder installs or replaces the encoder factory for an
+// index type. New physical index types should register here instead of
 // adding builder/engine switch branches.
 func RegisterPredicateEncoder(container string, factory EncoderFactory) {
 	predicateEncoderFactories[container] = factory
 }
 
 // NewPredicateEncoder creates the encoder specified by FieldOption.Encoder.
-// If empty, the default ExactTermEncoder is used. Encoder and Container are
-// independent choices — an encoder describes how values become terms, a
-// container describes how terms are stored and queried.
+// If empty, falls back to IndexType. Encoder and IndexType are independent
+// choices — Encoder describes how values become physical keys, IndexType
+// describes how those keys are stored and queried.
 func NewPredicateEncoder(meta core.FieldMeta) (PredicateEncoder, error) {
 	encoder := meta.Encoder
 	if encoder == "" {
@@ -134,14 +139,10 @@ func NewPredicateEncoder(meta core.FieldMeta) (PredicateEncoder, error) {
 	return factory(meta)
 }
 
-func newExactTermEncoder(meta core.FieldMeta) (PredicateEncoder, error) {
-	tokenizerName := meta.Tokenizer
-	if tokenizerName == "" {
-		tokenizerName = core.IndexNameDefault
-	}
+func newExactTermEncoder(tokenizerName string) (PredicateEncoder, error) {
 	tokenizer, ok := NewValueTokenizer(tokenizerName)
 	if !ok {
-		return nil, fmt.Errorf("%w: %s", core.ErrTokenizerNotConfigured, tokenizerName)
+		return nil, fmt.Errorf("%w: %s", core.ErrFieldIndexMissing, tokenizerName)
 	}
 	return ExactTermEncoder{tokenizer: tokenizer}, nil
 }

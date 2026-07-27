@@ -13,6 +13,25 @@ import (
 	"github.com/echoface/be_indexer/segment"
 )
 
+
+type testBW struct {
+	blocks map[string][]byte
+}
+
+func newTestBW() *testBW { return &testBW{blocks: make(map[string][]byte)} }
+func (w *testBW) WriteBlock(kind string, data []byte) error {
+	w.blocks[kind] = data
+	return nil
+}
+
+func buildPrefix(b *example.PrefixBuilder) ([]byte, error) {
+	bw := newTestBW()
+	if err := b.Build(bw); err != nil {
+		return nil, err
+	}
+	return bw.blocks[example.IndexName], nil
+}
+
 func TestContainerRoundTrip(t *testing.T) {
 	convey.Convey("builder → bytes → reader → retrieve", t, func() {
 		eidA := core.NewEntryID(core.NewConjID(101, 0, 1), true)
@@ -22,11 +41,10 @@ func TestContainerRoundTrip(t *testing.T) {
 		plB := segment.WriteFlatPostingList(core.Entries{eidB})
 		postingBlock := append(append([]byte{}, plA...), plB...)
 
-		cb := example.NewPrefixBuilder()
-		sb := cb.(segment.SortableBuilder)
-		sb.AddKeyedPosting([]byte("/api"), segment.PostingRef{Offset: 0, Count: 1}, nil)
-		sb.AddKeyedPosting([]byte("/static"), segment.PostingRef{Offset: uint64(len(plA)), Count: 1}, nil)
-		blob, err := cb.Build()
+	cb := example.NewPrefixBuilder(segment.BuilderEnv{})
+	cb.AddPosting("/api", segment.PostingRef{Offset: 0, Count: 1})
+	cb.AddPosting("/static", segment.PostingRef{Offset: uint64(len(plA)), Count: 1})
+	blob, err := buildPrefix(cb)
 		convey.So(err, convey.ShouldBeNil)
 
 		cr, err := example.NewPrefixReader(blob)
@@ -72,13 +90,13 @@ func retrieve(t *testing.T, eng *be_indexer.Engine, assigns be_indexer.Assignmen
 }
 
 // TestExtensionEndToEnd guards the full custom-container chain for library
-// users: RegisterPredicateEncoder + RegisterContainer → doc_exporter default
+// users: RegisterPredicateEncoder + RegisterIndex → doc_exporter default
 // branch → segment container block → SegmentReader load → engine
-// default branch → ContainerQuery → MatchQuery.
+// default branch → IndexQuery → MatchQuery.
 func TestExtensionEndToEnd(t *testing.T) {
 	fields := map[be_indexer.BEField]*be_indexer.FieldMeta{
-		"path": {Field: "path", FieldOption: be_indexer.FieldOption{Container: example.ContainerName}},
-		"city": {Field: "city", FieldOption: be_indexer.FieldOption{Container: "default", Tokenizer: "default"}},
+		"path": {Field: "path", FieldOption: be_indexer.FieldOption{IndexType: example.IndexName}},
+		"city": {Field: "city", FieldOption: be_indexer.FieldOption{IndexType: "default"}},
 	}
 	docs := []*be_indexer.Document{
 		be_indexer.NewDocument(1).AddConjunction(
@@ -108,7 +126,7 @@ func TestExtensionEndToEnd(t *testing.T) {
 
 	convey.Convey("extension e2e", t, func() {
 		convey.Convey("container block exists and answers directly", func() {
-			iters, err := reader.ContainerQuery("path", example.ContainerName, "/api/v1")
+			iters, err := reader.IndexQuery("path", example.IndexName, "/api/v1")
 			convey.So(err, convey.ShouldBeNil)
 			convey.So(len(iters), convey.ShouldEqual, 1)
 		})

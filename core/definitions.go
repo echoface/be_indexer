@@ -25,7 +25,6 @@ var (
 	ErrFieldContainerRequired = errors.New("field container required")
 	ErrUnknownContainer      = errors.New("unknown field container")
 	ErrUnsupportedPredicate  = errors.New("unsupported predicate")
-	ErrTokenizerNotConfigured = errors.New("tokenizer not configured")
 	ErrUnknownQueryField     = errors.New("unknown query field")
 	ErrFieldIndexMissing     = errors.New("field index missing")
 )
@@ -36,9 +35,8 @@ var (
 
 // FieldOption specifies how a field should be indexed.
 type FieldOption struct {
-	Container string // index container type: "default", "ac_matcher", "ext_range"
-	Encoder   string // predicate encoder name (empty = use Container)
-	Tokenizer string // value tokenizer name: "default", "number", "geohash"
+	IndexType string // index kind: "default", "ac_matcher", "ext_range"
+	Encoder   string // predicate encoder name (empty = use IndexType)
 }
 
 // IndexerSettings holds per-field configuration for an index.

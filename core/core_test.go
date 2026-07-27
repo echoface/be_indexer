@@ -858,12 +858,12 @@ func (o *testObserver) OnCursorInit(fieldCount int)   { o.cursorInit++ }
 // ---------------------------------------------------------------------------
 
 func TestFieldOption(t *testing.T) {
-	opts := FieldOption{Container: IndexNameDefault, Tokenizer: "number"}
-	if opts.Container != IndexNameDefault {
-		t.Error("Container should be IndexNameDefault")
+	opts := FieldOption{IndexType: IndexNameDefault, Encoder: "number"}
+	if opts.IndexType != IndexNameDefault {
+		t.Error("IndexType should be IndexNameDefault")
 	}
-	if opts.Tokenizer != "number" {
-		t.Error("Tokenizer should be number")
+	if opts.Encoder != "number" {
+		t.Error("Encoder should be number")
 	}
 }
 
@@ -871,9 +871,9 @@ func TestFieldMeta(t *testing.T) {
 	meta := FieldMeta{
 		ID:    1,
 		Field: "age",
-		FieldOption: FieldOption{Tokenizer: "number"},
+		FieldOption: FieldOption{Encoder: "number"},
 	}
-	if meta.ID != 1 || meta.Field != "age" || meta.Tokenizer != "number" {
+	if meta.ID != 1 || meta.Field != "age" || meta.Encoder != "number" {
 		t.Errorf("FieldMeta not correctly initialized: %+v", meta)
 	}
 }
@@ -1256,7 +1256,7 @@ func TestFieldCursor_DumpInfo(t *testing.T) {
 func TestIndexerSettings(t *testing.T) {
 	s := IndexerSettings{
 		FieldConfig: map[BEField]FieldOption{
-			"age": {Tokenizer: "number"},
+			"age": {Encoder: "number"},
 		},
 	}
 	if len(s.FieldConfig) != 1 {
@@ -1280,9 +1280,6 @@ func TestSentinelErrors(t *testing.T) {
 	}
 	if ErrUnsupportedPredicate == nil {
 		t.Error("ErrUnsupportedPredicate should be non-nil")
-	}
-	if ErrTokenizerNotConfigured == nil {
-		t.Error("ErrTokenizerNotConfigured should be non-nil")
 	}
 }
 

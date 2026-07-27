@@ -14,8 +14,8 @@ import (
 
 func oracleFields() map[core.BEField]*core.FieldMeta {
 	return map[core.BEField]*core.FieldMeta{
-		"a": {ID: 1, Field: "a", FieldOption: core.FieldOption{Tokenizer: "number"}},
-		"b": {ID: 2, Field: "b", FieldOption: core.FieldOption{Tokenizer: "number"}},
+		"a": {ID: 1, Field: "a", FieldOption: core.FieldOption{Encoder: "number"}},
+		"b": {ID: 2, Field: "b", FieldOption: core.FieldOption{Encoder: "number"}},
 	}
 }
 

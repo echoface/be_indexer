@@ -18,11 +18,11 @@ type acHarness struct {
 
 func buildOurAC(t testing.TB, patterns []string) *acHarness {
 	t.Helper()
-	b := NewACBuilder()
+	b := NewACBuilder(BuilderEnv{})
 	byRef := make(map[uint64]string, len(patterns))
 	for i, p := range patterns {
 		ref := PostingRef{Offset: uint64(i + 1), Count: 1}
-		b.AddKeyedPosting([]byte(p), ref, nil)
+		b.AddPosting(string(p), ref)
 		byRef[ref.Offset] = p
 	}
 	bin, err := b.Compile()
@@ -188,8 +188,8 @@ func TestACDifferentialFuzz(t *testing.T) {
 
 func TestACReaderTruncated(t *testing.T) {
 	bin, _ := func() ([]byte, error) {
-		b := NewACBuilder()
-		b.AddKeyedPosting([]byte("abc"), PostingRef{Offset: 1, Count: 1}, nil)
+		b := NewACBuilder(BuilderEnv{})
+		b.AddPosting("abc", PostingRef{Offset: 1, Count: 1})
 		return b.Compile()
 	}()
 	if _, err := NewACReader(bin[:6]); err == nil {
@@ -212,9 +212,9 @@ func BenchmarkACBuildChinese(b *testing.B) {
 	}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		bld := NewACBuilder()
+		bld := NewACBuilder(BuilderEnv{})
 		for j, p := range patterns {
-			bld.AddKeyedPosting([]byte(p), PostingRef{Offset: uint64(j + 1), Count: 1}, nil)
+			bld.AddPosting(string(p), PostingRef{Offset: uint64(j + 1), Count: 1})
 		}
 		if _, err := bld.Compile(); err != nil {
 			b.Fatal(err)
@@ -224,9 +224,9 @@ func BenchmarkACBuildChinese(b *testing.B) {
 
 func BenchmarkACSearchChinese(b *testing.B) {
 	patterns := []string{"北京", "上海", "广告", "定向广告", "京东", "投放"}
-	bld := NewACBuilder()
+	bld := NewACBuilder(BuilderEnv{})
 	for j, p := range patterns {
-		bld.AddKeyedPosting([]byte(p), PostingRef{Offset: uint64(j + 1), Count: 1}, nil)
+		bld.AddPosting(string(p), PostingRef{Offset: uint64(j + 1), Count: 1})
 	}
 	bin, _ := bld.Compile()
 	r, _ := NewACReader(bin)

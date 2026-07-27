@@ -179,7 +179,7 @@ func TestRegistration(t *testing.T) {
 		})
 		convey.So(err, convey.ShouldBeNil)
 		convey.So(enc, convey.ShouldNotBeNil)
-		convey.So(segment.HasContainer(geo.EncoderName), convey.ShouldBeFalse)
+		convey.So(segment.HasIndex(geo.EncoderName), convey.ShouldBeFalse)
 	})
 }
 
@@ -198,7 +198,7 @@ func retrieve(t *testing.T, eng *be_indexer.Engine, assigns be_indexer.Assignmen
 func TestGeoEndToEnd(t *testing.T) {
 	fields := map[be_indexer.BEField]*be_indexer.FieldMeta{
 		"location": {Field: "location", FieldOption: be_indexer.FieldOption{Encoder: geo.EncoderName}},
-		"city":     {Field: "city", FieldOption: be_indexer.FieldOption{Container: "default", Tokenizer: "default"}},
+		"city":     {Field: "city", FieldOption: be_indexer.FieldOption{IndexType: "default"}},
 	}
 
 	beijing := geo.GeoParam{Lat: 39.9042, Lng: 116.4074, Radius: 5000}

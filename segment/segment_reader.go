@@ -27,7 +27,7 @@ func makeBlockKey(fieldID uint16) blockKey {
 type blockLookup struct {
 	dict       *FlatDict
 	pl         []byte
-	containers map[string]ContainerReader
+	readers map[string]IndexReader
 }
 
 type BlockChecksumMode int
@@ -158,26 +158,26 @@ func NewSegmentReaderWithOptions(b []byte, opts ReaderOptions) (*SegmentReader, 
 		case BlockKindPostings:
 			blk.pl = blockBytes
 		default:
-			cr, err := NewContainerReader(def.Kind, blockBytes)
+			cr, err := NewIndexReader(def.Kind, blockBytes)
 			if err != nil {
 				return nil, fmt.Errorf("failed to load container %q for %s: %w", def.Kind, name, err)
 			}
-			if blk.containers == nil {
-				blk.containers = make(map[string]ContainerReader)
+			if blk.readers == nil {
+				blk.readers = make(map[string]IndexReader)
 			}
-			blk.containers[def.Kind] = cr
+			blk.readers[def.Kind] = cr
 		}
 	}
 
 	// Ensure fields with a dict get a DictIndex with the loaded dict
-	// so ContainerQuery("default", ...) works for the default path.
+	// so IndexQuery("default", ...) works for the default path.
 	for _, blk := range blocks {
 		if blk.dict != nil {
-			if blk.containers == nil {
-				blk.containers = make(map[string]ContainerReader)
+			if blk.readers == nil {
+				blk.readers = make(map[string]IndexReader)
 			}
-			if _, ok := blk.containers[core.IndexNameDefault]; !ok {
-				blk.containers[core.IndexNameDefault] = NewDictReader(blk.dict)
+			if _, ok := blk.readers[core.IndexNameDefault]; !ok {
+				blk.readers[core.IndexNameDefault] = NewDictReader(blk.dict)
 			}
 		}
 	}
@@ -278,9 +278,9 @@ func (sr *SegmentReader) lookupBlock(field core.BEField) (*blockLookup, bool) {
 
 // GetPostingsByTerm returns a posting iterator for a physical term in the
 // merged (all-K) posting list. This is a convenience wrapper around
-// ContainerQuery with the default dict container.
+// IndexQuery with the default dict container.
 func (sr *SegmentReader) GetPostingsByTerm(field core.BEField, term string) (core.PostingIterator, error) {
-	iters, err := sr.ContainerQuery(field, core.IndexNameDefault, term)
+	iters, err := sr.IndexQuery(field, core.IndexNameDefault, term)
 	if err != nil {
 		return nil, err
 	}
@@ -290,15 +290,15 @@ func (sr *SegmentReader) GetPostingsByTerm(field core.BEField, term string) (cor
 	return iters[0], nil
 }
 
-// ContainerQuery dispatches a query to a registered container and returns
+// IndexQuery dispatches a query to a registered container and returns
 // posting iterators. kind is the container type (e.g. "default",
 // "ac_matcher", "ext_range").
-func (sr *SegmentReader) ContainerQuery(field core.BEField, kind string, query interface{}) ([]core.PostingIterator, error) {
+func (sr *SegmentReader) IndexQuery(field core.BEField, kind string, query interface{}) ([]core.PostingIterator, error) {
 	blk, ok := sr.lookupBlock(field)
 	if !ok {
 		return nil, core.ErrUnknownQueryField
 	}
-	cr, ok := blk.containers[kind]
+	cr, ok := blk.readers[kind]
 	if !ok {
 		return nil, nil
 	}
@@ -309,13 +309,13 @@ func (sr *SegmentReader) ContainerQuery(field core.BEField, kind string, query i
 // MultiPatternSearch performs AC automaton matching on the input text and
 // returns posting iterators for all matched terms in the merged posting list.
 func (sr *SegmentReader) MultiPatternSearch(field core.BEField, text string) ([]core.PostingIterator, error) {
-	return sr.ContainerQuery(field, BlockKindAC, text)
+	return sr.IndexQuery(field, BlockKindAC, text)
 }
 
 // GetRangePostings returns posting iterators for every interval that contains
 // the query point in an ext_range field, from the merged (all-K) posting list.
 func (sr *SegmentReader) GetRangePostings(field core.BEField, point int64) ([]core.PostingIterator, error) {
-	return sr.ContainerQuery(field, BlockKindRange, point)
+	return sr.IndexQuery(field, BlockKindRange, point)
 }
 
 // SchemaHash returns the embedded schema hash for segment v4 files.

@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace the dual-path query routing (engine's dict fast path + ContainerQuery) with a single unified `ContainerReader.MatchQuery(ctx BlockContext, ...)` interface, where the default dict is a registered container like any other.
+**Goal:** Replace the dual-path query routing (engine's dict fast path + IndexQuery) with a single unified `IndexReader.MatchQuery(ctx BlockContext, ...)` interface, where the default dict is a registered container like any other.
 
-**Architecture:** Introduce `BlockContext` to carry field storage data (dict + postings) and rename `Retrieve` → `MatchQuery`. Register `DictContainer` as the default container via `segment.RegisterContainer`. The engine's `initCursors` collapses to one code path: look up the container (including "default"), call `MatchQuery`, done.
+**Architecture:** Introduce `BlockContext` to carry field storage data (dict + postings) and rename `Retrieve` → `MatchQuery`. Register `DictIndex` as the default container via `segment.RegisterIndex`. The engine's `initCursors` collapses to one code path: look up the container (including "default"), call `MatchQuery`, done.
 
 **Tech Stack:** Go 1.24, GoConvey for tests.
 
@@ -14,18 +14,18 @@
 - Tests use GoConvey (`github.com/smartystreets/goconvey/convey`), test packages named `<pkg>_test`.
 - Commands: test = `make test`, vet = `go vet ./...`.
 - No panics reachable from the retrieve path.
-- `GetPostingsByTerm` is kept as a convenience method delegating to `DictContainer` — tests and simple callers retain the shorthand.
+- `GetPostingsByTerm` is kept as a convenience method delegating to `DictIndex` — tests and simple callers retain the shorthand.
 
 ## Files Affected
 
 | File | Action | Summary |
 |------|--------|---------|
-| `segment/container.go` | Modify | Add `BlockContext` struct; rename `Retrieve` → `MatchQuery` in `ContainerReader` interface |
-| `segment/dict_container.go` | Create | New `DictContainer` implementing `ContainerReader` for the default FlatDict path |
-| `segment/segment_reader.go` | Modify | Register default dict; update `ContainerQuery` to pass `BlockContext`; rewrite `GetPostingsByTerm` as thin wrapper |
+| `segment/field_index.go` | Modify | Add `BlockContext` struct; rename `Retrieve` → `MatchQuery` in `IndexReader` interface |
+| `segment/dict_index.go` | Modify | Update `DictIndex` implementing `IndexReader` for the default FlatDict path |
+| `segment/segment_reader.go` | Modify | Register default dict; update `IndexQuery` to pass `BlockContext`; rewrite `GetPostingsByTerm` as thin wrapper |
 | `segment/range_index.go` | Modify | Rename `Retrieve` → `MatchQuery`, accept `BlockContext`, use `ctx.Pl` instead of `postingBlock` |
-| `segment/ac_mmap.go` | Modify | Rename `Retrieve` → `MatchQuery`, accept `BlockContext`, use `ctx.Pl` instead of `postingBlock` |
-| `engine/searcher.go` | Modify | Remove `if containerName != ""` branch; unify to single `ContainerQuery` call |
+| `segment/ac_index.go` | Modify | Rename `Retrieve` → `MatchQuery`, accept `BlockContext`, use `ctx.Pl` instead of `postingBlock` |
+| `engine/searcher.go` | Modify | Remove `if containerName != ""` branch; unify to single `IndexQuery` call |
 | `container/mph/reader.go` | Modify | Rename `Retrieve` → `MatchQuery`, accept `BlockContext`, use `ctx.Pl` instead of `postingBlock` |
 | `container/example/example.go` | Modify | Rename `Retrieve` → `MatchQuery`, accept `BlockContext`, use `ctx.Pl` instead of `postingBlock`; update doc comments |
 | `container/mph/mph_test.go` | Modify | Update all `.Retrieve(` → `.MatchQuery(` calls |
@@ -34,18 +34,18 @@
 
 ---
 
-### Task 1: Define `BlockContext` and update `ContainerReader` interface
+### Task 1: Define `BlockContext` and update `IndexReader` interface
 
 **Files:**
-- Modify: `segment/container.go`
+- Modify: `segment/field_index.go`
 
 **Interfaces:**
 - Consumes: `FlatDict` (from `segment/flatmap.go`)
-- Produces: `BlockContext` struct, updated `ContainerReader` interface with `MatchQuery` method
+- Produces: `BlockContext` struct, updated `IndexReader` interface with `MatchQuery` method
 
-- [ ] **Step 1: Add `BlockContext` and rename `Retrieve` → `MatchQuery` in `segment/container.go`**
+- [ ] **Step 1: Add `BlockContext` and rename `Retrieve` → `MatchQuery` in `segment/field_index.go`**
 
-Replace the `ContainerReader` interface and add `BlockContext` above it:
+Replace the `IndexReader` interface and add `BlockContext` above it:
 
 ```go
 // BlockContext carries the field-level storage data that containers need to
@@ -58,99 +58,57 @@ type BlockContext struct {
 	Pl   []byte
 }
 
-// ContainerReader reads a serialized container block and provides query access.
+// IndexReader reads a serialized index block and provides query access.
 // Instances are created during SegmentReader construction (cold path, once per
 // block) and queried during retrieval (hot path). Implementations must be safe
 // for concurrent MatchQuery calls.
 //
 // ctx carries field-level storage (dict + posting block) so that containers can
 // resolve posting references without the engine orchestrating multi-step lookups.
-type ContainerReader interface {
+type IndexReader interface {
 	MatchQuery(ctx BlockContext, field core.BEField, query interface{}) ([]core.PostingIterator, error)
 }
 ```
 
-Also update `ContainerReaderFactory` return type (line 56) — it stays the same since the type name `ContainerReader` is unchanged, only the method name changed.
+Also update `IndexReaderFactory` return type — it stays the same since the type name `IndexReader` is unchanged, only the method name changed.
 
 - [ ] **Step 2: Verify build compiles**
 
 Run: `go build ./...`
-Expected: compilation errors in all ContainerReader implementations (expected — they still have `Retrieve` method)
+Expected: compilation errors in all IndexReader implementations (expected — they still have `Retrieve` method)
 
 - [ ] **Step 3: Commit**
 
 ```bash
-git add segment/container.go
-git commit -m "refactor(segment): add BlockContext, rename ContainerReader.Retrieve to MatchQuery"
+git add segment/field_index.go
+git commit -m "refactor(segment): add BlockContext, rename IndexReader.Retrieve to MatchQuery"
 ```
 
 ---
 
-### Task 2: Create `DictContainer` for the default FlatDict path
+### Task 2: Update `DictIndex` for the default FlatDict path
 
 **Files:**
-- Create: `segment/dict_container.go`
+- Modify: `segment/dict_index.go`
 
 **Interfaces:**
 - Consumes: `BlockContext.Dict` (`*FlatDict`), `BlockContext.Pl` (`[]byte`), `NewPostingListAt`, `core.NewTerm`
-- Produces: `DictContainer` implementing `ContainerReader`
+- Produces: `DictIndex` implementing `IndexReader`
 
-- [ ] **Step 1: Create `segment/dict_container.go`**
+- [ ] **Step 1: Update `segment/dict_index.go` to use MatchQuery**
 
-```go
-package segment
-
-import (
-	"fmt"
-
-	"github.com/echoface/be_indexer/core"
-)
-
-func init() {
-	RegisterContainer(core.IndexNameDefault, ContainerDef{
-		Reader: func(_ []byte) (ContainerReader, error) {
-			return DictContainer{}, nil
-		},
-		// Builder is nil: default dict uses the framework's built-in
-		// FlatDict + FlatPostingList path during segment construction.
-	})
-}
-
-// DictContainer is the default ContainerReader for fields that use
-// FlatDict + FlatPostingList. It performs dictionary binary search and
-// zero-copy posting list access.
-type DictContainer struct{}
-
-func (DictContainer) MatchQuery(ctx BlockContext, field core.BEField, query interface{}) ([]core.PostingIterator, error) {
-	term, ok := query.(string)
-	if !ok {
-		return nil, fmt.Errorf("dict container: query must be string, got %T", query)
-	}
-	if ctx.Dict == nil {
-		return nil, nil
-	}
-	ref, found := ctx.Dict.Find([]byte(term))
-	if !found {
-		return nil, nil
-	}
-	pl, err := NewPostingListAt(ctx.Pl, ref)
-	if err != nil {
-		return nil, fmt.Errorf("field %s: %w", field, err)
-	}
-	return []core.PostingIterator{pl.NewPostingCursor(core.NewTerm(field, term))}, nil
-}
-```
+The `DictIndex` should already implement the updated interface. Verify it has `MatchQuery(ctx BlockContext, ...)` method.
 
 - [ ] **Step 2: Run segment tests**
 
-Run: `go test ./segment/ -v -run TestDictContainer`
-Expected: test doesn't exist yet (expected — will be added if desired, or covered by integration tests)
+Run: `go test ./segment/ -v -run TestDictIndex`
+Expected: tests pass
 
 - [ ] **Step 3: Commit**
 
 ```bash
-git add segment/dict_container.go
-git commit -m "feat(segment): add DictContainer as default FlatDict ContainerReader"
+git add segment/dict_index.go
+git commit -m "refactor(segment): update DictIndex to use MatchQuery with BlockContext"
 ```
 
 ---
@@ -158,26 +116,26 @@ git commit -m "feat(segment): add DictContainer as default FlatDict ContainerRea
 ### Task 3: Update segment reader to use `BlockContext` and route default through containers
 
 **Files:**
-- Modify: `segment/segment_reader.go:140-178,266-300`
+- Modify: `segment/segment_reader.go`
 
 **Interfaces:**
-- Consumes: `BlockContext`, `DictContainer`, `ContainerReader.MatchQuery`
-- Produces: updated `ContainerQuery` method, simplified `GetPostingsByTerm`
+- Consumes: `BlockContext`, `DictIndex`, `IndexReader.MatchQuery`
+- Produces: updated `IndexQuery` method, simplified `GetPostingsByTerm`
 
-- [ ] **Step 1: Update `ContainerQuery` to build `BlockContext` and call `MatchQuery`**
+- [ ] **Step 1: Update `IndexQuery` to build `BlockContext` and call `MatchQuery`**
 
-In `segment/segment_reader.go`, replace the `ContainerQuery` method (lines 288-300):
+In `segment/segment_reader.go`, replace the `IndexQuery` method:
 
 ```go
-// ContainerQuery dispatches a query to a registered container and returns
+// IndexQuery dispatches a query to a registered container and returns
 // posting iterators. kind is the container type (e.g. "default",
 // "ac_matcher", "ext_range").
-func (sr *SegmentReader) ContainerQuery(field core.BEField, kind string, query interface{}) ([]core.PostingIterator, error) {
+func (sr *SegmentReader) IndexQuery(field core.BEField, kind string, query interface{}) ([]core.PostingIterator, error) {
 	blk, ok := sr.lookupBlock(field)
 	if !ok {
 		return nil, core.ErrUnknownQueryField
 	}
-	cr, ok := blk.containers[kind]
+	cr, ok := blk.readers[kind]
 	if !ok {
 		return nil, nil
 	}
@@ -188,14 +146,14 @@ func (sr *SegmentReader) ContainerQuery(field core.BEField, kind string, query i
 
 - [ ] **Step 2: Rewrite `GetPostingsByTerm` as a thin wrapper**
 
-Replace `GetPostingsByTerm` (lines 266-286):
+Replace `GetPostingsByTerm`:
 
 ```go
 // GetPostingsByTerm returns a posting iterator for a physical term in the
 // merged (all-K) posting list. This is a convenience wrapper around
-// ContainerQuery with the default dict container.
+// IndexQuery with the default dict container.
 func (sr *SegmentReader) GetPostingsByTerm(field core.BEField, term string) (core.PostingIterator, error) {
-	iters, err := sr.ContainerQuery(field, core.IndexNameDefault, term)
+	iters, err := sr.IndexQuery(field, core.IndexNameDefault, term)
 	if err != nil {
 		return nil, err
 	}
@@ -206,24 +164,21 @@ func (sr *SegmentReader) GetPostingsByTerm(field core.BEField, term string) (cor
 }
 ```
 
-- [ ] **Step 3: Update `NewSegmentReaderWithOptions` to register DictContainer in the containers map**
+- [ ] **Step 3: Update `NewSegmentReaderWithOptions` to register DictIndex in the readers map**
 
-In `segment/segment_reader.go`, in the `NewSegmentReaderWithOptions` function, after loading all blocks, ensure the default dict container is registered for fields that have a dict but no explicit container. The `DictContainer` is already registered via `init()`, but we need to make sure `blk.containers["default"]` is set when `blk.dict != nil`:
+In `segment/segment_reader.go`, in the `NewSegmentReaderWithOptions` function, after loading all blocks, ensure the default dict container is registered for fields that have a dict but no explicit reader:
 
-After the block loading loop (around line 170), add:
+After the block loading loop, add:
 
 ```go
-	// Ensure fields with a dict get the default DictContainer registered.
+	// Ensure fields with a dict get the default DictIndex registered.
 	for _, blk := range blocks {
-		if blk.dict != nil && blk.containers == nil {
-			blk.containers = make(map[string]ContainerReader)
-		}
 		if blk.dict != nil {
-			if _, ok := blk.containers[core.IndexNameDefault]; !ok {
-				if blk.containers == nil {
-					blk.containers = make(map[string]ContainerReader)
-				}
-				blk.containers[core.IndexNameDefault] = DictContainer{}
+			if blk.readers == nil {
+				blk.readers = make(map[string]IndexReader)
+			}
+			if _, ok := blk.readers[core.IndexNameDefault]; !ok {
+				blk.readers[core.IndexNameDefault] = DictIndex{dict: blk.dict}
 			}
 		}
 	}
@@ -232,24 +187,24 @@ After the block loading loop (around line 170), add:
 - [ ] **Step 4: Run segment tests**
 
 Run: `go test ./segment/ -v`
-Expected: PASS — `GetPostingsByTerm` delegates to `ContainerQuery` which uses `DictContainer`
+Expected: PASS — `GetPostingsByTerm` delegates to `IndexQuery` which uses `DictIndex`
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add segment/segment_reader.go
-git commit -m "refactor(segment): route default dict through ContainerQuery+DictContainer"
+git commit -m "refactor(segment): route default dict through IndexQuery+DictIndex"
 ```
 
 ---
 
-### Task 4: Update all ContainerReader implementations (`Retrieve` → `MatchQuery`)
+### Task 4: Update all IndexReader implementations (`Retrieve` → `MatchQuery`)
 
 **Files:**
-- Modify: `segment/range_index.go:310-318`
-- Modify: `segment/ac_mmap.go:150-170`
-- Modify: `container/mph/reader.go:42-60`
-- Modify: `container/example/example.go:192-212`
+- Modify: `segment/range_index.go`
+- Modify: `segment/ac_index.go`
+- Modify: `container/mph/reader.go`
+- Modify: `container/example/example.go`
 
 **Interfaces:**
 - Consumes: `BlockContext` (replaces `postingBlock []byte`)
@@ -257,10 +212,10 @@ git commit -m "refactor(segment): route default dict through ContainerQuery+Dict
 
 - [ ] **Step 1: Update `RangeIndex` in `segment/range_index.go`**
 
-Replace the `Retrieve` method (lines 310-318):
+Replace the `Retrieve` method with `MatchQuery`:
 
 ```go
-// MatchQuery implements ContainerReader by performing a stabbing query on the
+// MatchQuery implements IndexReader by performing a stabbing query on the
 // segment tree, returning posting cursors.
 func (ri *RangeIndex) MatchQuery(ctx BlockContext, field core.BEField, query interface{}) ([]core.PostingIterator, error) {
 	point, ok := query.(int64)
@@ -271,14 +226,14 @@ func (ri *RangeIndex) MatchQuery(ctx BlockContext, field core.BEField, query int
 }
 ```
 
-- [ ] **Step 2: Update `ACMmapReader` in `segment/ac_mmap.go`**
+- [ ] **Step 2: Update `ACIndex` in `segment/ac_index.go`**
 
-Replace the `Retrieve` method (lines 150-170):
+Replace the `Retrieve` method with `MatchQuery`:
 
 ```go
-// MatchQuery implements ContainerReader by performing AC matching against the
+// MatchQuery implements IndexReader by performing AC matching against the
 // query text and returning posting cursors into the posting block.
-func (ac *ACMmapReader) MatchQuery(ctx BlockContext, field core.BEField, query interface{}) ([]core.PostingIterator, error) {
+func (ac *ACIndex) MatchQuery(ctx BlockContext, field core.BEField, query interface{}) ([]core.PostingIterator, error) {
 	text, ok := query.(string)
 	if !ok {
 		return nil, fmt.Errorf("ac container expects string query, got %T", query)
@@ -301,7 +256,7 @@ func (ac *ACMmapReader) MatchQuery(ctx BlockContext, field core.BEField, query i
 
 - [ ] **Step 3: Update `mph.Reader` in `container/mph/reader.go`**
 
-Replace the `Retrieve` method (lines 42-60):
+Replace the `Retrieve` method with `MatchQuery`:
 
 ```go
 func (r *Reader) MatchQuery(ctx segment.BlockContext, field core.BEField, query interface{}) ([]core.PostingIterator, error) {
@@ -325,15 +280,15 @@ func (r *Reader) MatchQuery(ctx segment.BlockContext, field core.BEField, query 
 }
 ```
 
-- [ ] **Step 4: Update `example.Reader` in `container/example/example.go`**
+- [ ] **Step 4: Update `PrefixIndex` in `container/example/example.go`**
 
-Replace the `Retrieve` method (lines 192-212):
+Replace the `Retrieve` method with `MatchQuery`:
 
 ```go
 // MatchQuery returns posting cursors for every stored prefix that prefixes the
 // query string. Linear scan keeps the template simple; production containers
 // should exploit their layout (binary search, trie, interval tree...).
-func (r *Reader) MatchQuery(ctx segment.BlockContext, field core.BEField, query interface{}) ([]core.PostingIterator, error) {
+func (r *PrefixIndex) MatchQuery(ctx segment.BlockContext, field core.BEField, query interface{}) ([]core.PostingIterator, error) {
 	q, ok := query.(string)
 	if !ok {
 		return nil, fmt.Errorf("example: query must be string, got %T", query)
@@ -353,26 +308,16 @@ func (r *Reader) MatchQuery(ctx segment.BlockContext, field core.BEField, query 
 }
 ```
 
-- [ ] **Step 5: Update doc comment in `container/example/example.go`**
-
-Update the package doc data flow comment (lines 17-19):
-
-```go
-//	Query:  engine initCursors
-//	        → SegmentReader.ContainerQuery(field, containerName, Value)
-//	        → ContainerReader.MatchQuery → PostingIterators → K-Groups merge
-```
-
-- [ ] **Step 6: Run build to verify all implementations compile**
+- [ ] **Step 5: Run build to verify all implementations compile**
 
 Run: `go build ./...`
 Expected: PASS — all `MatchQuery` signatures match the interface
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add segment/range_index.go segment/ac_mmap.go container/mph/reader.go container/example/example.go
-git commit -m "refactor: rename Retrieve→MatchQuery in all ContainerReader implementations"
+git add segment/range_index.go segment/ac_index.go container/mph/reader.go container/example/example.go
+git commit -m "refactor: rename Retrieve→MatchQuery in all IndexReader implementations"
 ```
 
 ---
@@ -380,21 +325,21 @@ git commit -m "refactor: rename Retrieve→MatchQuery in all ContainerReader imp
 ### Task 5: Simplify engine `initCursors` to single path
 
 **Files:**
-- Modify: `engine/searcher.go:222-248`
+- Modify: `engine/searcher.go`
 
 **Interfaces:**
-- Consumes: `SegmentReader.ContainerQuery` (now handles all containers including default)
+- Consumes: `SegmentReader.IndexQuery` (now handles all containers including default)
 - Produces: simplified `initCursors` with no if/else branching
 
 - [ ] **Step 1: Rewrite the query dispatch loop in `initCursors`**
 
-In `engine/searcher.go`, replace the current routing block (lines 222-248):
+In `engine/searcher.go`, replace the current routing block:
 
 ```go
 		var iterators []core.PostingIterator
 		for _, seg := range e.segments {
 			for _, q := range ef.queries {
-				iters, err := seg.ContainerQuery(field, containerName, q.Value)
+				iters, err := seg.IndexQuery(field, containerName, q.Value)
 				if err == nil && len(iters) > 0 {
 					iterators = append(iterators, iters...)
 				}
@@ -404,14 +349,14 @@ In `engine/searcher.go`, replace the current routing block (lines 222-248):
 
 Where `containerName` defaults to `core.IndexNameDefault` (`"default"`) when the field has no custom container:
 
-Update the containerName resolution (lines 212-221):
+Update the containerName resolution:
 
 ```go
 		// Determine the field's container type once per field.
 		containerName := core.IndexNameDefault
 		if fc, ok := e.schemaCodec.Field(field); ok {
-			c := fc.Meta.Container
-			if c != "" && segment.HasContainer(c) {
+			c := fc.Meta.IndexType
+			if c != "" && segment.HasIndex(c) {
 				containerName = c
 			}
 		}
@@ -431,7 +376,7 @@ Expected: PASS
 
 ```bash
 git add engine/searcher.go
-git commit -m "refactor(engine): unify initCursors to single ContainerQuery path"
+git commit -m "refactor(engine): unify initCursors to single IndexQuery path"
 ```
 
 ---
@@ -510,19 +455,19 @@ Expected: PASS — all tests pass
 Run: `go vet ./...`
 Expected: No issues
 
-- [ ] **Step 3: Verify no remaining `.Retrieve(` on ContainerReader**
+- [ ] **Step 3: Verify no remaining `.Retrieve(` on IndexReader**
 
 Run: `rg "\.Retrieve\(" --type go` — should only match `engine.Retrieve` (BooleanEngine method), not container Retrieve
 
 - [ ] **Step 4: Verify `BlockContext` is used consistently**
 
 Run: `rg "BlockContext" --type go`
-Expected: used in `container.go`, `dict_container.go`, `segment_reader.go`, all container implementations, and test files
+Expected: used in `field_index.go`, `dict_index.go`, `segment_reader.go`, all container implementations, and test files
 
 - [ ] **Step 5: Verify diff is correct**
 
 Run: `git diff --stat HEAD~7`
-Expected: 12-13 files changed, new `dict_container.go` created
+Expected: 12-13 files changed, `dict_index.go` updated
 
 Run: `git log --oneline -8`
 Expected: 7 new commits from this refactoring

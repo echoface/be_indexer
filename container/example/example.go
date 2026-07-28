@@ -12,8 +12,8 @@
 //
 // Data flow:
 //
-//	Build:  doc_exporter → sink.AddRecord(field, container, record, entries)
-//	        → segment writer → IndexBuilder.Add(term, ref) → block bytes
+//	Build:  doc_exporter → sink.AddRecord(field, record, entries)
+//	        → segment writer → IndexBuilder.AddRecord(record, entries) → block bytes
 //	Query:  engine initCursors
 //	        → SegmentReader.IndexQuery(field, containerName, Value)
 //	        → IndexReader.MatchQuery → PostingIterators → K-Groups merge
@@ -76,7 +76,7 @@ func (Encoder) Build(expr *core.ValueExpr) ([]parser.EncodedPosting, error) {
 }
 
 // Query emits one container lookup per assignment string. The engine routes
-// via the field's schema Container, so the encoder only produces values.
+// via the field's schema IndexType, so the encoder only produces values.
 func (Encoder) Query(value interface{}) ([]parser.EncodedQuery, error) {
 	texts, err := parser.ValuesToStrings(value)
 	if err != nil {

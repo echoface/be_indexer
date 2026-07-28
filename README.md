@@ -75,8 +75,8 @@ import "github.com/echoface/be_indexer"
 
 // 1. Define fields
 fields := map[be_indexer.BEField]*be_indexer.FieldMeta{
-    "age":  {ID: 1, Field: "age",  FieldOption: be_indexer.FieldOption{Tokenizer: "number"}},
-    "city": {ID: 2, Field: "city", FieldOption: be_indexer.FieldOption{Tokenizer: "default"}},
+    "age":  {ID: 1, Field: "age",  FieldOption: be_indexer.FieldOption{IndexType: "default", Encoder: "number"}},
+    "city": {ID: 2, Field: "city", FieldOption: be_indexer.FieldOption{IndexType: "default"}},
 }
 
 // 2. Build documents
@@ -154,9 +154,10 @@ results, _ := engine.Retrieve(assignments)
 ### Live Reload
 
 ```go
-holder := be_indexer.NewIndexHolder("/data/index", fields, be_indexer.LoaderOptions{UseMmap: true})
-holder.Watch(ctx, 30*time.Second)  // auto-reload on manifest change
-results, _ := holder.Engine().Retrieve(assignments)
+holder, _ := be_indexer.NewIndexHolder("/data/index", fields, be_indexer.LoaderOptions{UseMmap: true})
+// Reload when manifest changes (call Reload when notified of manifest update)
+_ = holder.Reload()
+results, _ := holder.Retrieve(assignments)
 ```
 
 ---
@@ -309,29 +310,29 @@ All posting blocks and the wildcards block are 8-byte aligned, enabling zero-cop
 
 ## Pluggable Containers
 
-Field-level index containers are registered via `segment.RegisterContainer(name, builder, reader)`:
+Field-level index containers are registered via `segment.RegisterIndex(kind, IndexDef)`:
 
-| Container | Index | `FieldOption.Container` | Use Case |
+| Container | Index | `FieldOption.IndexType` | Use Case |
 |:----------|:------|:------------------------|:---------|
 | Default | Inverted posting list | `"default"` or `""` | Exact match (EQ, IN, NOT IN) |
 | `ac_matcher` | Double-Array Trie (AC automaton) | `"ac_matcher"` | Multi-pattern substring match |
 | `ext_range` | Segment-tree range index | `"ext_range"` | Numeric range (GT, LT, BETWEEN) |
 
-Custom containers implement `ContainerBuilder` / `ContainerReader` and register at init.
+Custom containers implement `IndexBuilder` / `IndexReader` and register at init. See `container/example/` for a complete template.
 
 ---
 
 ## Value Tokenizers
 
-Tokenizers convert typed values to string terms for the inverted index:
+Tokenizers convert typed values to string terms for the inverted index. The `FieldOption.Encoder` field selects the tokenizer (defaults to `IndexType` when empty):
 
-| Tokenizer | Input | Output | `FieldOption.Tokenizer` |
+| Tokenizer | Input | Output | `FieldOption.Encoder` |
 |:----------|:------|:-------|:------------------------|
 | `default` | `string` | identity | `"default"` |
 | `number` | `int`/`int64` | `"<int>"` | `"number"` |
 | `geohash` | `[lat, lng]` | geohash prefixes | `"geohash"` |
 
-Custom tokenizers implement `parser.FieldValueEncoder` and register via `parser.RegisterTokenizer`.
+Custom tokenizers implement `parser.ValueTokenizer` and register via `parser.RegisterPredicateEncoder`.
 
 ---
 

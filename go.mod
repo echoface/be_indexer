@@ -7,6 +7,7 @@ require (
 	github.com/alecthomas/mph v0.0.0-20240904185214-2a0c46a2ff46
 	github.com/anknown/ahocorasick v0.0.0-20190904063843-d75dbd5169c0
 	github.com/blevesearch/mmap-go v1.2.0
+	github.com/blevesearch/vellum v1.2.0
 	github.com/echoface/proximityhash v0.0.0-20230211105152-91366992edfe
 	github.com/mmcloughlin/geohash v0.10.0
 	github.com/smartystreets/goconvey v1.7.2

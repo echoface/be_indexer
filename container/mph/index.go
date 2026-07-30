@@ -3,6 +3,7 @@ package mph
 import (
 	"encoding/binary"
 	"fmt"
+	"unsafe"
 
 	"github.com/alecthomas/mph"
 
@@ -41,12 +42,26 @@ func decodePostingRef(val []byte) (segment.PostingRef, error) {
 	}, nil
 }
 
+// stringToBytes returns the string's backing bytes without copying.
+//
+// A plain []byte(term) conversion heap-allocates on every query, which violates
+// the zero-allocation contract of the retrieval hot path (engine.Retrieve).
+// This is safe only because the callee, CHD.Get, treats the key as read-only
+// (it hashes the bytes and does a bytes.Compare) and never retains a reference
+// to the slice. The returned slice MUST NOT be mutated or stored.
+func stringToBytes(s string) []byte {
+	if len(s) == 0 {
+		return nil
+	}
+	return unsafe.Slice(unsafe.StringData(s), len(s))
+}
+
 func (r *MPHIndex) MatchQuery(ctx segment.BlockContext, field core.BEField, query interface{}) ([]core.PostingIterator, error) {
 	term, ok := query.(string)
 	if !ok {
 		return nil, fmt.Errorf("mph: query must be string, got %T", query)
 	}
-	val := r.chd.Get([]byte(term))
+	val := r.chd.Get(stringToBytes(term))
 	if val == nil {
 		return nil, nil
 	}

@@ -312,11 +312,17 @@ All posting blocks and the wildcards block are 8-byte aligned, enabling zero-cop
 
 Field-level index containers are registered via `segment.RegisterIndex(kind, IndexDef)`:
 
-| Container | Index | `FieldOption.IndexType` | Use Case |
-|:----------|:------|:------------------------|:---------|
-| Default | Inverted posting list | `"default"` or `""` | Exact match (EQ, IN, NOT IN) |
-| `ac_matcher` | Double-Array Trie (AC automaton) | `"ac_matcher"` | Multi-pattern substring match |
-| `ext_range` | Segment-tree range index | `"ext_range"` | Numeric range (GT, LT, BETWEEN) |
+| Container | Index | `FieldOption.IndexType` | Use Case | Lookup |
+|:----------|:------|:------------------------|:---------|:-------|
+| [Default](static/docs/indexes/default.md) | Inverted posting list (FlatDict) | `"default"` or `""` | Exact match (EQ, IN, NOT IN) | `O(log n)` |
+| [`mph_dict`](static/docs/indexes/mph_dict.md) | Minimal perfect hash (CHD) | `"mph_dict"` | Huge opaque key sets (ids, hashes) | `O(1)` |
+| [`fst_dict`](static/docs/indexes/fst_dict.md) | Finite state transducer (vellum) | `"fst_dict"` | Huge structured keys (URLs, paths) | `O(len(term))` |
+| [`ac_matcher`](static/docs/indexes/ac_matcher.md) | Double-Array Trie (AC automaton) | `"ac_matcher"` | Multi-pattern substring match | `O(len(text))` |
+| [`ext_range`](static/docs/indexes/ext_range.md) | Segment-tree + point range index | `"ext_range"` | Numeric range (GT, LT, BETWEEN) | `O(log P + log m)` |
+
+See **[static/docs/indexes/](static/docs/indexes/README.md)** for a per-container
+reference (when to use / when not, complexity, and on-disk layout) and a decision
+guide.
 
 Custom containers implement `IndexBuilder` / `IndexReader` and register at init. See `container/example/` for a complete template.
 
@@ -331,6 +337,7 @@ Tokenizers convert typed values to string terms for the inverted index. The `Fie
 | `default` | `string` | identity | `"default"` |
 | `number` | `int`/`int64` | `"<int>"` | `"number"` |
 | `geohash` | `[lat, lng]` | geohash prefixes | `"geohash"` |
+| [`proximitygeo`](static/docs/indexes/proximitygeo.md) | `(lat, lng, radius)` | geohash covering cells (stored in the default container) | `"proximitygeo"` |
 
 Custom tokenizers implement `parser.ValueTokenizer` and register via `parser.RegisterPredicateEncoder`.
 
@@ -362,6 +369,16 @@ go vet ./...
 - Max conjunctions per document: < 256
 - Max K (conjunction size): < 256
 - Recommended docs per segment: ≤ 5M for balanced memory/build time
+
+## Documentation
+
+- [Quick Start](static/docs/QUICK_START.md) — end-to-end build & query walkthrough
+- [Architecture](static/docs/ARCHITECTURE.md) — layered design, ID encoding, retrieval
+- [API Reference](static/docs/API_REFERENCE.md) — package-level API
+- [Examples](static/docs/EXAMPLES.md) — recipes for common scenarios
+- **[Field Index Types](static/docs/indexes/README.md)** — per-container reference
+  (default, mph_dict, fst_dict, ac_matcher, ext_range, proximitygeo): when to use,
+  complexity, and on-disk layout
 
 ## License
 

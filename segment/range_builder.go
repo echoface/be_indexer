@@ -1,25 +1,31 @@
 package segment
 
 import (
+	"encoding/binary"
 	"fmt"
 
 	"github.com/echoface/be_indexer/core"
 )
 
 // RangeBuilder accumulates interval entries and builds a RangeIndex segment
-// tree block at Build time.
+// block at Build time.
+//
+// Like the dict/mph/ac builders, it funnels every (interval, EntryID) pair
+// through a KeyedPostingCollector so that accumulation past
+// BuilderEnv.MaxPostingsInMemory spills sorted runs to disk instead of holding
+// the whole field in RAM. This keeps peak build memory bounded even for numeric
+// fields with tens of millions of documents. The interval [lo, hi] is used as
+// the collector key, so the collector's k-way merge naturally groups every
+// EntryID sharing the same interval — replacing the former in-memory dedup map.
 type RangeBuilder struct {
-	intervals []intervalEntry
+	collector *KeyedPostingCollector
 }
 
-type intervalEntry struct {
-	lo, hi  int64
-	entries []core.EntryID
-}
-
-// NewRangeBuilder creates a fresh RangeBuilder.
+// NewRangeBuilder creates a fresh RangeBuilder honoring the spill environment.
 func NewRangeBuilder(env BuilderEnv) IndexBuilder {
-	return &RangeBuilder{}
+	return &RangeBuilder{
+		collector: NewKeyedPostingCollector(env.MaxPostingsInMemory, env.TmpDir),
+	}
 }
 
 // AddRecord receives a record and its associated EntryIDs.
@@ -28,17 +34,28 @@ func (b *RangeBuilder) AddRecord(record any, entries []core.EntryID) error {
 	if !ok {
 		return fmt.Errorf("ext_range: expected core.RangeRecord, got %T", record)
 	}
-	b.intervals = append(b.intervals, intervalEntry{lo: rr.Lo, hi: rr.Hi, entries: append([]core.EntryID(nil), entries...)})
-	return nil
+	if rr.Lo > rr.Hi {
+		return fmt.Errorf("ext_range: invalid interval [%d,%d]", rr.Lo, rr.Hi)
+	}
+	key := encodeIntervalKey(rr.Lo, rr.Hi)
+	return b.collector.Add(key, entries)
 }
 
-// Build merges accumulated intervals and writes a RangeIndex block.
+// Build merges accumulated intervals (from memory and any spilled runs) and
+// writes a RangeIndex block.
 func (b *RangeBuilder) Build(bw BlockWriter) error {
-	merged := mergeIntervalEntries(b.intervals)
-	intervals := make([]Interval, 0, len(merged))
-	for _, e := range merged {
-		for _, eid := range e.entries {
-			intervals = append(intervals, Interval{Lo: e.lo, Hi: e.hi, Entry: eid})
+	sorted, err := b.collector.Merge()
+	if err != nil {
+		return err
+	}
+	if len(sorted) == 0 {
+		return nil
+	}
+	intervals := make([]Interval, 0, len(sorted))
+	for _, rec := range sorted {
+		lo, hi := decodeIntervalKey(rec.Key)
+		for _, eid := range rec.Entries {
+			intervals = append(intervals, Interval{Lo: lo, Hi: hi, Entry: eid})
 		}
 	}
 	data, err := BuildRangeIndex(intervals)
@@ -51,25 +68,20 @@ func (b *RangeBuilder) Build(bw BlockWriter) error {
 	return bw.WriteBlock(core.IndexNameExtendRange, data)
 }
 
-// mergeIntervalEntries groups intervalEntry by (lo, hi) and merges their entry lists.
-func mergeIntervalEntries(entries []intervalEntry) []intervalEntry {
-	if len(entries) <= 1 {
-		return entries
-	}
-	type key struct{ lo, hi int64 }
-	m := make(map[key]*intervalEntry)
-	for i := range entries {
-		e := &entries[i]
-		k := key{e.lo, e.hi}
-		if exist, ok := m[k]; ok {
-			exist.entries = append(exist.entries, e.entries...)
-		} else {
-			m[k] = e
-		}
-	}
-	out := make([]intervalEntry, 0, len(m))
-	for _, e := range m {
-		out = append(out, *e)
-	}
-	return out
+// encodeIntervalKey packs [lo, hi] into a fixed 16-byte collector key. Each
+// int64 is stored big-endian with its sign bit flipped so that bytewise
+// comparison matches signed-integer ordering; this keeps spilled runs sorted in
+// a stable, meaningful order and lets the collector group identical intervals.
+func encodeIntervalKey(lo, hi int64) []byte {
+	var buf [16]byte
+	binary.BigEndian.PutUint64(buf[0:8], uint64(lo)^(1<<63))
+	binary.BigEndian.PutUint64(buf[8:16], uint64(hi)^(1<<63))
+	return buf[:]
+}
+
+// decodeIntervalKey reverses encodeIntervalKey.
+func decodeIntervalKey(k []byte) (lo, hi int64) {
+	lo = int64(binary.BigEndian.Uint64(k[0:8]) ^ (1 << 63))
+	hi = int64(binary.BigEndian.Uint64(k[8:16]) ^ (1 << 63))
+	return lo, hi
 }

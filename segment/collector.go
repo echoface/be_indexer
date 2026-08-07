@@ -101,7 +101,35 @@ func (c *KeyedPostingCollector) flushRun() error {
 
 const maxKeyedOpenRuns = 64
 
-func (c *KeyedPostingCollector) Merge() ([]KeyedRecord, error) {
+// MergeIter is a pull-based cursor over the collector's sorted, key-merged
+// output. It yields each distinct key exactly once, with all its EntryIDs
+// concatenated, in ascending key order — the same sequence Merge() produces,
+// but one record at a time so callers never hold the whole result in memory.
+//
+// Ownership: each Record() return is valid until the next Next() call. Both the
+// Key and Entries slices are freshly produced per record, so callers may retain
+// them. Close() MUST be called to release spill file handles and remove temp
+// runs; it is safe to call multiple times.
+type MergeIter struct {
+	// memMode iterates pre-sorted, already-deduped records in place (no spill).
+	memMode bool
+	records []KeyedRecord
+	pos     int
+
+	// spill mode: k-way merge across open run readers.
+	readers  []*keyedRunReader
+	h        *keyedRecordHeap
+	runFiles []string
+
+	cur KeyedRecord
+	err error
+}
+
+// MergeIter finalizes accumulation (flushing any pending run and collapsing the
+// fan-in below maxKeyedOpenRuns) and returns a streaming cursor over the merged
+// records. Ownership of the collector's spill files transfers to the iterator,
+// which removes them on Close.
+func (c *KeyedPostingCollector) MergeIter() (*MergeIter, error) {
 	if err := c.flushRun(); err != nil {
 		return nil, err
 	}
@@ -123,16 +151,113 @@ func (c *KeyedPostingCollector) Merge() ([]KeyedRecord, error) {
 		}
 		c.runFiles = next
 	}
-	defer func() {
-		for _, file := range c.runFiles {
-			os.Remove(file)
-		}
-		c.runFiles = nil
-	}()
+
 	if len(c.runFiles) == 0 {
-		return c.records, nil
+		// In-memory mode: c.records is already sorted (flushRun) and unique (Add
+		// dedups via the pending map), so we walk it directly with zero extra copy.
+		return &MergeIter{memMode: true, records: c.records}, nil
 	}
-	return c.kWayMerge(c.runFiles)
+
+	it := &MergeIter{runFiles: c.runFiles}
+	c.runFiles = nil // ownership transfers to the iterator; freed on Close.
+	for _, file := range it.runFiles {
+		r, err := openKeyedRunReader(file)
+		if err != nil {
+			it.Close()
+			return nil, err
+		}
+		it.readers = append(it.readers, r)
+	}
+	h := &keyedRecordHeap{}
+	heap.Init(h)
+	for i, r := range it.readers {
+		if r.hasNext {
+			heap.Push(h, keyedHeapItem{rec: r.rec, reader: i})
+		}
+	}
+	it.h = h
+	return it, nil
+}
+
+// Next advances to the next merged record, returning false at end of stream.
+func (it *MergeIter) Next() bool {
+	if it.err != nil {
+		return false
+	}
+	if it.memMode {
+		if it.pos >= len(it.records) {
+			return false
+		}
+		it.cur = it.records[it.pos]
+		it.pos++
+		return true
+	}
+	h := it.h
+	if h.Len() == 0 {
+		return false
+	}
+	// Pop the smallest key, then fold in every heap entry sharing that key. Each
+	// keyedRunReader.Next allocates a fresh rec, so the popped record's slices
+	// stay valid while we append onto them.
+	first := heap.Pop(h).(keyedHeapItem)
+	merged := first.rec
+	if it.readers[first.reader].Next() {
+		heap.Push(h, keyedHeapItem{rec: it.readers[first.reader].rec, reader: first.reader})
+	}
+	for h.Len() > 0 {
+		next := (*h)[0]
+		if !bytes.Equal(merged.Key, next.rec.Key) {
+			break
+		}
+		item := heap.Pop(h).(keyedHeapItem)
+		merged.Entries = append(merged.Entries, item.rec.Entries...)
+		if it.readers[item.reader].Next() {
+			heap.Push(h, keyedHeapItem{rec: it.readers[item.reader].rec, reader: item.reader})
+		}
+	}
+	it.cur = merged
+	return true
+}
+
+// Record returns the current merged record. Valid only until the next Next.
+func (it *MergeIter) Record() KeyedRecord { return it.cur }
+
+// Err returns any error encountered during iteration.
+func (it *MergeIter) Err() error { return it.err }
+
+// Close releases run readers and removes spill files. Safe to call repeatedly.
+func (it *MergeIter) Close() error {
+	var firstErr error
+	for _, r := range it.readers {
+		if err := r.Close(); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	it.readers = nil
+	for _, file := range it.runFiles {
+		os.Remove(file)
+	}
+	it.runFiles = nil
+	return firstErr
+}
+
+// Merge drains MergeIter into a single slice. It preserves the historical
+// behavior (and, in memory mode, the zero-extra-copy return of c.records) for
+// callers that still want the whole result at once.
+func (c *KeyedPostingCollector) Merge() ([]KeyedRecord, error) {
+	it, err := c.MergeIter()
+	if err != nil {
+		return nil, err
+	}
+	defer it.Close()
+	if it.memMode {
+		return it.records, nil
+	}
+	var result []KeyedRecord
+	for it.Next() {
+		result = append(result, it.Record())
+	}
+	return result, it.Err()
 }
 
 func (c *KeyedPostingCollector) mergeRunBatch(files []string) (string, error) {
@@ -189,50 +314,6 @@ func (c *KeyedPostingCollector) writeMergedRun(w io.Writer, readers []*keyedRunR
 		}
 	}
 	return nil
-}
-
-func (c *KeyedPostingCollector) kWayMerge(files []string) ([]KeyedRecord, error) {
-	readers := make([]*keyedRunReader, 0, len(files))
-	defer func() {
-		for _, r := range readers {
-			r.Close()
-		}
-	}()
-	for _, file := range files {
-		r, err := openKeyedRunReader(file)
-		if err != nil {
-			return nil, err
-		}
-		readers = append(readers, r)
-	}
-	var result []KeyedRecord
-	h := &keyedRecordHeap{}
-	heap.Init(h)
-	for i, r := range readers {
-		if r.hasNext {
-			heap.Push(h, keyedHeapItem{rec: r.rec, reader: i})
-		}
-	}
-	for h.Len() > 0 {
-		first := heap.Pop(h).(keyedHeapItem)
-		merged := first.rec
-		if readers[first.reader].Next() {
-			heap.Push(h, keyedHeapItem{rec: readers[first.reader].rec, reader: first.reader})
-		}
-		for h.Len() > 0 {
-			next := (*h)[0]
-			if !bytes.Equal(merged.Key, next.rec.Key) {
-				break
-			}
-			item := heap.Pop(h).(keyedHeapItem)
-			merged.Entries = append(merged.Entries, item.rec.Entries...)
-			if readers[item.reader].Next() {
-				heap.Push(h, keyedHeapItem{rec: readers[item.reader].rec, reader: item.reader})
-			}
-		}
-		result = append(result, merged)
-	}
-	return result, nil
 }
 
 // writeKeyedRunRecord writes one keyed record to a spill file.

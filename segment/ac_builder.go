@@ -383,25 +383,18 @@ func (b *ACBuilder) Compile() ([]byte, error) {
 	return buf, nil
 }
 
-// Build writes the Dict + Postings blocks, then builds the AC automaton and
-// writes it as a container block.
+// Build writes the Postings block, then builds the AC automaton and writes it
+// as a container block. Each term's PostingRef is folded into the automaton in
+// the same single pass that streams its posting list out (via BuildPostings).
 func (b *ACBuilder) Build(bw BlockWriter) error {
-	sorted, err := b.collector.Merge()
+	n, err := BuildPostings(b.collector, bw, func(key []byte, ref PostingRef) error {
+		return b.AddPosting(string(key), ref)
+	})
 	if err != nil {
 		return err
 	}
-	if len(sorted) == 0 {
+	if n == 0 {
 		return nil
-	}
-	writer := &DictPostingsWriter{}
-	refs, err := writer.Write(sorted, bw)
-	if err != nil {
-		return err
-	}
-	for _, rec := range sorted {
-		if err := b.AddPosting(string(rec.Key), refs[string(rec.Key)]); err != nil {
-			return err
-		}
 	}
 	acData, err := b.Compile()
 	if err != nil {

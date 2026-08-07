@@ -2,6 +2,7 @@ package segment
 
 import (
 	"fmt"
+	"io"
 
 	"github.com/echoface/be_indexer/core"
 )
@@ -36,6 +37,32 @@ type IndexBuilder interface {
 // registration.
 type BlockWriter interface {
 	WriteBlock(kind string, data []byte) error
+}
+
+// StreamBlockWriter is an optional extension of BlockWriter for builders that
+// can emit a block incrementally instead of materializing it as one []byte.
+// This lets a large postings block be written straight to the segment stream
+// without ever holding all its bytes in memory.
+//
+// A BlockWriter that does not implement StreamBlockWriter (e.g. a test double)
+// still works: callers detect the missing capability via a type assertion and
+// fall back to buffering the block and calling WriteBlock once.
+type StreamBlockWriter interface {
+	BlockWriter
+	// OpenBlock begins a block of the given kind. The returned BlockStream is
+	// written incrementally and MUST be closed exactly once; Close finalizes the
+	// block's size and checksum and registers it. Only one block may be open at a
+	// time on a given writer.
+	OpenBlock(kind string) (BlockStream, error)
+}
+
+// BlockStream is an in-progress block opened via StreamBlockWriter.OpenBlock.
+// Write appends payload bytes; Close finalizes the block. The bytes written
+// between OpenBlock and Close form the exact block payload (checksummed), the
+// same as the single []byte passed to WriteBlock.
+type BlockStream interface {
+	io.Writer
+	Close() error
 }
 
 // BuilderEnv carries build-time configuration from the framework to index

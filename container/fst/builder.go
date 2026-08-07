@@ -71,18 +71,12 @@ func (b *FSTBuilder) AddPosting(term string, ref segment.PostingRef) {
 // so the FST value is a single uint64 offset with no PostingRef payload.
 func (b *FSTBuilder) Build(bw segment.BlockWriter) error {
 	if b.collector != nil {
-		sorted, err := b.collector.Merge()
+		_, err := segment.BuildPostings(b.collector, bw, func(key []byte, ref segment.PostingRef) error {
+			b.terms = append(b.terms, termOffset{term: string(key), offset: ref.Offset})
+			return nil
+		})
 		if err != nil {
 			return err
-		}
-		if len(sorted) > 0 {
-			offsets, err := writePostings(sorted, bw)
-			if err != nil {
-				return err
-			}
-			for _, rec := range sorted {
-				b.terms = append(b.terms, termOffset{term: string(rec.Key), offset: offsets[string(rec.Key)]})
-			}
 		}
 	}
 	if len(b.terms) == 0 {
@@ -112,22 +106,4 @@ func (b *FSTBuilder) Build(bw segment.BlockWriter) error {
 		return fmt.Errorf("fst: finalize: %w", err)
 	}
 	return bw.WriteBlock(IndexName, buf.Bytes())
-}
-
-// writePostings writes only the FlatPostingList block (no FlatDict — the FST is
-// the term dictionary) and returns each term's block-relative posting offset.
-func writePostings(sorted []segment.KeyedRecord, bw segment.BlockWriter) (map[string]uint64, error) {
-	var plBuf []byte
-	offsets := make(map[string]uint64, len(sorted))
-	for _, rec := range sorted {
-		// The reader binary-searches posting lists and requires ascending EntryID
-		// order (PostingIterator contract).
-		sort.Slice(rec.Entries, func(i, j int) bool { return rec.Entries[i] < rec.Entries[j] })
-		offsets[string(rec.Key)] = uint64(len(plBuf))
-		plBuf = append(plBuf, segment.WriteFlatPostingList(rec.Entries)...)
-	}
-	if err := bw.WriteBlock(segment.BlockKindPostings, plBuf); err != nil {
-		return nil, err
-	}
-	return offsets, nil
 }

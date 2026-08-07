@@ -57,19 +57,12 @@ func encodePostingRef(ref segment.PostingRef) []byte {
 
 func (b *MPHBuilder) Build(bw segment.BlockWriter) error {
 	if b.collector != nil {
-		sorted, err := b.collector.Merge()
+		_, err := segment.BuildPostings(b.collector, bw, func(key []byte, ref segment.PostingRef) error {
+			b.terms = append(b.terms, termRef{term: string(key), ref: ref})
+			return nil
+		})
 		if err != nil {
 			return err
-		}
-		if len(sorted) > 0 {
-			writer := &segment.DictPostingsWriter{}
-			refs, err := writer.Write(sorted, bw)
-			if err != nil {
-				return err
-			}
-			for _, rec := range sorted {
-				b.terms = append(b.terms, termRef{term: string(rec.Key), ref: refs[string(rec.Key)]})
-			}
 		}
 	}
 	if len(b.terms) == 0 {

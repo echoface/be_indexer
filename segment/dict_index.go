@@ -65,14 +65,16 @@ func (b *DictBuilder) AddRecord(record any, entries []core.EntryID) error {
 }
 
 func (b *DictBuilder) Build(bw BlockWriter) error {
-	sorted, err := b.collector.Merge()
+	dict := map[string]PostingRef{}
+	n, err := BuildPostings(b.collector, bw, func(key []byte, ref PostingRef) error {
+		dict[string(key)] = ref
+		return nil
+	})
 	if err != nil {
 		return err
 	}
-	if len(sorted) == 0 {
+	if n == 0 {
 		return nil
 	}
-	w := &DictPostingsWriter{}
-	_, err = w.Write(sorted, bw)
-	return err
+	return bw.WriteBlock(BlockKindDict, WriteFlatDict(dict))
 }

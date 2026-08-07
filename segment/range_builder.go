@@ -42,21 +42,28 @@ func (b *RangeBuilder) AddRecord(record any, entries []core.EntryID) error {
 }
 
 // Build merges accumulated intervals (from memory and any spilled runs) and
-// writes a RangeIndex block.
+// writes a RangeIndex block. It streams merged records one at a time via
+// MergeIter so the full EntryID set is not duplicated; the []Interval and the
+// range index built from it remain O(E) by nature of the interval structure.
 func (b *RangeBuilder) Build(bw BlockWriter) error {
-	sorted, err := b.collector.Merge()
+	it, err := b.collector.MergeIter()
 	if err != nil {
 		return err
 	}
-	if len(sorted) == 0 {
-		return nil
-	}
-	intervals := make([]Interval, 0, len(sorted))
-	for _, rec := range sorted {
+	defer it.Close()
+	var intervals []Interval
+	for it.Next() {
+		rec := it.Record()
 		lo, hi := decodeIntervalKey(rec.Key)
 		for _, eid := range rec.Entries {
 			intervals = append(intervals, Interval{Lo: lo, Hi: hi, Entry: eid})
 		}
+	}
+	if err := it.Err(); err != nil {
+		return err
+	}
+	if len(intervals) == 0 {
+		return nil
 	}
 	data, err := BuildRangeIndex(intervals)
 	if err != nil {

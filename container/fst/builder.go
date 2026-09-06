@@ -71,7 +71,7 @@ func (b *FSTBuilder) AddPosting(term string, ref segment.PostingRef) {
 // so the FST value is a single uint64 offset with no PostingRef payload.
 func (b *FSTBuilder) Build(bw segment.BlockWriter) error {
 	if b.collector != nil {
-		_, err := segment.BuildPostings(b.collector, bw, func(key []byte, ref segment.PostingRef) error {
+		_, err := b.collector.WritePostings(bw, func(key []byte, ref segment.PostingRef) error {
 			b.terms = append(b.terms, termOffset{term: string(key), offset: ref.Offset})
 			return nil
 		})

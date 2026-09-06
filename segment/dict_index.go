@@ -66,7 +66,7 @@ func (b *DictBuilder) AddRecord(record any, entries []core.EntryID) error {
 
 func (b *DictBuilder) Build(bw BlockWriter) error {
 	dict := map[string]PostingRef{}
-	n, err := BuildPostings(b.collector, bw, func(key []byte, ref PostingRef) error {
+	n, err := b.collector.WritePostings(bw, func(key []byte, ref PostingRef) error {
 		dict[string(key)] = ref
 		return nil
 	})
@@ -76,5 +76,9 @@ func (b *DictBuilder) Build(bw BlockWriter) error {
 	if n == 0 {
 		return nil
 	}
-	return bw.WriteBlock(BlockKindDict, WriteFlatDict(dict))
+	dictBytes, err := WriteFlatDict(dict)
+	if err != nil {
+		return err
+	}
+	return bw.WriteBlock(BlockKindDict, dictBytes)
 }

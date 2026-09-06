@@ -215,16 +215,25 @@ type postingEmitter struct {
 	region []byte
 }
 
-func (pe *postingEmitter) emit(entries []core.EntryID) uint32 {
+func (pe *postingEmitter) emit(entries []core.EntryID) (uint32, error) {
 	if len(entries) == 0 {
-		return 0
+		return 0, nil
 	}
 	if pad := (8 - len(pe.region)%8) % 8; pad != 0 {
 		pe.region = append(pe.region, make([]byte, pad)...)
 	}
-	off := uint32(len(pe.region)) + 1
-	pe.region = append(pe.region, WriteFlatPostingList(entries)...)
-	return off
+	// The stored value is offset+1 (0 is the "no posting" sentinel), so the
+	// region length itself must stay below the uint32 ceiling.
+	off, err := checkedU32(len(pe.region), "range posting region offset")
+	if err != nil {
+		return 0, err
+	}
+	pl, err := WriteFlatPostingList(entries)
+	if err != nil {
+		return 0, err
+	}
+	pe.region = append(pe.region, pl...)
+	return off + 1, nil
 }
 
 // BuildRangeIndex serializes the given intervals into a RangeIndex byte block.
@@ -267,7 +276,11 @@ func BuildRangeIndex(intervals []Interval) ([]byte, error) {
 	for i, k := range pointKeys {
 		eids := pointEntries[k]
 		sort.Slice(eids, func(x, y int) bool { return eids[x] < eids[y] }) // iterator contract: ascending EntryID
-		pointOff[i] = emitter.emit(eids)
+		off, err := emitter.emit(eids)
+		if err != nil {
+			return nil, err
+		}
+		pointOff[i] = off
 	}
 
 	// --- segment tree over range endpoints only ---
@@ -312,7 +325,11 @@ func BuildRangeIndex(intervals []Interval) ([]byte, error) {
 			for k := i; k < j; k++ {
 				run[k-i] = b.pairs[k].eid
 			}
-			nodes[node].postOff = emitter.emit(run)
+			off, err := emitter.emit(run)
+			if err != nil {
+				return nil, err
+			}
+			nodes[node].postOff = off
 			i = j
 		}
 	}

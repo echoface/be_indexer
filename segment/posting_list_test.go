@@ -13,7 +13,10 @@ func TestFlatPostingList(t *testing.T) {
 		10, 20, 30, 40, 50,
 	}
 
-	buf := WriteFlatPostingList(entries)
+	buf, err := WriteFlatPostingList(entries)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	pl, err := NewFlatPostingList(buf)
 	if err != nil {
@@ -81,7 +84,10 @@ func TestFlatPostingListAlignment(t *testing.T) {
 	}
 
 	// Header size invariant: EntryID array begins at offset 8 inside a list.
-	pl := WriteFlatPostingList([]core.EntryID{1})
+	pl, err := WriteFlatPostingList([]core.EntryID{1})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(pl) != postingHeaderSize+8 || postingHeaderSize != 8 {
 		t.Fatalf("unexpected posting list header layout: len=%d header=%d", len(pl), postingHeaderSize)
 	}

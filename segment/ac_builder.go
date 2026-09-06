@@ -329,13 +329,21 @@ func (b *ACBuilder) Compile() ([]byte, error) {
 			if flatNodeIdx < uint32(len(b.nodes)) {
 				outTerms := b.outputs[flatNodeIdx]
 				if len(outTerms) > 0 {
-					outputPtrs[i] = uint32(len(outputData)) + 1
+					outPtr, err := checkedU32(len(outputData)+1, "ac output region offset")
+					if err != nil {
+						return nil, err
+					}
+					outputPtrs[i] = outPtr
 					// Payload per output node: [count u16] then count *
 					// [postingOffset u64][postingCount u32]. Storing the posting
 					// ref directly lets the reader build a cursor without a second
 					// dictionary lookup or string allocation on the query path.
+					outCount, err := checkedU16(len(outTerms), "ac per-state output count")
+					if err != nil {
+						return nil, err
+					}
 					var chunk [2]byte
-					binary.LittleEndian.PutUint16(chunk[:], uint16(len(outTerms)))
+					binary.LittleEndian.PutUint16(chunk[:], outCount)
 					outputData = append(outputData, chunk[:]...)
 					var rec [12]byte
 					for _, termID := range outTerms {
@@ -385,9 +393,9 @@ func (b *ACBuilder) Compile() ([]byte, error) {
 
 // Build writes the Postings block, then builds the AC automaton and writes it
 // as a container block. Each term's PostingRef is folded into the automaton in
-// the same single pass that streams its posting list out (via BuildPostings).
+// the same single pass that streams its posting list out (via WritePostings).
 func (b *ACBuilder) Build(bw BlockWriter) error {
-	n, err := BuildPostings(b.collector, bw, func(key []byte, ref PostingRef) error {
+	n, err := b.collector.WritePostings(bw, func(key []byte, ref PostingRef) error {
 		return b.AddPosting(string(key), ref)
 	})
 	if err != nil {

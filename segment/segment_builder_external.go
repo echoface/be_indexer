@@ -144,12 +144,15 @@ func (b *ExternalBuilder) Write() error {
 		if err != nil {
 			return err
 		}
-		wcData, err := io.ReadAll(f)
+		// Stream the sidecar straight into the segment instead of io.ReadAll'ing
+		// it into memory first. The sidecar's on-disk format (BEIENT1 magic +
+		// count + 8-byte entries) is byte-identical to encodeEntriesBlock, so a
+		// verbatim copy yields the same wildcard block.
+		err = b.writeWildcardsFromReader(blockIndex, f)
 		f.Close()
 		if err != nil {
 			return err
 		}
-		b.writeWildcards(blockIndex, wcData)
 	} else {
 		wildcards := append(core.Entries(nil), b.wildcards...)
 		sort.Slice(wildcards, func(i, j int) bool { return wildcards[i] < wildcards[j] })
@@ -201,6 +204,48 @@ func (b *ExternalBuilder) writeWildcards(blockIndex map[string]BlockDef, data []
 		Size: b.offset - wcOff,
 	}
 	return nil
+}
+
+// writeWildcardsFromReader streams the wildcard block from r straight into the
+// segment, computing the block checksum on the fly. It never materializes the
+// whole sidecar in memory, so the wildcard-spill memory bound is preserved
+// through to segment write. Byte-for-byte equivalent to buffering r fully and
+// calling writeWildcards.
+func (b *ExternalBuilder) writeWildcardsFromReader(blockIndex map[string]BlockDef, r io.Reader) error {
+	b.alignTo8()
+	wcOff := b.offset
+	b.beginBlock(wildcardsBlockName)
+	if err := b.copyFrom(r); err != nil {
+		return err
+	}
+	b.finishBlock()
+	blockIndex[wildcardsBlockName] = BlockDef{
+		Kind:   BlockKindWildcards,
+		Offset: wcOff,
+		Size:   b.offset - wcOff,
+	}
+	return nil
+}
+
+// copyFrom streams r into the segment writer in bounded chunks, keeping the
+// running offset and block checksum in sync exactly as writeBytes does for an
+// in-memory slice.
+func (b *ExternalBuilder) copyFrom(r io.Reader) error {
+	buf := make([]byte, 64*1024)
+	for {
+		n, err := r.Read(buf)
+		if n > 0 {
+			if werr := b.writeBytes(buf[:n]); werr != nil {
+				return werr
+			}
+		}
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+	}
 }
 
 func (b *ExternalBuilder) writeBytes(data []byte) error {

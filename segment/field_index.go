@@ -124,3 +124,24 @@ func HasIndex(kind string) bool {
 	_, ok := registry[kind]
 	return ok
 }
+
+// ValidateFieldMetas verifies that every field's IndexType resolves to a
+// registered index kind. An empty IndexType is treated as the default kind.
+//
+// This is the single guard that turns a missing side-effect import (e.g. a
+// caller forgot `import _ ".../container/fst"`) into a construction-time error
+// instead of a silent fallback to the default container at query time. The
+// parser package validates encoders but cannot see this registry (it must not
+// import segment), so IndexType validation lives here.
+func ValidateFieldMetas(metas []core.FieldMeta) error {
+	for _, meta := range metas {
+		kind := meta.IndexType
+		if kind == "" {
+			kind = core.IndexNameDefault
+		}
+		if !HasIndex(kind) {
+			return fmt.Errorf("field %s: %w: %q", meta.Field, core.ErrUnknownContainer, kind)
+		}
+	}
+	return nil
+}

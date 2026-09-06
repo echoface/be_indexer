@@ -15,6 +15,17 @@ import (
 	"github.com/echoface/be_indexer/segment"
 )
 
+// mustWritePL serializes a posting list for tests, failing on the (unreachable
+// for test-sized inputs) overflow error.
+func mustWritePL(t *testing.T, entries core.Entries) []byte {
+	t.Helper()
+	b, err := segment.WriteFlatPostingList(entries)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
+}
+
 func retrieve(t *testing.T, eng *be_indexer.Engine, assigns be_indexer.Assignments) []be_indexer.DocID {
 	t.Helper()
 	res, err := eng.Retrieve(assigns)
@@ -51,7 +62,7 @@ func TestContainerRoundTrip(t *testing.T) {
 	convey.Convey("fst builder -> bytes -> reader -> retrieve", t, func() {
 		convey.Convey("single term hit", func() {
 			eid := core.NewEntryID(core.NewConjID(1, 0, 1), true)
-			pl := segment.WriteFlatPostingList(core.Entries{eid})
+			pl := mustWritePL(t, core.Entries{eid})
 
 			cb := fst.NewFSTBuilder(segment.BuilderEnv{})
 			cb.AddPosting("hello", segment.PostingRef{Offset: 0, Count: 1})
@@ -72,9 +83,9 @@ func TestContainerRoundTrip(t *testing.T) {
 			eidB := core.NewEntryID(core.NewConjID(2, 0, 1), true)
 			eidC := core.NewEntryID(core.NewConjID(3, 0, 1), true)
 
-			plA := segment.WriteFlatPostingList(core.Entries{eidA})
-			plB := segment.WriteFlatPostingList(core.Entries{eidB})
-			plC := segment.WriteFlatPostingList(core.Entries{eidC})
+			plA := mustWritePL(t, core.Entries{eidA})
+			plB := mustWritePL(t, core.Entries{eidB})
+			plC := mustWritePL(t, core.Entries{eidC})
 
 			offB := uint64(len(plA))
 			offC := offB + uint64(len(plB))
@@ -440,7 +451,7 @@ func TestConcurrentMatchQuery(t *testing.T) {
 	for i := 0; i < size; i++ {
 		eid := core.NewEntryID(core.NewConjID(core.DocID(i+1), 0, 1), true)
 		cb.AddPosting(fmt.Sprintf("term_%06d", i), segment.PostingRef{Offset: uint64(len(pl)), Count: 1})
-		pl = append(pl, segment.WriteFlatPostingList(core.Entries{eid})...)
+		pl = append(pl, mustWritePL(t, core.Entries{eid})...)
 	}
 	blob, err := buildFST(cb)
 	if err != nil {

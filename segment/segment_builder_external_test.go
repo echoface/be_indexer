@@ -2,6 +2,8 @@ package segment
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"sort"
 	"testing"
 
@@ -199,5 +201,67 @@ func TestExternalBuilderSegmentV2MatchesBuilderAcrossRuns(t *testing.T) {
 	}
 	if got, want := build(true), build(false); !bytes.Equal(got, want) {
 		t.Fatal("external v2 builder bytes mismatch")
+	}
+}
+
+// TestExternalBuilderWildcardStreamingMatchesBuffered proves the streamed
+// wildcard-block-file path (SetWildcardsBlockFile → writeWildcardsFromReader,
+// no io.ReadAll) produces a byte-identical segment to the in-memory
+// SetWildcards path. This guards the §4.2.2 streaming change against any framing
+// or checksum drift.
+func TestExternalBuilderWildcardStreamingMatchesBuffered(t *testing.T) {
+	wildcards := core.Entries{10, 30, 50, 70}
+	sorted := append(core.Entries(nil), wildcards...)
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i] < sorted[j] })
+
+	build := func(useBlockFile bool) []byte {
+		buf := new(bytes.Buffer)
+		tmp := t.TempDir()
+		b := NewExternalBuilder(buf, tmp, ExternalBuilderOptions{
+			MaxPostingsInMemory: 1,
+			SchemaHash:          "sha256:schema",
+		})
+		b.SetDocCount(2)
+		if err := b.AddField(core.FieldMeta{ID: 1, Field: "a", FieldOption: core.FieldOption{Encoder: "number"}}); err != nil {
+			t.Fatal(err)
+		}
+		if err := b.AddPosting(1, "a", "1", []core.EntryID{mkE(1, 20)}); err != nil {
+			t.Fatal(err)
+		}
+		if useBlockFile {
+			// The sidecar on-disk format equals encodeEntriesBlock (sorted).
+			sidecar := filepath.Join(tmp, "wildcards.bin")
+			if err := os.WriteFile(sidecar, encodeEntriesBlock(sorted), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			b.SetWildcardsBlockFile(sidecar)
+		} else {
+			b.SetWildcards(wildcards)
+		}
+		if err := b.Write(); err != nil {
+			t.Fatal(err)
+		}
+		return buf.Bytes()
+	}
+
+	streamed := build(true)
+	buffered := build(false)
+	if !bytes.Equal(streamed, buffered) {
+		t.Fatalf("streamed wildcard segment differs from buffered: %d vs %d bytes", len(streamed), len(buffered))
+	}
+
+	// And the streamed segment must decode the correct wildcard set.
+	reader, err := NewSegmentReader(streamed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := reader.Wildcards()
+	if len(got) != len(sorted) {
+		t.Fatalf("wildcard count mismatch: got %d want %d", len(got), len(sorted))
+	}
+	for i := range sorted {
+		if got[i] != sorted[i] {
+			t.Fatalf("wildcard[%d] = %d, want %d", i, got[i], sorted[i])
+		}
 	}
 }

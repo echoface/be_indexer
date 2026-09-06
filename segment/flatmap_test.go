@@ -12,7 +12,10 @@ func TestFlatDict(t *testing.T) {
 		"date":   {Offset: 400, Count: 4},
 	}
 
-	buf := WriteFlatDict(m)
+	buf, err := WriteFlatDict(m)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	dict, err := NewFlatDict(buf)
 	if err != nil {

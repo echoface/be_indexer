@@ -27,7 +27,7 @@ func writeSimpleIndex(t *testing.T, root, manifestName string, docValue int, gen
 		IndexName:       "test-index",
 		Generation:      generation,
 		SchemaHash:      "sha256:schema",
-		FormatVersion:   manifest.FormatVersionSegmentV2,
+		FormatVersion:   manifest.FormatVersionSegmentV4,
 		PostingEncoding: "conjid64-entryid64-v1",
 		Full: manifest.FullIndexDescriptor{
 			Generation:        generation,

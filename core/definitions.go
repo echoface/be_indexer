@@ -74,6 +74,15 @@ type RetrieveObserver interface {
 	OnExcludeSkip(docID DocID)
 	OnCursorInit(fieldCount int)
 }
+
+// FieldErrorObserver is an OPTIONAL extension of RetrieveObserver. When an
+// observer also implements it, the engine reports per-field query errors
+// (encoder or container lookup failures) through OnFieldError so callers can
+// distinguish a genuine no-match from a skipped error even in lenient mode.
+// Existing observers that do not implement it keep working unchanged.
+type FieldErrorObserver interface {
+	OnFieldError(field BEField, err error)
+}
 // --------------------------------------------------------------------------------
 // Retrieval Context
 // --------------------------------------------------------------------------------
@@ -81,9 +90,14 @@ type RetrieveObserver interface {
 // RetrieveContext carries query-time state.
 type RetrieveContext struct {
 	DumpStepInfo bool
-	Collector    ResultCollector
-	Assigns      Assignments
-	Observer     RetrieveObserver
+	// StrictQuery controls how per-field query errors (encoder or container
+	// lookup failures) are handled. Default (false) is lenient: an errored field
+	// is skipped and retrieval continues, preserving historical behavior. When
+	// true, the first field error aborts retrieval and is returned to the caller.
+	StrictQuery bool
+	Collector   ResultCollector
+	Assigns     Assignments
+	Observer    RetrieveObserver
 }
 
 // IndexOpt is a functional option for RetrieveContext.

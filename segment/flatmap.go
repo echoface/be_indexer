@@ -40,19 +40,31 @@ type dictItem struct {
 }
 
 // WriteFlatDict serializes a term -> PostingRef map into the FlatDict layout.
-func WriteFlatDict(dict map[string]PostingRef) []byte {
+// It returns an error when the term count or the term-string area would overflow
+// the uint32 offsets in the layout, so an oversized dictionary fails the build
+// rather than writing silently-truncated offsets.
+func WriteFlatDict(dict map[string]PostingRef) ([]byte, error) {
 	keys := make([]string, 0, len(dict))
 	for k := range dict {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
 
-	count := uint32(len(keys))
+	count, err := checkedU32(len(keys), "flat dict term count")
+	if err != nil {
+		return nil, err
+	}
 	itemsAreaSize := int(count) * flatDictItemSize
 
 	stringsSize := 0
 	for _, k := range keys {
 		stringsSize += len(k)
+	}
+
+	// termDataOffset and every per-item KeyOffset are uint32 block-relative
+	// offsets; the whole block (items area + strings) must fit under 4 GiB.
+	if _, err := checkedU32(flatDictHeaderSize+itemsAreaSize+stringsSize, "flat dict block size"); err != nil {
+		return nil, err
 	}
 
 	buf := make([]byte, flatDictHeaderSize+itemsAreaSize+stringsSize)
@@ -73,7 +85,7 @@ func WriteFlatDict(dict map[string]PostingRef) []byte {
 		curStringOffset += uint32(len(key))
 	}
 
-	return buf
+	return buf, nil
 }
 
 // NewFlatDict creates a dictionary from mapped bytes.

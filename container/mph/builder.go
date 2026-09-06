@@ -57,7 +57,7 @@ func encodePostingRef(ref segment.PostingRef) []byte {
 
 func (b *MPHBuilder) Build(bw segment.BlockWriter) error {
 	if b.collector != nil {
-		_, err := segment.BuildPostings(b.collector, bw, func(key []byte, ref segment.PostingRef) error {
+		_, err := b.collector.WritePostings(bw, func(key []byte, ref segment.PostingRef) error {
 			b.terms = append(b.terms, termRef{term: string(key), ref: ref})
 			return nil
 		})

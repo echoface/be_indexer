@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 
+	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/echoface/be_indexer/core"
 	"github.com/echoface/be_indexer/manifest"
 	"github.com/echoface/be_indexer/parser"
@@ -50,6 +51,14 @@ type BuildDirectoryOptions struct {
 	// SegmentSchemaHash is embedded into every segment and should match the
 	// snapshot manifest schema hash.
 	SegmentSchemaHash string
+	// IgnoreUnindexedFields tolerates documents referencing fields absent from
+	// the schema. Default (false) treats such a document as a doc-level error
+	// (skipped under FailSkip, fatal under FailFast). See NormalizeOptions.
+	IgnoreUnindexedFields bool
+}
+
+func (o BuildDirectoryOptions) normalizeOptions() NormalizeOptions {
+	return NormalizeOptions{IgnoreUnindexedFields: o.IgnoreUnindexedFields}
 }
 
 // BuildFailMode controls how the builder reacts to per-document / per-mutation
@@ -149,6 +158,12 @@ type FullIndexBuilder struct {
 	state      builderState
 	fatalErr   error
 	closeOnce  bool
+
+	// seenDocs enforces global DocID uniqueness across the whole full build
+	// (§4.1.5). Duplicate DocIDs would collide in ConjID space and merge
+	// predicates from different versions into a phantom conjunction. roaring64
+	// keeps this compact even across a 2^43 DocID space and many documents.
+	seenDocs *roaring64.Bitmap
 }
 
 // segmentBuild holds the per-segment external builder + wildcard accumulator.
@@ -180,6 +195,9 @@ func NewFullIndexBuilder(opt FullIndexBuildOption) (*FullIndexBuilder, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := validateCodecContainers(codec); err != nil {
+		return nil, err
+	}
 
 	relPath := filepath.ToSlash(filepath.Join("full", generationDir("full", opt.Generation)))
 	finalDir := filepath.Join(opt.Root, relPath)
@@ -204,6 +222,7 @@ func NewFullIndexBuilder(opt FullIndexBuildOption) (*FullIndexBuilder, error) {
 		tmpDir:            tmpDir,
 		maxDocsPerSegment: maxDocs,
 		state:             stateAccepting,
+		seenDocs:          roaring64.New(),
 	}, nil
 }
 
@@ -219,19 +238,37 @@ func (b *FullIndexBuilder) AddDocument(doc *core.Document) error {
 		return b.handleDocError(0, fmt.Errorf("nil document"))
 	}
 
+	// Encode the whole document into a document-local buffer first. Validation,
+	// normalization and per-predicate encoding are all doc-level (isolatable)
+	// errors: nothing is written to the segment sink until the document fully
+	// encodes, so a failure here can be skipped under FailSkip without leaving a
+	// half-written document (§4.1.4).
+	encoded, err := encodeDocument(b.codec, doc, b.opt.Options.normalizeOptions())
+	if err != nil {
+		return b.handleDocError(doc.ID, err) // doc-level
+	}
+
+	// DocID uniqueness is a doc-level policy: a duplicate is the offending
+	// document, not a builder failure, so FailSkip may skip it (§4.1.5).
+	if b.seenDocs.Contains(docIDKey(doc.ID)) {
+		return b.handleDocError(doc.ID, fmt.Errorf("duplicate doc id %d in full build", doc.ID))
+	}
+
 	if b.curSeg == nil {
 		if err := b.startNewSegment(); err != nil {
 			return b.fatal(err) // builder-level
 		}
 	}
 
-	w, err := exportDocToSink(b.curSeg.esb, b.codec, doc)
-	if err != nil {
-		return b.handleDocError(doc.ID, err) // doc-level
+	// Committing the pre-encoded records to the sink is builder-level: the
+	// document already validated, so a failure means the sink/spill IO failed.
+	if err := commitEncodedDoc(b.curSeg.esb, encoded); err != nil {
+		return b.fatal(err) // builder-level
 	}
-	if err := b.curSeg.wildAcc.Add(w); err != nil {
+	if err := b.curSeg.wildAcc.Add(encoded.wildcards); err != nil {
 		return b.fatal(err) // builder-level (spill IO)
 	}
+	b.seenDocs.Add(docIDKey(doc.ID))
 
 	if b.curSeg.docCount == 0 {
 		b.curSeg.minDoc, b.curSeg.maxDoc = doc.ID, doc.ID
@@ -253,6 +290,12 @@ func (b *FullIndexBuilder) AddDocument(doc *core.Document) error {
 	}
 	return nil
 }
+
+// docIDKey maps a signed DocID into the uint64 key space of the roaring64
+// seen-set. The mapping only needs to be injective; a plain bit-reinterpret of
+// the two's-complement value is stable and collision-free across the valid
+// [-2^43, 2^43] DocID range.
+func docIDKey(id core.DocID) uint64 { return uint64(id) }
 
 // Build finalizes the current segment, commits the directory via rename, and
 // returns a self-describing descriptor. On any failure it removes the tmp dir
@@ -355,7 +398,11 @@ func (b *FullIndexBuilder) startNewSegment() error {
 		SchemaHash:          b.opt.Options.SegmentSchemaHash,
 	})
 	for _, fc := range b.codec.Fields() {
-		esb.AddField(fc.Meta)
+		if err := esb.AddField(fc.Meta); err != nil {
+			seg := &segmentBuild{tmpFile: tmp, tmpName: tmp.Name(), esb: esb, wildAcc: wildAcc}
+			seg.abort()
+			return err
+		}
 	}
 	b.curSeg = &segmentBuild{
 		tmpFile: tmp,
@@ -613,7 +660,7 @@ func (b *DeltaIndexBuilder) SkippedCount() int { return b.skipped }
 func NewSnapshotManifest(req SnapshotManifestRequest) (manifest.Manifest, error) {
 	formatVersion := req.FormatVersion
 	if formatVersion == "" {
-		formatVersion = manifest.FormatVersionSegmentV2
+		formatVersion = manifest.FormatVersionSegmentV4
 	}
 	postingEncoding := req.PostingEncoding
 	if postingEncoding == "" {
@@ -664,7 +711,8 @@ func buildSegmentsToDir(dir string, fields map[core.BEField]*core.FieldMeta, doc
 		chunk := docs[start:end]
 		buf := new(bytes.Buffer)
 		wildcards, err := buildSegmentFromDocsWithCodec(buf, codec, chunk, BuildSegmentFromDocsOptions{
-			SchemaHash: opts.SegmentSchemaHash,
+			SchemaHash:            opts.SegmentSchemaHash,
+			IgnoreUnindexedFields: opts.IgnoreUnindexedFields,
 		})
 		if err != nil {
 			return nil, nil, err

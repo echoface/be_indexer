@@ -31,6 +31,18 @@ func NewBooleanEngine(
 	if err != nil {
 		return nil, err
 	}
+	// Validate that every field's IndexType resolves to a registered container.
+	// parser.NewSchemaCodec already validated encoders; this additionally rejects
+	// an unknown/unregistered IndexType (e.g. a missing side-effect import) at
+	// construction time instead of silently falling back to the default container
+	// during retrieval.
+	metas := make([]core.FieldMeta, 0, len(codec.Fields()))
+	for _, fc := range codec.Fields() {
+		metas = append(metas, fc.Meta)
+	}
+	if err := segment.ValidateFieldMetas(metas); err != nil {
+		return nil, err
+	}
 	return &BooleanEngine{
 		schemaCodec:     codec,
 		wildcardEntries: wildcardEntries,
@@ -93,9 +105,15 @@ func (e *BooleanEngine) RetrieveWithCollector(
 
 	// Encode every assignment once. All K values share the same query encoding;
 	// the segment layer filters by K internally when needed.
-	encoded := e.encodeQueries(queries)
+	encoded, err := e.encodeQueries(&ctx, queries)
+	if err != nil {
+		return err
+	}
 
-	fCursors := e.initCursors(encoded, ctx.Observer)
+	fCursors, err := e.initCursors(&ctx, encoded)
+	if err != nil {
+		return err
+	}
 	if fCursors.Len() == 0 {
 		return nil
 	}
@@ -111,10 +129,13 @@ type encodedField struct {
 }
 
 // encodeQueries translates all assignments into physical lookup keys once.
-// The schema is already validated at construction time, and per-field encoding
-// errors (e.g. a value that does not fit the field type) simply skip that field,
-// so this never fails.
-func (e *BooleanEngine) encodeQueries(queries core.Assignments) []encodedField {
+// The schema is already validated at construction time. A per-field encoding
+// error (e.g. a value that does not fit the field type) is reported to the
+// context: in strict mode it aborts and returns the error; in lenient mode
+// (default) the field is skipped and, if the observer implements
+// FieldErrorObserver, surfaced via OnFieldError so it is distinguishable from a
+// genuine no-match.
+func (e *BooleanEngine) encodeQueries(ctx *core.RetrieveContext, queries core.Assignments) ([]encodedField, error) {
 	encoded := make([]encodedField, 0, len(queries))
 	for field, values := range queries {
 		fieldCodec, ok := e.schemaCodec.Field(field)
@@ -122,12 +143,30 @@ func (e *BooleanEngine) encodeQueries(queries core.Assignments) []encodedField {
 			continue
 		}
 		encodedQueries, err := fieldCodec.Encoder.Query(values)
-		if err != nil || len(encodedQueries) == 0 {
+		if err != nil {
+			if ctx.StrictQuery {
+				return nil, fmt.Errorf("field %s query encode: %w", field, err)
+			}
+			reportFieldError(ctx.Observer, field, err)
+			continue
+		}
+		if len(encodedQueries) == 0 {
 			continue
 		}
 		encoded = append(encoded, encodedField{field: field, queries: encodedQueries})
 	}
-	return encoded
+	return encoded, nil
+}
+
+// reportFieldError notifies the observer of a skipped per-field error when it
+// opts into FieldErrorObserver. It is a no-op otherwise.
+func reportFieldError(obs core.RetrieveObserver, field core.BEField, err error) {
+	if obs == nil {
+		return
+	}
+	if fe, ok := obs.(core.FieldErrorObserver); ok {
+		fe.OnFieldError(field, err)
+	}
 }
 
 // mergeCursors performs the K-Groups multiway merge without per-K grouping.
@@ -189,9 +228,14 @@ func (e *BooleanEngine) mergeCursors(ctx *core.RetrieveContext, fieldCursors *co
 // It collects posting iterators from every segment; both field postings and
 // per-segment wildcards are wrapped in FieldCursors whose internal heap
 // performs lazy K-way merge at query time — no load-time wildcard merge needed.
+//
+// A container lookup error is handled per ctx.StrictQuery: strict aborts and
+// returns the error; lenient skips the offending (segment, value) lookup and,
+// when the observer implements FieldErrorObserver, surfaces it via OnFieldError.
 func (e *BooleanEngine) initCursors(
-	encoded []encodedField, obs core.RetrieveObserver,
-) *core.FieldCursors {
+	ctx *core.RetrieveContext, encoded []encodedField,
+) (*core.FieldCursors, error) {
+	obs := ctx.Observer
 	fCursors := core.NewFieldCursors(len(encoded) + 1)
 
 	var wildcardIters []core.PostingIterator
@@ -209,11 +253,12 @@ func (e *BooleanEngine) initCursors(
 	for _, ef := range encoded {
 		field := ef.field
 
-		// Determine the field's container type once per field.
+		// The field's container type is already validated at construction time
+		// (NewBooleanEngine → segment.ValidateFieldMetas), so an unknown IndexType
+		// can never reach here; there is no silent fallback to the default kind.
 		containerName := core.IndexNameDefault
 		if fc, ok := e.schemaCodec.Field(field); ok {
-			c := fc.Meta.IndexType
-			if c != "" && segment.HasIndex(c) {
+			if c := fc.Meta.IndexType; c != "" {
 				containerName = c
 			}
 		}
@@ -222,7 +267,14 @@ func (e *BooleanEngine) initCursors(
 		for _, seg := range e.segments {
 			for _, q := range ef.queries {
 				iters, err := seg.IndexQuery(field, containerName, q.Value)
-				if err == nil && len(iters) > 0 {
+				if err != nil {
+					if ctx.StrictQuery {
+						return nil, fmt.Errorf("field %s index query: %w", field, err)
+					}
+					reportFieldError(obs, field, err)
+					continue
+				}
+				if len(iters) > 0 {
 					iterators = append(iterators, iters...)
 				}
 			}
@@ -240,7 +292,7 @@ func (e *BooleanEngine) initCursors(
 		obs.OnCursorInit(fieldCount)
 	}
 
-	return fCursors
+	return fCursors, nil
 }
 
 // DumpIndexInfo writes diagnostic information about the engine.

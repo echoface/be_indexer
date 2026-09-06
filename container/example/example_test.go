@@ -13,6 +13,17 @@ import (
 	"github.com/echoface/be_indexer/segment"
 )
 
+// mustWritePL serializes a posting list for tests, failing on the (unreachable
+// for test-sized inputs) overflow error.
+func mustWritePL(t *testing.T, entries core.Entries) []byte {
+	t.Helper()
+	b, err := segment.WriteFlatPostingList(entries)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
+}
+
 
 type testBW struct {
 	blocks map[string][]byte
@@ -37,8 +48,8 @@ func TestContainerRoundTrip(t *testing.T) {
 		eidA := core.NewEntryID(core.NewConjID(101, 0, 1), true)
 		eidB := core.NewEntryID(core.NewConjID(102, 0, 1), true)
 
-		plA := segment.WriteFlatPostingList(core.Entries{eidA})
-		plB := segment.WriteFlatPostingList(core.Entries{eidB})
+		plA := mustWritePL(t, core.Entries{eidA})
+		plB := mustWritePL(t, core.Entries{eidB})
 		postingBlock := append(append([]byte{}, plA...), plB...)
 
 	cb := example.NewPrefixBuilder(segment.BuilderEnv{})

@@ -359,7 +359,7 @@ index_root/
   "index_name": "ad_targeting",
   "generation": 20240701,
   "schema_hash": "sha256:...",
-  "format_version": "segment-v2",
+  "format_version": "segment-v4",
   "full": {
     "path": "full/full-20240701",
     "segments": [{"segment_id": 0, "file": "segment-000000.bei", ...}]

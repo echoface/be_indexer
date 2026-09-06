@@ -3,7 +3,6 @@ package segment
 import (
 	"encoding/binary"
 	"fmt"
-	"math"
 	"sort"
 	"unsafe"
 
@@ -113,14 +112,18 @@ func (pl *FlatPostingList) NewPostingCursor(term core.Term) core.PostingIterator
 	}
 }
 
-// WriteFlatPostingList serializes a slice of EntryIDs into flat bytes.
-func WriteFlatPostingList(entries []core.EntryID) []byte {
-	if len(entries) > math.MaxUint32 {
-		panic(fmt.Errorf("posting list too large: %d entries exceeds uint32 count", len(entries)))
+// WriteFlatPostingList serializes a slice of EntryIDs into flat bytes. It
+// returns an error (instead of panicking) when the entry count would overflow
+// the uint32 count header or the required buffer would exceed the addressable
+// size, so an oversized posting list fails the build loudly rather than writing
+// a truncated, silently-corrupt block.
+func WriteFlatPostingList(entries []core.EntryID) ([]byte, error) {
+	if len(entries) > MaxPostingCount {
+		return nil, fmt.Errorf("posting list too large: %d entries exceeds uint32 count limit %d", len(entries), MaxPostingCount)
 	}
 	maxInt := int(^uint(0) >> 1)
 	if len(entries) > (maxInt-postingHeaderSize)/8 {
-		panic(fmt.Errorf("posting list too large: %d entries exceeds addressable buffer size", len(entries)))
+		return nil, fmt.Errorf("posting list too large: %d entries exceeds addressable buffer size", len(entries))
 	}
 	count := uint32(len(entries))
 	buf := make([]byte, postingHeaderSize+len(entries)*8)
@@ -130,7 +133,7 @@ func WriteFlatPostingList(entries []core.EntryID) []byte {
 		off := postingHeaderSize + i*8
 		binary.LittleEndian.PutUint64(buf[off:off+8], uint64(e))
 	}
-	return buf
+	return buf, nil
 }
 
 // flatPostingCursor implements core.PostingIterator

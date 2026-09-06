@@ -120,10 +120,15 @@ func NewSegmentReaderWithOptions(b []byte, opts ReaderOptions) (*SegmentReader, 
 		return nil, fmt.Errorf("failed to parse wildcards block: %w", err)
 	}
 
-	// Assign a dense field id per declared field for the integer blockKey.
+	// Assign a dense field id per declared field for the integer blockKey. The
+	// id is a uint16, so a segment declaring more than MaxDenseFieldID+1 distinct
+	// fields would wrap and alias two fields onto the same key; reject it.
 	fieldID := make(map[string]uint16, len(meta.Fields))
 	for _, fieldMeta := range meta.Fields {
 		if _, ok := fieldID[fieldMeta.Name]; !ok {
+			if len(fieldID) > MaxDenseFieldID {
+				return nil, fmt.Errorf("segment declares too many fields: %d exceeds dense field id limit %d", len(fieldID)+1, MaxDenseFieldID+1)
+			}
 			fieldID[fieldMeta.Name] = uint16(len(fieldID))
 		}
 	}

@@ -28,6 +28,13 @@ type BuildSegmentsFromDocsOptions struct {
 // BuildSegmentFromDocsOptions controls single-segment physical format options.
 type BuildSegmentFromDocsOptions struct {
 	SchemaHash string
+	// IgnoreUnindexedFields tolerates documents that reference fields absent from
+	// the schema. Default (false) fails the build; see NormalizeOptions.
+	IgnoreUnindexedFields bool
+}
+
+func (o BuildSegmentFromDocsOptions) normalizeOptions() NormalizeOptions {
+	return NormalizeOptions{IgnoreUnindexedFields: o.IgnoreUnindexedFields}
 }
 
 // BuildSegmentsFromDocs exports docs into one or multiple mmap segments.
@@ -104,6 +111,9 @@ func BuildSegmentFromDocsWithOptions(w io.Writer, fieldsData map[core.BEField]*c
 }
 
 func buildSegmentFromDocsWithCodec(w io.Writer, codec *parser.SchemaCodec, docs []*core.Document, opts BuildSegmentFromDocsOptions) (core.Entries, error) {
+	if err := validateCodecContainers(codec); err != nil {
+		return nil, err
+	}
 	sw := segment.NewInMemorySegmentBuilderWithOptions(w, segment.InMemorySegmentBuilderOptions{
 		SchemaHash: opts.SchemaHash,
 	})
@@ -111,10 +121,12 @@ func buildSegmentFromDocsWithCodec(w io.Writer, codec *parser.SchemaCodec, docs 
 
 	// Config fields from the compiled schema (single source of truth).
 	for _, fc := range codec.Fields() {
-		sw.AddField(fc.Meta)
+		if err := sw.AddField(fc.Meta); err != nil {
+			return nil, err
+		}
 	}
 
-	wildcardEIDs, err := exportDocsToSegment(sw, codec, docs)
+	wildcardEIDs, err := exportDocsToSegment(sw, codec, docs, opts.normalizeOptions())
 	if err != nil {
 		return nil, err
 	}
@@ -127,68 +139,109 @@ func buildSegmentFromDocsWithCodec(w io.Writer, codec *parser.SchemaCodec, docs 
 	return wildcardEIDs, sw.Write()
 }
 
-func exportDocsToSegment(sw *segment.InMemorySegmentBuilder, codec *parser.SchemaCodec, docs []*core.Document) (core.Entries, error) {
+func exportDocsToSegment(sw *segment.InMemorySegmentBuilder, codec *parser.SchemaCodec, docs []*core.Document, normOpt NormalizeOptions) (core.Entries, error) {
 	var wildcardEIDs core.Entries
+
+	// Enforce DocID uniqueness (§4.1.5): two documents sharing a DocID would
+	// generate colliding ConjIDs and let predicates from different versions merge
+	// into a phantom conjunction. The batch path holds all docs in memory anyway,
+	// so a plain set is the cheapest guard here.
+	seen := make(map[core.DocID]struct{}, len(docs))
 
 	// Iterate over all documents
 	for _, doc := range docs {
 		if doc == nil {
 			return nil, fmt.Errorf("nil document")
 		}
-		wildcards, err := exportDocToSink(sw, codec, doc)
+		if _, dup := seen[doc.ID]; dup {
+			return nil, fmt.Errorf("duplicate doc id %d in full build", doc.ID)
+		}
+		encoded, err := encodeDocument(codec, doc, normOpt)
 		if err != nil {
 			return nil, err
 		}
-		wildcardEIDs = append(wildcardEIDs, wildcards...)
+		if err := commitEncodedDoc(sw, encoded); err != nil {
+			return nil, err
+		}
+		seen[doc.ID] = struct{}{}
+		wildcardEIDs = append(wildcardEIDs, encoded.wildcards...)
 	}
 
 	return wildcardEIDs, nil
 }
 
-func exportDocToSink(sink postingSink, codec *parser.SchemaCodec, doc *core.Document) (core.Entries, error) {
-	if doc == nil {
-		return nil, fmt.Errorf("nil document")
+// encodedDoc is a fully-encoded document held in a document-local buffer before
+// being committed to the sink. Pre-encoding makes commit atomic (§4.1.4): a
+// per-predicate encode failure aborts the whole document without ever touching
+// the sink, so no half-document is written.
+type encodedDoc struct {
+	records   []encodedRecord
+	wildcards core.Entries
+}
+
+type encodedRecord struct {
+	field  string
+	record any
+	eid    core.EntryID
+}
+
+// encodeDocument validates+normalizes the document and encodes every predicate
+// into a document-local buffer. All errors here are doc-level (isolatable): the
+// sink is not touched, so the caller may skip the document under FailSkip
+// without leaving partial state.
+func encodeDocument(codec *parser.SchemaCodec, doc *core.Document, normOpt NormalizeOptions) (encodedDoc, error) {
+	norm, err := ValidateAndNormalizeDocument(codec, doc, normOpt)
+	if err != nil {
+		return encodedDoc{}, err
 	}
-	if !core.ValidDocID(doc.ID) {
-		return nil, fmt.Errorf("invalid doc id %d: exceeds 43-bit encoding range", doc.ID)
-	}
-	if len(doc.Cons) >= 256 {
-		return nil, fmt.Errorf("doc %d has too many conjunctions: %d >= 256", doc.ID, len(doc.Cons))
-	}
-	var wildcardEIDs core.Entries
-	for conjIdx, conj := range doc.Cons {
+
+	var out encodedDoc
+	for conjIdx, conj := range norm.Cons {
+		// K is computed from the NORMALIZED conjunction so dropped unindexed
+		// fields never inflate it (§4.1.2).
 		incSize := conj.CalcConjSize()
 		if !core.ValidIdxOrSize(conjIdx) || !core.ValidIdxOrSize(incSize) {
-			return nil, fmt.Errorf("doc %d conjunction %d invalid encoding size: K=%d", doc.ID, conjIdx, incSize)
+			return encodedDoc{}, fmt.Errorf("doc %d conjunction %d invalid encoding size: K=%d", norm.ID, conjIdx, incSize)
 		}
-		conjID := core.NewConjID(doc.ID, conjIdx, incSize)
+		conjID := core.NewConjID(norm.ID, conjIdx, incSize)
 
 		if incSize == 0 {
-			wildcardEIDs = append(wildcardEIDs, core.NewEntryID(conjID, true))
+			out.wildcards = append(out.wildcards, core.NewEntryID(conjID, true))
 		}
 
 		// Iterate over predicates. PredicateEncoder is the only layer that knows
 		// how a field's logical ValueExpr maps to physical segment keys; the
-		// exporter only assigns EntryIDs and writes those encoded keys to the sink.
+		// exporter only assigns EntryIDs and buffers those encoded keys.
 		for field, exprs := range conj.Predicates {
 			fieldCodec, ok := codec.Field(field)
 			if !ok {
-				continue // Field not indexed
+				// Only reachable when IgnoreUnindexedFields is set; the field was
+				// already dropped from a normalized copy, so this is defensive.
+				continue
 			}
-
 			for _, expr := range exprs {
 				eid := core.NewEntryID(conjID, expr.Incl)
 				postings, err := fieldCodec.Encoder.Build(expr)
 				if err != nil {
-					return nil, fmt.Errorf("field %s encode predicate: %w", field, err)
+					return encodedDoc{}, fmt.Errorf("field %s encode predicate: %w", field, err)
 				}
 				for _, posting := range postings {
-					if err := sink.AddRecord(string(field), posting.Record, []core.EntryID{eid}); err != nil {
-						return nil, err
-					}
+					out.records = append(out.records, encodedRecord{field: string(field), record: posting.Record, eid: eid})
 				}
 			}
 		}
 	}
-	return wildcardEIDs, nil
+	return out, nil
+}
+
+// commitEncodedDoc writes a fully-encoded document to the sink in one shot.
+// A failure here is builder-level (e.g. spill IO), not isolatable: the document
+// was already validated, so an error means the sink itself failed.
+func commitEncodedDoc(sink postingSink, doc encodedDoc) error {
+	for _, r := range doc.records {
+		if err := sink.AddRecord(r.field, r.record, []core.EntryID{r.eid}); err != nil {
+			return err
+		}
+	}
+	return nil
 }

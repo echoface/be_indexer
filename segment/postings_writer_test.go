@@ -9,7 +9,7 @@ import (
 )
 
 // bufferedOnlyWriter wraps a BlockWriter but deliberately does NOT expose
-// OpenBlock, so BuildPostings falls back to buffering the whole block and
+// OpenBlock, so WritePostings falls back to buffering the whole block and
 // calling WriteBlock once. Delegating to a real segmentBlockWriter lets us
 // compare the buffered fallback's framed output against the streaming path.
 type bufferedOnlyWriter struct{ inner BlockWriter }
@@ -41,9 +41,9 @@ type capturedRef struct {
 	ref PostingRef
 }
 
-// runBuildPostings drives BuildPostings against a fresh segmentBlockWriter and
+// runWritePostings drives WritePostings against a fresh segmentBlockWriter and
 // returns the raw framed bytes, the block index, checksums, and the ref stream.
-func runBuildPostings(t *testing.T, bw BlockWriter, wrap func(BlockWriter) BlockWriter) ([]byte, map[string]BlockDef, map[string]string, []capturedRef) {
+func runWritePostings(t *testing.T, bw BlockWriter, wrap func(BlockWriter) BlockWriter) ([]byte, map[string]BlockDef, map[string]string, []capturedRef) {
 	t.Helper()
 	buf := &bytes.Buffer{}
 	var off uint64
@@ -61,7 +61,7 @@ func runBuildPostings(t *testing.T, bw BlockWriter, wrap func(BlockWriter) Block
 		t.Fatal(err)
 	}
 	var refs []capturedRef
-	if _, err := BuildPostings(c, target, func(key []byte, ref PostingRef) error {
+	if _, err := c.WritePostings(target, func(key []byte, ref PostingRef) error {
 		refs = append(refs, capturedRef{key: string(key), ref: ref})
 		return nil
 	}); err != nil {
@@ -70,12 +70,12 @@ func runBuildPostings(t *testing.T, bw BlockWriter, wrap func(BlockWriter) Block
 	return buf.Bytes(), blockIndex, checksums, refs
 }
 
-// TestBuildPostings_StreamVsBufferedByteEquivalence proves the streaming
+// TestWritePostings_StreamVsBufferedByteEquivalence proves the streaming
 // OpenBlock path and the buffered WriteBlock fallback emit byte-identical
 // segment output, checksums, block index, and PostingRef streams.
-func TestBuildPostings_StreamVsBufferedByteEquivalence(t *testing.T) {
-	streamBytes, streamIdx, streamSum, streamRefs := runBuildPostings(t, nil, nil)
-	bufBytes, bufIdx, bufSum, bufRefs := runBuildPostings(t, nil, func(bw BlockWriter) BlockWriter {
+func TestWritePostings_StreamVsBufferedByteEquivalence(t *testing.T) {
+	streamBytes, streamIdx, streamSum, streamRefs := runWritePostings(t, nil, nil)
+	bufBytes, bufIdx, bufSum, bufRefs := runWritePostings(t, nil, func(bw BlockWriter) BlockWriter {
 		return bufferedOnlyWriter{inner: bw}
 	})
 
@@ -102,10 +102,10 @@ func TestBuildPostings_StreamVsBufferedByteEquivalence(t *testing.T) {
 	}
 }
 
-// TestBuildPostings_RefsResolve confirms each returned PostingRef resolves to a
+// TestWritePostings_RefsResolve confirms each returned PostingRef resolves to a
 // correctly ordered posting list inside the produced block.
-func TestBuildPostings_RefsResolve(t *testing.T) {
-	streamBytes, idx, _, refs := runBuildPostings(t, nil, nil)
+func TestWritePostings_RefsResolve(t *testing.T) {
+	streamBytes, idx, _, refs := runWritePostings(t, nil, nil)
 	def := idx["f_"+BlockKindPostings]
 	block := streamBytes[def.Offset : def.Offset+def.Size]
 
@@ -134,9 +134,9 @@ func TestBuildPostings_RefsResolve(t *testing.T) {
 	}
 }
 
-// TestBuildPostings_EmptyWritesNothing verifies an empty collector opens no
+// TestWritePostings_EmptyWritesNothing verifies an empty collector opens no
 // block (the reader rejects zero-length postings blocks).
-func TestBuildPostings_EmptyWritesNothing(t *testing.T) {
+func TestWritePostings_EmptyWritesNothing(t *testing.T) {
 	buf := &bytes.Buffer{}
 	var off uint64
 	blockIndex := map[string]BlockDef{}
@@ -144,7 +144,7 @@ func TestBuildPostings_EmptyWritesNothing(t *testing.T) {
 	sbw := newSegmentBlockWriter("f", buf, &off, blockIndex, checksums)
 
 	c := NewKeyedPostingCollector(1<<20, "")
-	n, err := BuildPostings(c, sbw, func(key []byte, ref PostingRef) error {
+	n, err := c.WritePostings(sbw, func(key []byte, ref PostingRef) error {
 		t.Fatalf("onRef should not be called for empty collector")
 		return nil
 	})

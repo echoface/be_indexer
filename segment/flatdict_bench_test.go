@@ -29,7 +29,10 @@ func BenchmarkFlatDict_Find(b *testing.B) {
 					keys = append(keys, k)
 				}
 
-				buf := WriteFlatDict(m)
+				buf, err := WriteFlatDict(m)
+				if err != nil {
+					b.Fatal(err)
+				}
 				dict, err := NewFlatDict(buf)
 				if err != nil {
 					b.Fatal(err)
@@ -82,7 +85,7 @@ func BenchmarkFlatDict_Build(b *testing.B) {
 			b.ResetTimer()
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
-				_ = WriteFlatDict(m)
+				_, _ = WriteFlatDict(m)
 			}
 		})
 	}

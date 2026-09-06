@@ -109,7 +109,7 @@ func TestOpenIndexLoadsFullDeltaSnapshot(t *testing.T) {
 		IndexName:       "test-index",
 		Generation:      2,
 		SchemaHash:      "sha256:schema",
-		FormatVersion:   manifest.FormatVersionSegmentV2,
+		FormatVersion:   manifest.FormatVersionSegmentV4,
 		PostingEncoding: "conjid64-entryid64-v1",
 		Full: manifest.FullIndexDescriptor{
 			Generation:        1,
@@ -167,7 +167,7 @@ func TestOpenIndexRejectsChecksumMismatch(t *testing.T) {
 		IndexName:       "test-index",
 		Generation:      1,
 		SchemaHash:      "sha256:schema",
-		FormatVersion:   manifest.FormatVersionSegmentV2,
+		FormatVersion:   manifest.FormatVersionSegmentV4,
 		PostingEncoding: "conjid64-entryid64-v1",
 		Full: manifest.FullIndexDescriptor{
 			Generation:        1,
@@ -194,7 +194,7 @@ func TestOpenIndexRejectsSchemaMismatch(t *testing.T) {
 		IndexName:       "test-index",
 		Generation:      1,
 		SchemaHash:      "sha256:schema",
-		FormatVersion:   manifest.FormatVersionSegmentV2,
+		FormatVersion:   manifest.FormatVersionSegmentV4,
 		PostingEncoding: "conjid64-entryid64-v1",
 		Full: manifest.FullIndexDescriptor{
 			Generation:        1,
@@ -232,7 +232,7 @@ func TestOpenIndexMultipleDeltasUpdateOverridesOlderDelta(t *testing.T) {
 		IndexName:       "test-index",
 		Generation:      3,
 		SchemaHash:      "sha256:schema",
-		FormatVersion:   manifest.FormatVersionSegmentV2,
+		FormatVersion:   manifest.FormatVersionSegmentV4,
 		PostingEncoding: "conjid64-entryid64-v1",
 		Full:            manifest.FullIndexDescriptor{Generation: 1, SnapshotWatermark: 100, Path: "full/full-000001", Segments: []manifest.SegmentDescriptor{fullSeg}},
 		Deltas: []manifest.DeltaIndexDescriptor{
@@ -291,7 +291,7 @@ func TestOpenIndexWithMmap(t *testing.T) {
 		IndexName:       "test-index",
 		Generation:      1,
 		SchemaHash:      "sha256:schema",
-		FormatVersion:   manifest.FormatVersionSegmentV2,
+		FormatVersion:   manifest.FormatVersionSegmentV4,
 		PostingEncoding: "conjid64-entryid64-v1",
 		Full: manifest.FullIndexDescriptor{
 			Generation:        1,

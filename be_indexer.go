@@ -114,7 +114,7 @@ const (
 	IndexNameExtendRange = core.IndexNameExtendRange
 	SegmentVersionV4     = segment.SegmentVersionV4
 
-	FormatVersionSegmentV2 = manifest.FormatVersionSegmentV2
+	FormatVersionSegmentV4 = manifest.FormatVersionSegmentV4
 
 	CompactDecisionNone  = compact.DecisionNone
 	CompactDecisionMinor = compact.DecisionMinor
@@ -252,5 +252,16 @@ type Entries = core.Entries
 func WithObserver(obs RetrieveObserver) IndexOpt {
 	return func(ctx *RetrieveContext) {
 		ctx.Observer = obs
+	}
+}
+
+// WithStrictQuery returns an IndexOpt that enables strict query error handling.
+// In strict mode the first per-field query error (encoder or container lookup
+// failure) aborts retrieval and is returned to the caller instead of being
+// silently treated as a no-match. The default remains lenient for backward
+// compatibility.
+func WithStrictQuery() IndexOpt {
+	return func(ctx *RetrieveContext) {
+		ctx.StrictQuery = true
 	}
 }

@@ -15,12 +15,12 @@ func mkE(k int, id core.DocID) core.EntryID {
 }
 
 func TestExternalBuilderMatchesBuilderAcrossRuns(t *testing.T) {
-	fields := []core.FieldMeta{{ID: 1, Field: "a", FieldOption: core.FieldOption{Encoder: "number"}}}
+	fields := core.Schema{"a": {Encoder: "number"}}
 	build := func(useExternal bool) []byte {
 		buf := new(bytes.Buffer)
 		var sink interface {
 			SetDocCount(int)
-			AddField(core.FieldMeta) error
+			AddField(core.BEField, core.FieldOption) error
 			AddRecord(string, any, []core.EntryID) error
 			Write() error
 		}
@@ -30,8 +30,8 @@ func TestExternalBuilderMatchesBuilderAcrossRuns(t *testing.T) {
 			sink = NewInMemorySegmentBuilder(buf)
 		}
 		sink.SetDocCount(3)
-		for _, field := range fields {
-			sink.AddField(field)
+		for field, option := range fields {
+			sink.AddField(field, option)
 		}
 		postings := []struct {
 			term  string
@@ -83,10 +83,7 @@ func TestExternalBuilderACMatcherAcrossRuns(t *testing.T) {
 	buf := new(bytes.Buffer)
 	b := NewExternalBuilder(buf, t.TempDir(), ExternalBuilderOptions{MaxPostingsInMemory: 1})
 	b.SetDocCount(4)
-	b.AddField(core.FieldMeta{
-		Field:       core.BEField("keyword"),
-		FieldOption: core.FieldOption{IndexType: core.IndexNameACMatcher, Encoder: core.IndexNameACMatcher},
-	})
+	b.AddField("keyword", core.FieldOption{IndexType: core.IndexNameACMatcher, Encoder: core.IndexNameACMatcher})
 	postings := []struct {
 		term  string
 		entry core.EntryID
@@ -132,15 +129,14 @@ func TestExternalBuilderACMatcherAcrossRuns(t *testing.T) {
 	}
 }
 
-func TestExternalBuilderV4EmbedsWildcards(t *testing.T) {
+func TestExternalBuilderV5EmbedsWildcards(t *testing.T) {
 	buf := new(bytes.Buffer)
 	b := NewExternalBuilder(buf, t.TempDir(), ExternalBuilderOptions{
 		MaxPostingsInMemory: 1,
-		SchemaHash:          "sha256:schema",
 		Wildcards:           core.Entries{30, 10},
 	})
 	b.SetDocCount(2)
-	b.AddField(core.FieldMeta{ID: 1, Field: "a", FieldOption: core.FieldOption{Encoder: "number"}})
+	b.AddField("a", core.FieldOption{Encoder: "number"})
 	if err := b.AddRecord("a", "1", []core.EntryID{mkE(1, 20)}); err != nil {
 		t.Fatal(err)
 	}
@@ -151,8 +147,14 @@ func TestExternalBuilderV4EmbedsWildcards(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if reader.Version() != SegmentVersionV4 || reader.SchemaHash() != "sha256:schema" {
-		t.Fatalf("v4 metadata mismatch: version=%d schema=%s", reader.Version(), reader.SchemaHash())
+	expectedHash, err := core.ComputeSchemaHash(core.Schema{
+		"a": {Encoder: "number"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reader.Version() != SegmentVersionV5 || reader.SchemaHash() != expectedHash {
+		t.Fatalf("v5 metadata mismatch: version=%d schema=%s", reader.Version(), reader.SchemaHash())
 	}
 	wildcards := reader.Wildcards()
 	if len(wildcards) != 2 || wildcards[0] != 10 || wildcards[1] != 30 {
@@ -160,25 +162,25 @@ func TestExternalBuilderV4EmbedsWildcards(t *testing.T) {
 	}
 }
 
-func TestExternalBuilderV4MatchesBuilderAcrossRuns(t *testing.T) {
+func TestExternalBuilderV5MatchesBuilderAcrossRuns(t *testing.T) {
 	build := func(useExternal bool) []byte {
 		buf := new(bytes.Buffer)
 		var sink interface {
 			SetDocCount(int)
 			SetWildcards(core.Entries)
-			AddField(core.FieldMeta) error
+			AddField(core.BEField, core.FieldOption) error
 			AddRecord(string, any, []core.EntryID) error
 			Write() error
 		}
 		if useExternal {
-			sink = NewExternalBuilder(buf, t.TempDir(), ExternalBuilderOptions{MaxPostingsInMemory: 1, SchemaHash: "sha256:schema"})
+			sink = NewExternalBuilder(buf, t.TempDir(), ExternalBuilderOptions{MaxPostingsInMemory: 1})
 		} else {
-			sink = NewInMemorySegmentBuilderWithOptions(buf, InMemorySegmentBuilderOptions{SchemaHash: "sha256:schema"})
+			sink = NewInMemorySegmentBuilderWithOptions(buf, InMemorySegmentBuilderOptions{})
 		}
 		sink.SetDocCount(2)
 		sink.SetWildcards(core.Entries{30, 10})
-		sink.AddField(core.FieldMeta{ID: 2, Field: "b", FieldOption: core.FieldOption{Encoder: "number"}})
-		sink.AddField(core.FieldMeta{ID: 1, Field: "a", FieldOption: core.FieldOption{Encoder: "number"}})
+		sink.AddField("b", core.FieldOption{Encoder: "number"})
+		sink.AddField("a", core.FieldOption{Encoder: "number"})
 		for _, posting := range []struct {
 			term  string
 			entry core.EntryID
@@ -200,7 +202,7 @@ func TestExternalBuilderV4MatchesBuilderAcrossRuns(t *testing.T) {
 		return buf.Bytes()
 	}
 	if got, want := build(true), build(false); !bytes.Equal(got, want) {
-		t.Fatal("external v4 builder bytes mismatch")
+		t.Fatal("external v5 builder bytes mismatch")
 	}
 }
 
@@ -219,10 +221,9 @@ func TestExternalBuilderWildcardStreamingMatchesBuffered(t *testing.T) {
 		tmp := t.TempDir()
 		b := NewExternalBuilder(buf, tmp, ExternalBuilderOptions{
 			MaxPostingsInMemory: 1,
-			SchemaHash:          "sha256:schema",
 		})
 		b.SetDocCount(2)
-		if err := b.AddField(core.FieldMeta{ID: 1, Field: "a", FieldOption: core.FieldOption{Encoder: "number"}}); err != nil {
+		if err := b.AddField("a", core.FieldOption{Encoder: "number"}); err != nil {
 			t.Fatal(err)
 		}
 		if err := b.AddRecord("a", "1", []core.EntryID{mkE(1, 20)}); err != nil {

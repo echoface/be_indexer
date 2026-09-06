@@ -104,15 +104,8 @@ slice is owned by the `SegmentReader` and outlives the reader.
 ## Example
 
 ```go
-fields := map[be_indexer.BEField]*be_indexer.FieldMeta{
-    "url": {
-        ID:    1,
-        Field: "url",
-        FieldOption: be_indexer.FieldOption{
-            IndexType: "fst_dict",
-            Encoder:   "default",
-        },
-    },
+fields := be_indexer.Schema{
+    "url": {IndexType: "fst_dict", Encoder: "default"},
 }
 ```
 

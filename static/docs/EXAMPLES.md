@@ -30,20 +30,14 @@ import (
 
 func main() {
     // 1. 定义字段元数据
-    fieldsMeta := map[core.BEField]*core.FieldMeta{
-        "age": {
-            Field: "age", ID: 1,
-            FieldOption: core.FieldOption{IndexType: core.IndexNameDefault, Encoder: "number"},
-        },
-        "city": {
-            Field: "city", ID: 2,
-            FieldOption: core.FieldOption{IndexType: core.IndexNameDefault, Encoder: "default"},
-        },
+    fieldsMeta := core.Schema{
+        "age":  {IndexType: core.IndexNameDefault, Encoder: "number"},
+        "city": {IndexType: core.IndexNameDefault, Encoder: "default"},
     }
 
     // 2. 构造业务规则文档 (DNF范式)
     docs := []*core.Document{}
-    
+
     // Doc 1: age IN [18, 25] AND city IN ["beijing"]
     doc1 := core.NewDocument(1)
     conj1 := core.NewConjunction()
@@ -83,7 +77,7 @@ func main() {
     if err != nil {
         panic(err)
     }
-    
+
     fmt.Println("匹配文档:", result) // 输出: [1]
 }
 ```
@@ -107,10 +101,10 @@ import (
 )
 
 func main() {
-    fieldsMeta := map[core.BEField]*core.FieldMeta{
-        "age":    {Field: "age", ID: 1, FieldOption: core.FieldOption{IndexType: core.IndexNameDefault, Encoder: "number"}},
-        "city":   {Field: "city", ID: 2, FieldOption: core.FieldOption{IndexType: core.IndexNameDefault, Encoder: "default"}},
-        "is_vip": {Field: "is_vip", ID: 3, FieldOption: core.FieldOption{IndexType: core.IndexNameDefault, Encoder: "default"}},
+    fieldsMeta := core.Schema{
+        "age":    {IndexType: core.IndexNameDefault, Encoder: "number"},
+        "city":   {IndexType: core.IndexNameDefault, Encoder: "default"},
+        "is_vip": {IndexType: core.IndexNameDefault, Encoder: "default"},
     }
 
     // 定义广告定向规则
@@ -179,15 +173,8 @@ import (
 
 func main() {
     // 配置 ACMatcher
-    fieldsMeta := map[core.BEField]*core.FieldMeta{
-        "content": {
-            Field: "content", 
-            ID: 1, 
-            FieldOption: core.FieldOption{
-                IndexType: core.IndexNameACMatcher,
-                Encoder:   core.IndexNameACMatcher,
-            },
-        },
+    fieldsMeta := core.Schema{
+        "content": {IndexType: core.IndexNameACMatcher, Encoder: core.IndexNameACMatcher},
     }
 
     // 规则库: 只要包含了特定关键词即命中规则
@@ -250,8 +237,8 @@ import (
 )
 
 func main() {
-    fieldsMeta := map[core.BEField]*core.FieldMeta{
-        "device": {Field: "device", ID: 1, FieldOption: core.FieldOption{IndexType: core.IndexNameDefault, Encoder: "default"}},
+    fieldsMeta := core.Schema{
+        "device": {IndexType: core.IndexNameDefault, Encoder: "default"},
     }
 
     rules := []*core.Document{
@@ -302,9 +289,9 @@ import (
     "github.com/echoface/be_indexer"
 )
 
-var fields = map[be_indexer.BEField]*be_indexer.FieldMeta{
-    "age":  {ID: 1, Field: "age",  FieldOption: be_indexer.FieldOption{Encoder: "number"}},
-    "city": {ID: 2, Field: "city", FieldOption: be_indexer.FieldOption{Encoder: "default"}},
+var fields = be_indexer.Schema{
+    "age":  {Encoder: "number"},
+    "city": {Encoder: "default"},
 }
 
 func main() {
@@ -315,9 +302,6 @@ func main() {
         Root:       root,
         Generation: 20240701,
         Fields:     fields,
-        Options: be_indexer.BuildDirectoryOptions{
-            SegmentSchemaHash: "sha256:your-schema-hash",
-        },
     })
     for _, doc := range allDocs() {
         full.AddDocument(doc)
@@ -331,9 +315,6 @@ func main() {
         FromWatermarkExclusive: 0,
         ToWatermarkInclusive:   1 << 60,
         Fields:                 fields,
-        Options: be_indexer.BuildDirectoryOptions{
-            SegmentSchemaHash: "sha256:your-schema-hash",
-        },
     })
     for _, m := range latestMutations() {
         delta.AddMutation(m)
@@ -344,7 +325,7 @@ func main() {
     manifest, _ := be_indexer.NewSnapshotManifest(be_indexer.SnapshotManifestRequest{
         IndexName:  "targeting",
         Generation: 202407010001,
-        SchemaHash: "sha256:your-schema-hash",
+        Fields:     fields,
         Full:       fullDesc,
         Deltas:     []be_indexer.DeltaIndexDescriptor{deltaDesc},
     })

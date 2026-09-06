@@ -1,7 +1,7 @@
 // Package mph provides a minimal-perfect-hash (CHD) dictionary container
 // that replaces FlatDict binary search with O(1) lookup for exact-term fields.
 //
-// Users opt in per-field via FieldMeta.FieldOption{IndexType: "mph_dict"}.
+// Users opt in per-field via FieldOption{IndexType: "mph_dict"}.
 // No custom encoder is needed — the default ExactTermEncoder handles value
 // encoding, and the engine routes queries through the mph container when
 // the field's Container is "mph_dict".

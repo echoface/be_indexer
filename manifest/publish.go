@@ -2,13 +2,19 @@ package manifest
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
 
 	"github.com/echoface/be_indexer/core"
 )
+
+// ErrManifestExists is returned when publishing would overwrite an immutable
+// manifest reference. Callers must choose a new manifest name for new content.
+var ErrManifestExists = errors.New("manifest already exists")
 
 // AtomicWriteFile writes data to path via a temporary file in the same
 // directory and then atomically renames it into place.
@@ -45,7 +51,9 @@ func AtomicWriteFile(path string, data []byte, perm os.FileMode) error {
 	return syncDirBestEffort(dir)
 }
 
-// WriteManifestAtomically validates and writes a manifest JSON file.
+// WriteManifestAtomically validates and creates an immutable manifest JSON file.
+// It writes and fsyncs a temporary file, then atomically links it into place so
+// an existing manifest can never be replaced, even by concurrent publishers.
 func WriteManifestAtomically(path string, m Manifest) error {
 	if err := m.Validate(); err != nil {
 		return err
@@ -55,7 +63,43 @@ func WriteManifestAtomically(path string, m Manifest) error {
 		return err
 	}
 	data = append(data, '\n')
-	return AtomicWriteFile(path, data, 0o644)
+	return atomicCreateFile(path, data, 0o644)
+}
+
+func atomicCreateFile(path string, data []byte, perm os.FileMode) error {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(dir, ".tmp-manifest-*")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	defer func() { _ = os.Remove(tmpName) }()
+
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Chmod(perm); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Link(tmpName, path); err != nil {
+		if errors.Is(err, fs.ErrExist) {
+			return fmt.Errorf("%w: %s", ErrManifestExists, path)
+		}
+		return err
+	}
+	return syncDirBestEffort(dir)
 }
 
 // PublishCurrent atomically switches CURRENT to manifestRef.
@@ -66,7 +110,8 @@ func PublishCurrent(root, manifestRef string) error {
 	return AtomicWriteFile(filepath.Join(root, "CURRENT"), []byte(manifestRef+"\n"), 0o644)
 }
 
-// PublishManifest writes manifests/<manifestName> and then atomically updates CURRENT.
+// PublishManifest creates immutable manifests/<manifestName> and then atomically
+// updates CURRENT. Reusing a manifest name is rejected.
 func PublishManifest(root, manifestName string, m Manifest) error {
 	if manifestName == "" {
 		return fmt.Errorf("manifest name is required")

@@ -55,8 +55,8 @@ type (
 	ConjID  = core.ConjID
 	EntryID = core.EntryID
 
-	FieldMeta   = core.FieldMeta
 	FieldOption = core.FieldOption
+	Schema      = core.Schema
 
 	LiveDocs       = core.LiveDocs
 	DocIDCollector = core.DocIDCollector
@@ -112,9 +112,9 @@ const (
 	IndexNameDefault     = core.IndexNameDefault
 	IndexNameACMatcher   = core.IndexNameACMatcher
 	IndexNameExtendRange = core.IndexNameExtendRange
-	SegmentVersionV4     = segment.SegmentVersionV4
+	SegmentVersionV5     = segment.SegmentVersionV5
 
-	FormatVersionSegmentV4        = manifest.FormatVersionSegmentV4
+	FormatVersionSegmentV5        = manifest.FormatVersionSegmentV5
 	SegmentLoadHeapVerify         = loader.SegmentLoadHeapVerify
 	SegmentLoadMmapVerify         = loader.SegmentLoadMmapVerify
 	SegmentLoadMmapTrustPublished = loader.SegmentLoadMmapTrustPublished
@@ -129,6 +129,8 @@ var (
 	ErrUnknownQueryField    = core.ErrUnknownQueryField
 	ErrFieldIndexMissing    = core.ErrFieldIndexMissing
 	ErrUnsupportedPredicate = core.ErrUnsupportedPredicate
+	ErrNilResultCollector   = core.ErrNilResultCollector
+	ErrManifestExists       = manifest.ErrManifestExists
 )
 
 // Factory functions from core.
@@ -211,20 +213,20 @@ type Engine = engine.BooleanEngine
 // BuildOptions controls segment splitting during build.
 type BuildOptions = builder.BuildSegmentsFromDocsOptions
 
-// BuildSegments builds one or more v4 segments and validates DocID uniqueness
+// BuildSegments builds one or more v5 segments and validates DocID uniqueness
 // across the complete input corpus before creating any segment writer.
 func BuildSegments(
 	newWriter func(segIdx int) (io.Writer, error),
-	fields map[BEField]*FieldMeta,
+	fields Schema,
 	docs []*Document,
 	opt BuildOptions,
 ) (int, error) {
 	return builder.BuildSegmentsFromDocs(newWriter, fields, docs, opt)
 }
 
-// BuildSegment builds a single Segment v4. Wildcard EntryIDs and block
+// BuildSegment builds a single Segment v5. Wildcard EntryIDs and block
 // checksums are embedded in the segment.
-func BuildSegment(w io.Writer, fields map[BEField]*FieldMeta, docs []*Document, opts BuildSegmentOptions) error {
+func BuildSegment(w io.Writer, fields Schema, docs []*Document, opts BuildSegmentOptions) error {
 	return builder.BuildSegmentFromDocs(w, fields, docs, opts)
 }
 

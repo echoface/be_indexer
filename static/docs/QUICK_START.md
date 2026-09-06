@@ -7,32 +7,11 @@ Define which fields to index and how values are tokenized:
 ```go
 import "github.com/echoface/be_indexer"
 
-fields := map[be_indexer.BEField]*be_indexer.FieldMeta{
-    "age": {
-        ID:    1,
-        Field: "age",
-        FieldOption: be_indexer.FieldOption{
-            IndexType: be_indexer.IndexNameDefault,
-            Encoder:   "number",
-        },
-    },
-    "city": {
-        ID:    2,
-        Field: "city",
-        FieldOption: be_indexer.FieldOption{
-            IndexType: be_indexer.IndexNameDefault,
-            Encoder:   "default",
-        },
-    },
+fields := be_indexer.Schema{
+    "age":  {IndexType: be_indexer.IndexNameDefault, Encoder: "number"},
+    "city": {IndexType: be_indexer.IndexNameDefault, Encoder: "default"},
+    "tag":  {IndexType: be_indexer.IndexNameACMatcher, Encoder: be_indexer.IndexNameACMatcher},
 }
-
-// For range queries ("age > 18"):
-fields["age"].FieldOption.IndexType = be_indexer.IndexNameExtendRange
-fields["age"].FieldOption.Encoder = be_indexer.IndexNameExtendRange
-
-// For substring matching ("tag contains 'premium'"):
-fields["tag"].FieldOption.IndexType = be_indexer.IndexNameACMatcher
-fields["tag"].FieldOption.Encoder = be_indexer.IndexNameACMatcher
 ```
 
 ## 2. 构造 Document
@@ -96,9 +75,6 @@ fullOpt := be_indexer.FullIndexBuildOption{
     Root:       "/data/index",
     Generation: 20240701,
     Fields:     fields,
-    Options: be_indexer.BuildDirectoryOptions{
-        SegmentSchemaHash: "sha256:your-schema-hash",
-    },
 }
 full, err := be_indexer.NewFullIndexBuilder(fullOpt)
 for _, doc := range allDocs {
@@ -118,9 +94,6 @@ deltaOpt := be_indexer.DeltaIndexBuildOption{
     FromWatermarkExclusive: 0,
     ToWatermarkInclusive:   snapshotWatermark,
     Fields:                 fields,
-    Options: be_indexer.BuildDirectoryOptions{
-        SegmentSchemaHash: "sha256:your-schema-hash",
-    },
 }
 delta, err := be_indexer.NewDeltaIndexBuilder(deltaOpt)
 for _, m := range mutations { // Mutation{Op: Upsert/Delete, DocID, Doc}
@@ -137,7 +110,7 @@ deltaDesc, err := delta.Build()
 manifest, err := be_indexer.NewSnapshotManifest(be_indexer.SnapshotManifestRequest{
     IndexName:  "targeting",
     Generation: 202407010001,
-    SchemaHash: "sha256:your-schema-hash",
+    Fields:     fields,
     Full:       fullDesc,
     Deltas:     []be_indexer.DeltaIndexDescriptor{deltaDesc},
 })
@@ -249,6 +222,6 @@ case be_indexer.CompactDecisionNone:
 | 内存数据读取 | `segment.NewSegmentReader(data)` |
 | mmap 文件读取 | `segment.OpenSegmentFile(path, options)` |
 | 构建查询引擎 | `engine.NewBooleanEngine(fields, readers)` |
-| wildcard | 内嵌于 Segment v4，由引擎直接读取 |
+| wildcard | 内嵌于 Segment v5，由引擎直接读取 |
 
 当前 API 不再暴露独立 wildcard sidecar 或额外 wildcard 参数，避免同一份数据出现两个来源。

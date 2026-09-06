@@ -47,9 +47,6 @@ type BuildDirectoryOptions struct {
 	// BuilderVersion is copied into SnapshotManifestRequest by callers that want
 	// to expose the offline builder version in manifest metadata.
 	BuilderVersion string
-	// SegmentSchemaHash is embedded into every segment and should match the
-	// snapshot manifest schema hash.
-	SegmentSchemaHash string
 	// IgnoreUnindexedFields tolerates documents referencing fields absent from
 	// the schema. Default (false) treats such a document as a doc-level error
 	// (skipped under FailSkip, fatal under FailFast). See NormalizeOptions.
@@ -80,7 +77,7 @@ type FullIndexBuildOption struct {
 	Root              string
 	Generation        uint64
 	SnapshotWatermark uint64
-	Fields            map[core.BEField]*core.FieldMeta
+	Fields            core.Schema
 	Options           BuildDirectoryOptions
 	FailMode          BuildFailMode
 	// OnSkip is invoked for each document skipped under FailSkip. Optional.
@@ -93,7 +90,7 @@ type DeltaIndexBuildOption struct {
 	Generation             uint64
 	FromWatermarkExclusive uint64
 	ToWatermarkInclusive   uint64
-	Fields                 map[core.BEField]*core.FieldMeta
+	Fields                 core.Schema
 	Options                BuildDirectoryOptions
 	FailMode               BuildFailMode
 	// MaxMutations caps accumulated mutations. 0 means unlimited (default).
@@ -106,7 +103,7 @@ type DeltaIndexBuildOption struct {
 type SnapshotManifestRequest struct {
 	IndexName       string
 	Generation      uint64
-	SchemaHash      string
+	Fields          core.Schema
 	FormatVersion   string
 	PostingEncoding string
 	BuilderVersion  string
@@ -394,10 +391,9 @@ func (b *FullIndexBuilder) startNewSegment() error {
 	)
 	esb := segment.NewExternalBuilder(tmp, filepath.Join(b.tmpDir, ".runs", fmt.Sprintf("segment-%06d", b.segIdx)), segment.ExternalBuilderOptions{
 		MaxPostingsInMemory: b.opt.Options.MaxPostingsInMemory,
-		SchemaHash:          b.opt.Options.SegmentSchemaHash,
 	})
 	for _, fc := range b.codec.Fields() {
-		if err := esb.AddField(fc.Meta); err != nil {
+		if err := esb.AddField(fc.Field, fc.Option); err != nil {
 			seg := &segmentBuild{tmpFile: tmp, tmpName: tmp.Name(), esb: esb, wildAcc: wildAcc}
 			seg.abort()
 			return err
@@ -527,6 +523,13 @@ func NewDeltaIndexBuilder(opt DeltaIndexBuildOption) (*DeltaIndexBuilder, error)
 	}
 	if len(opt.Fields) == 0 {
 		return nil, fmt.Errorf("fields are required")
+	}
+	codec, err := parser.NewSchemaCodec(opt.Fields)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateCodecContainers(codec); err != nil {
+		return nil, err
 	}
 	relPath := filepath.ToSlash(filepath.Join("delta", generationDir("delta", opt.Generation)))
 	finalDir := filepath.Join(opt.Root, relPath)
@@ -659,17 +662,21 @@ func (b *DeltaIndexBuilder) SkippedCount() int { return b.skipped }
 func NewSnapshotManifest(req SnapshotManifestRequest) (manifest.Manifest, error) {
 	formatVersion := req.FormatVersion
 	if formatVersion == "" {
-		formatVersion = manifest.FormatVersionSegmentV4
+		formatVersion = manifest.FormatVersionSegmentV5
 	}
 	postingEncoding := req.PostingEncoding
 	if postingEncoding == "" {
 		postingEncoding = defaultPostingEncoding
 	}
+	codec, err := parser.NewSchemaCodec(req.Fields)
+	if err != nil {
+		return manifest.Manifest{}, err
+	}
 	m := manifest.Manifest{
 		ManifestVersion: defaultManifestVersion,
 		IndexName:       req.IndexName,
 		Generation:      req.Generation,
-		SchemaHash:      req.SchemaHash,
+		SchemaHash:      codec.SchemaHash(),
 		FormatVersion:   formatVersion,
 		PostingEncoding: postingEncoding,
 		BuilderVersion:  req.BuilderVersion,
@@ -686,7 +693,7 @@ func NewSnapshotManifest(req SnapshotManifestRequest) (manifest.Manifest, error)
 // Internal helpers (shared by delta build path and tests).
 // --------------------------------------------------------------------------------
 
-func buildSegmentsToDir(dir string, fields map[core.BEField]*core.FieldMeta, docs []*core.Document, opts BuildDirectoryOptions) ([]manifest.SegmentDescriptor, error) {
+func buildSegmentsToDir(dir string, fields core.Schema, docs []*core.Document, opts BuildDirectoryOptions) ([]manifest.SegmentDescriptor, error) {
 	if len(docs) == 0 {
 		return nil, nil
 	}
@@ -712,7 +719,6 @@ func buildSegmentsToDir(dir string, fields map[core.BEField]*core.FieldMeta, doc
 		chunk := docs[start:end]
 		buf := new(bytes.Buffer)
 		err := writeSegmentFromDocsWithCodec(buf, codec, chunk, BuildSegmentFromDocsOptions{
-			SchemaHash:            opts.SegmentSchemaHash,
 			IgnoreUnindexedFields: opts.IgnoreUnindexedFields,
 		})
 		if err != nil {

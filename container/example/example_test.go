@@ -104,9 +104,9 @@ func retrieve(t *testing.T, eng *be_indexer.Engine, assigns be_indexer.Assignmen
 // branch → segment container block → SegmentReader load → engine
 // default branch → IndexQuery → MatchQuery.
 func TestExtensionEndToEnd(t *testing.T) {
-	fields := map[be_indexer.BEField]*be_indexer.FieldMeta{
-		"path": {Field: "path", FieldOption: be_indexer.FieldOption{IndexType: example.IndexName}},
-		"city": {Field: "city", FieldOption: be_indexer.FieldOption{IndexType: "default"}},
+	fields := be_indexer.Schema{
+		"path": {IndexType: example.IndexName},
+		"city": {IndexType: "default"},
 	}
 	docs := []*be_indexer.Document{
 		be_indexer.NewDocument(1).AddConjunction(

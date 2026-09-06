@@ -70,15 +70,8 @@ proximitygeo field, read it as a default-index field.
 ## Example
 
 ```go
-fields := map[be_indexer.BEField]*be_indexer.FieldMeta{
-    "location": {
-        ID:    1,
-        Field: "location",
-        FieldOption: be_indexer.FieldOption{
-            IndexType: be_indexer.IndexNameDefault, // stored in the default container
-            Encoder:   "proximitygeo",              // geo covering-cell encoder
-        },
-    },
+fields := be_indexer.Schema{
+    "location": {IndexType: be_indexer.IndexNameDefault, Encoder: "proximitygeo"},
 }
 // Document: a point/area with a radius → covering geohash cells.
 // Query: a (lat, lng) point → prefixes matched against those cells.

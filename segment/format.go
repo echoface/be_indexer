@@ -1,11 +1,18 @@
 package segment
 
-// MagicNumber identifies the only supported Segment format (v4).
-// v4 merges all K-groups into per-field blocks (K is encoded in EntryID itself).
-var MagicNumber = []byte("BEIDX\x00\x00\x04")
+import (
+	"fmt"
+
+	"github.com/echoface/be_indexer/core"
+)
+
+// MagicNumber identifies the only supported Segment format (v5).
+// v5 derives schema identity from canonical field metadata and uses field names
+// as the sole logical/physical identity.
+var MagicNumber = []byte("BEIDX\x00\x00\x05")
 
 const (
-	SegmentVersionV4 = 4
+	SegmentVersionV5 = 5
 
 	wildcardsBlockName = "__wildcards"
 	checksumPrefix     = "sha256:"
@@ -41,8 +48,23 @@ type MetaBlock struct {
 
 type FieldMetaDump struct {
 	Name      string `json:"name"`
-	ID        uint64 `json:"id"`
 	IndexType string `json:"index_type"`
+	Encoder   string `json:"encoder"`
+}
+
+func schemaHashFromFieldDumps(fields []FieldMetaDump) (string, error) {
+	schema := make(core.Schema, len(fields))
+	for _, field := range fields {
+		name := core.BEField(field.Name)
+		if _, exists := schema[name]; exists {
+			return "", fmt.Errorf("duplicate field %s", name)
+		}
+		schema[name] = core.FieldOption{
+			IndexType: field.IndexType,
+			Encoder:   field.Encoder,
+		}
+	}
+	return core.ComputeSchemaHash(schema)
 }
 
 // BlockDef describes one data block. Field/Kind are the structured identity

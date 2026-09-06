@@ -20,11 +20,7 @@ func TestBuilderReader(t *testing.T) {
 	buf := new(bytes.Buffer)
 	writer := NewInMemorySegmentBuilder(buf)
 
-	metaAge := core.FieldMeta{
-		ID:    1,
-		Field: "age",
-	}
-	writer.AddField(metaAge)
+	writer.AddField("age", core.FieldOption{})
 
 	writer.AddRecord("age", "18", []core.EntryID{makeE(1, 10), makeE(1, 20), makeE(1, 30)})
 	writer.AddRecord("age", "25", []core.EntryID{makeE(1, 15), makeE(1, 25)})
@@ -75,7 +71,7 @@ func TestBuilderReader(t *testing.T) {
 // TestBuilderRangeRoundTrip verifies ext_range blocks survive write/read and
 // that Builder and ExternalBuilder produce byte-identical segments.
 func TestBuilderRangeRoundTrip(t *testing.T) {
-	field := core.FieldMeta{ID: 1, Field: "age", FieldOption: core.FieldOption{IndexType: core.IndexNameExtendRange, Encoder: core.IndexNameExtendRange}}
+	field := core.FieldOption{IndexType: core.IndexNameExtendRange, Encoder: core.IndexNameExtendRange}
 	type rng struct {
 		lo, hi int64
 		entry  core.EntryID
@@ -90,7 +86,7 @@ func TestBuilderRangeRoundTrip(t *testing.T) {
 		buf := new(bytes.Buffer)
 		var sink interface {
 			SetDocCount(int)
-			AddField(core.FieldMeta) error
+			AddField(core.BEField, core.FieldOption) error
 			AddRecord(field string, record any, entries []core.EntryID) error
 			Write() error
 		}
@@ -100,7 +96,7 @@ func TestBuilderRangeRoundTrip(t *testing.T) {
 			sink = NewInMemorySegmentBuilder(buf)
 		}
 		sink.SetDocCount(4)
-		sink.AddField(field)
+		sink.AddField("age", field)
 		for _, r := range ranges {
 			if err := sink.AddRecord("age", core.RangeRecord{Lo: r.lo, Hi: r.hi}, []core.EntryID{r.entry}); err != nil {
 				t.Fatal(err)
@@ -155,15 +151,14 @@ func TestBuilderRangeRoundTrip(t *testing.T) {
 	}
 }
 
-func TestBuilderReaderV4MetadataWildcardsAndChecksum(t *testing.T) {
+func TestBuilderReaderV5MetadataWildcardsAndChecksum(t *testing.T) {
 	buf := new(bytes.Buffer)
 	wildcards := core.Entries{core.EntryID(30), core.EntryID(10)}
 	writer := NewInMemorySegmentBuilderWithOptions(buf, InMemorySegmentBuilderOptions{
-		SchemaHash: "sha256:schema",
-		Wildcards:  wildcards,
+		Wildcards: wildcards,
 	})
 	writer.SetDocCount(1)
-	writer.AddField(core.FieldMeta{ID: 1, Field: "age"})
+	writer.AddField("age", core.FieldOption{})
 	if err := writer.AddRecord("age", "18", []core.EntryID{makeE(1, 20)}); err != nil {
 		t.Fatal(err)
 	}
@@ -175,11 +170,15 @@ func TestBuilderReaderV4MetadataWildcardsAndChecksum(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if reader.Version() != SegmentVersionV4 {
+	if reader.Version() != SegmentVersionV5 {
 		t.Fatalf("version mismatch: %d", reader.Version())
 	}
-	if reader.SchemaHash() != "sha256:schema" {
-		t.Fatalf("schema hash mismatch: %s", reader.SchemaHash())
+	expectedHash, err := core.ComputeSchemaHash(core.Schema{"age": {}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reader.SchemaHash() != expectedHash {
+		t.Fatalf("schema hash mismatch: got %s want %s", reader.SchemaHash(), expectedHash)
 	}
 	gotWildcards := reader.Wildcards()
 	if len(gotWildcards) != 2 || gotWildcards[0] != 10 || gotWildcards[1] != 30 {
@@ -194,11 +193,45 @@ func TestBuilderReaderV4MetadataWildcardsAndChecksum(t *testing.T) {
 	}
 }
 
-func TestNewSegmentReaderRejectsV4BlockChecksumMismatch(t *testing.T) {
+func TestNewSegmentReaderRejectsTamperedSchemaMetadata(t *testing.T) {
+	buf := new(bytes.Buffer)
+	writer := NewInMemorySegmentBuilder(buf)
+	if err := writer.AddField("age", core.FieldOption{Encoder: "number"}); err != nil {
+		t.Fatal(err)
+	}
+	writer.SetDocCount(1)
+	if err := writer.AddRecord("age", "18", []core.EntryID{makeE(1, 20)}); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Write(); err != nil {
+		t.Fatal(err)
+	}
+
+	data := append([]byte(nil), buf.Bytes()...)
+	metaOffset := binary.LittleEndian.Uint64(data[len(data)-8:])
+	var meta MetaBlock
+	if err := json.Unmarshal(data[metaOffset:len(data)-8], &meta); err != nil {
+		t.Fatal(err)
+	}
+	meta.Fields[0].Encoder = core.IndexNameDefault
+	metaBytes, err := json.Marshal(meta)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tampered := append(append([]byte(nil), data[:metaOffset]...), metaBytes...)
+	var footer [8]byte
+	binary.LittleEndian.PutUint64(footer[:], metaOffset)
+	tampered = append(tampered, footer[:]...)
+	if _, err := NewSegmentReader(tampered); err == nil || !strings.Contains(err.Error(), "schema hash mismatch") {
+		t.Fatalf("expected schema hash mismatch, got %v", err)
+	}
+}
+
+func TestNewSegmentReaderRejectsV5BlockChecksumMismatch(t *testing.T) {
 	buf := new(bytes.Buffer)
 	writer := NewInMemorySegmentBuilderWithOptions(buf, InMemorySegmentBuilderOptions{Wildcards: core.Entries{10}})
 	writer.SetDocCount(1)
-	writer.AddField(core.FieldMeta{ID: 1, Field: "age"})
+	writer.AddField("age", core.FieldOption{})
 	if err := writer.AddRecord("age", "18", []core.EntryID{makeE(1, 20)}); err != nil {
 		t.Fatal(err)
 	}
@@ -227,7 +260,7 @@ func TestNewSegmentReaderRejectsUnsupportedSegmentVersion(t *testing.T) {
 	buf := new(bytes.Buffer)
 	writer := NewInMemorySegmentBuilder(buf)
 	writer.SetDocCount(1)
-	writer.AddField(core.FieldMeta{ID: 1, Field: "age"})
+	writer.AddField("age", core.FieldOption{})
 	if err := writer.AddRecord("age", "18", []core.EntryID{makeE(1, 20)}); err != nil {
 		t.Fatal(err)
 	}
@@ -255,11 +288,11 @@ func TestNewSegmentReaderRejectsUnsupportedSegmentVersion(t *testing.T) {
 	}
 }
 
-func TestNewSegmentReaderRejectsV4ACChecksumMismatch(t *testing.T) {
+func TestNewSegmentReaderRejectsV5ACChecksumMismatch(t *testing.T) {
 	buf := new(bytes.Buffer)
 	writer := NewInMemorySegmentBuilder(buf)
 	writer.SetDocCount(1)
-	writer.AddField(core.FieldMeta{ID: 1, Field: "keyword", FieldOption: core.FieldOption{IndexType: core.IndexNameACMatcher, Encoder: core.IndexNameACMatcher}})
+	writer.AddField("keyword", core.FieldOption{IndexType: core.IndexNameACMatcher, Encoder: core.IndexNameACMatcher})
 	if err := writer.AddRecord("keyword", "apple", []core.EntryID{makeE(1, 20)}); err != nil {
 		t.Fatal(err)
 	}
@@ -334,9 +367,9 @@ func TestNewSegmentReaderDisabledChecksumModeStillValidatesMetadata(t *testing.T
 func corruptSegmentWithBlock(block BlockDef) []byte {
 	metaOffset := uint64(len(MagicNumber))
 	badMeta := MetaBlock{
-		Version:  SegmentVersionV4,
+		Version:  SegmentVersionV5,
 		DocCount: 1,
-		Fields:   []FieldMetaDump{{Name: "age", ID: 1}},
+		Fields:   []FieldMetaDump{{Name: "age", IndexType: core.IndexNameDefault, Encoder: core.IndexNameDefault}},
 		BlockIndex: map[string]BlockDef{
 			"k1_age_dict": block,
 		},

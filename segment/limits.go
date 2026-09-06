@@ -24,10 +24,6 @@ const (
 	// MaxACOutputPerState bounds how many pattern outputs a single AC automaton
 	// state may carry; the per-state count is a uint16.
 	MaxACOutputPerState = math.MaxUint16
-
-	// MaxDenseFieldID bounds the number of distinct fields in one segment; each
-	// field is assigned a dense uint16 id used as the integer block key.
-	MaxDenseFieldID = math.MaxUint16
 )
 
 // checkedU32 converts a non-negative int to uint32, returning an error tagged

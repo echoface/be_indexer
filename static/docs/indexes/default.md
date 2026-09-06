@@ -75,15 +75,8 @@ Notes:
 ## Example
 
 ```go
-fields := map[be_indexer.BEField]*be_indexer.FieldMeta{
-    "city": {
-        ID:    1,
-        Field: "city",
-        FieldOption: be_indexer.FieldOption{
-            IndexType: be_indexer.IndexNameDefault, // or "" / "default"
-            Encoder:   "default",                    // "number" for int fields
-        },
-    },
+fields := be_indexer.Schema{
+    "city": {IndexType: be_indexer.IndexNameDefault, Encoder: "default"},
 }
 ```
 

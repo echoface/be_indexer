@@ -12,7 +12,7 @@ func validManifest() manifest.Manifest {
 		IndexName:       "ad-targeting",
 		Generation:      3,
 		SchemaHash:      "sha256:schema",
-		FormatVersion:   manifest.FormatVersionSegmentV4,
+		FormatVersion:   manifest.FormatVersionSegmentV5,
 		PostingEncoding: "conjid64-entryid64-v1",
 		Full: manifest.FullIndexDescriptor{
 			Generation:        1,

@@ -22,7 +22,6 @@ const (
 // ExternalBuilderOptions controls bounded-memory segment construction.
 type ExternalBuilderOptions struct {
 	MaxPostingsInMemory int
-	SchemaHash          string
 	Wildcards           core.Entries
 	WildcardsBlockFile  string
 }
@@ -39,7 +38,6 @@ type ExternalBuilder struct {
 	offset   uint64
 	maxRecs  int
 
-	schemaHash         string
 	wildcards          core.Entries
 	wildcardsBlockFile string
 	blockChecksums     map[string]string
@@ -57,7 +55,6 @@ func NewExternalBuilder(w io.Writer, tmpDir string, opts ExternalBuilderOptions)
 		w:                  w,
 		tmpDir:             tmpDir,
 		maxRecs:            maxRecs,
-		schemaHash:         opts.SchemaHash,
 		wildcards:          append(core.Entries(nil), opts.Wildcards...),
 		wildcardsBlockFile: opts.WildcardsBlockFile,
 		blockChecksums:     make(map[string]string),
@@ -66,10 +63,6 @@ func NewExternalBuilder(w io.Writer, tmpDir string, opts ExternalBuilderOptions)
 
 func (b *ExternalBuilder) SetDocCount(count int) {
 	b.docCount = count
-}
-
-func (b *ExternalBuilder) SetSchemaHash(schemaHash string) {
-	b.schemaHash = schemaHash
 }
 
 func (b *ExternalBuilder) SetWildcards(entries core.Entries) {
@@ -82,17 +75,21 @@ func (b *ExternalBuilder) SetWildcardsBlockFile(path string) {
 	b.wildcards = nil
 }
 
-func (b *ExternalBuilder) AddField(meta core.FieldMeta) error {
-	name := string(meta.Field)
+func (b *ExternalBuilder) AddField(field core.BEField, option core.FieldOption) error {
+	normalized, err := core.NormalizeFieldOption(field, option)
+	if err != nil {
+		return err
+	}
+	name := string(field)
+	if _, exists := b.fields[name]; exists {
+		return fmt.Errorf("field %s already added", name)
+	}
 	b.fields[name] = FieldMetaDump{
 		Name:      name,
-		ID:        meta.ID,
-		IndexType: meta.IndexType,
+		IndexType: normalized.IndexType,
+		Encoder:   normalized.Encoder,
 	}
-	indexName := meta.IndexType
-	if indexName == "" {
-		indexName = core.IndexNameDefault
-	}
+	indexName := normalized.IndexType
 	env := BuilderEnv{
 		MaxPostingsInMemory: b.maxRecs,
 		TmpDir:              b.tmpDir,
@@ -156,15 +153,19 @@ func (b *ExternalBuilder) Write() error {
 	}
 
 	meta := MetaBlock{
-		Version:        SegmentVersionV4,
+		Version:        SegmentVersionV5,
 		DocCount:       b.docCount,
-		SchemaHash:     b.schemaHash,
 		BlockIndex:     blockIndex,
 		WildcardsBlock: wildcardsBlockName,
 	}
 	for _, field := range sortedFields {
 		meta.Fields = append(meta.Fields, b.fields[field])
 	}
+	schemaHash, err := schemaHashFromFieldDumps(meta.Fields)
+	if err != nil {
+		return err
+	}
+	meta.SchemaHash = schemaHash
 
 	for name, sum := range b.blockChecksums {
 		if def, ok := blockIndex[name]; ok {

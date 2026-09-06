@@ -10,10 +10,7 @@ func TestSegmentACMatcher(t *testing.T) {
 	buf := new(bytes.Buffer)
 	writer := NewInMemorySegmentBuilder(buf)
 
-	writer.AddField(core.FieldMeta{
-		Field:       core.BEField("keyword"),
-		FieldOption: core.FieldOption{IndexType: core.IndexNameACMatcher, Encoder: core.IndexNameACMatcher},
-	})
+	writer.AddField("keyword", core.FieldOption{IndexType: core.IndexNameACMatcher, Encoder: core.IndexNameACMatcher})
 
 	writer.AddRecord("keyword", "apple", []core.EntryID{makeE(1, 1), makeE(1, 2)})
 	writer.AddRecord("keyword", "app", []core.EntryID{makeE(1, 3), makeE(1, 4)})

@@ -11,9 +11,9 @@ import (
 	"github.com/echoface/be_indexer/manifest"
 )
 
-func dedupFields() map[core.BEField]*core.FieldMeta {
-	return map[core.BEField]*core.FieldMeta{
-		"a": {ID: 1, Field: "a", FieldOption: core.FieldOption{Encoder: "number"}},
+func dedupFields() core.Schema {
+	return core.Schema{
+		"a": {Encoder: "number"},
 	}
 }
 
@@ -82,7 +82,7 @@ func TestFullIndexBuilder_DuplicateDocIDFailSkip(t *testing.T) {
 		SnapshotWatermark: 1,
 		Fields:            dedupFields(),
 		FailMode:          builder.FailSkip,
-		Options:           builder.BuildDirectoryOptions{SegmentSchemaHash: "sha256:schema"},
+		Options:           builder.BuildDirectoryOptions{},
 		OnSkip:            func(id core.DocID, err error) { skipped = append(skipped, id) },
 	})
 	if err != nil {
@@ -111,7 +111,7 @@ func TestFullIndexBuilder_DuplicateDocIDFailSkip(t *testing.T) {
 	m, err := builder.NewSnapshotManifest(builder.SnapshotManifestRequest{
 		IndexName:  "dedup-test",
 		Generation: 1,
-		SchemaHash: "sha256:schema",
+		Fields:     dedupFields(),
 		Full:       full,
 	})
 	if err != nil {
@@ -120,7 +120,7 @@ func TestFullIndexBuilder_DuplicateDocIDFailSkip(t *testing.T) {
 	if err := manifest.PublishManifest(root, "manifest-000001.json", m); err != nil {
 		t.Fatal(err)
 	}
-	ce, err := loader.OpenIndex(root, dedupFields(), loader.Options{SchemaHash: "sha256:schema"})
+	ce, err := loader.OpenIndex(root, dedupFields(), loader.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,7 +158,7 @@ func TestFullIndexBuilder_PartialEncodeIsAtomic(t *testing.T) {
 		SnapshotWatermark: 1,
 		Fields:            dedupFields(), // field "a" uses the number encoder
 		FailMode:          builder.FailSkip,
-		Options:           builder.BuildDirectoryOptions{SegmentSchemaHash: "sha256:schema"},
+		Options:           builder.BuildDirectoryOptions{},
 		OnSkip:            func(id core.DocID, err error) { skipped = append(skipped, id) },
 	})
 	if err != nil {
@@ -190,7 +190,7 @@ func TestFullIndexBuilder_PartialEncodeIsAtomic(t *testing.T) {
 	m, err := builder.NewSnapshotManifest(builder.SnapshotManifestRequest{
 		IndexName:  "atomic-test",
 		Generation: 1,
-		SchemaHash: "sha256:schema",
+		Fields:     dedupFields(),
 		Full:       full,
 	})
 	if err != nil {
@@ -199,7 +199,7 @@ func TestFullIndexBuilder_PartialEncodeIsAtomic(t *testing.T) {
 	if err := manifest.PublishManifest(root, "manifest-000001.json", m); err != nil {
 		t.Fatal(err)
 	}
-	ce, err := loader.OpenIndex(root, dedupFields(), loader.Options{SchemaHash: "sha256:schema"})
+	ce, err := loader.OpenIndex(root, dedupFields(), loader.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}

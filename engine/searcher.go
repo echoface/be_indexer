@@ -12,20 +12,28 @@ import (
 // BooleanEngine is a read-only index engine backed by mmap'd segments.
 // It is safe for concurrent use across goroutines.
 type BooleanEngine struct {
-	schemaCodec *parser.SchemaCodec
-	segments    []*segment.SegmentReader
-	liveDocs    *core.LiveDocs
+	fields   map[core.BEField]*runtimeField
+	segments []*segment.SegmentReader
+	liveDocs *core.LiveDocs
 }
 
-// NewBooleanEngine compiles the schema and creates an engine from pre-built v4
+// runtimeField binds a compiled predicate encoder to the immutable field view
+// of every segment. The binding is created once with the engine and reused by
+// all concurrent queries.
+type runtimeField struct {
+	codec   parser.FieldCodec
+	indexes []*segment.ResolvedField
+}
+
+// NewBooleanEngine compiles the schema and creates an engine from pre-built v5
 // segments. It fails fast on invalid field metadata
-// (unknown container, duplicate field id, missing tokenizer) so a misconfigured
+// (unknown container, schema mismatch, missing tokenizer) so a misconfigured
 // schema is rejected at construction time rather than on the first query.
 func NewBooleanEngine(
-	fieldsData map[core.BEField]*core.FieldMeta,
+	schema core.Schema,
 	segments []*segment.SegmentReader,
 ) (*BooleanEngine, error) {
-	codec, err := parser.NewSchemaCodec(fieldsData)
+	codec, err := parser.NewSchemaCodec(schema)
 	if err != nil {
 		return nil, err
 	}
@@ -34,16 +42,39 @@ func NewBooleanEngine(
 	// an unknown/unregistered IndexType (e.g. a missing side-effect import) at
 	// construction time instead of silently falling back to the default container
 	// during retrieval.
-	metas := make([]core.FieldMeta, 0, len(codec.Fields()))
+	fields := make([]core.SchemaField, 0, len(codec.Fields()))
 	for _, fc := range codec.Fields() {
-		metas = append(metas, fc.Meta)
+		fields = append(fields, core.SchemaField{Field: fc.Field, Option: fc.Option})
 	}
-	if err := segment.ValidateFieldMetas(metas); err != nil {
+	if err := segment.ValidateFieldOptions(fields); err != nil {
 		return nil, err
 	}
+	for i, seg := range segments {
+		if seg == nil {
+			return nil, fmt.Errorf("segment[%d] is nil", i)
+		}
+		if seg.SchemaHash() != codec.SchemaHash() {
+			return nil, fmt.Errorf("segment[%d] schema hash mismatch: got %s, want %s", i, seg.SchemaHash(), codec.SchemaHash())
+		}
+	}
+	runtimeFields := make(map[core.BEField]*runtimeField, len(fields))
+	for _, fc := range codec.Fields() {
+		runtime := &runtimeField{
+			codec:   fc,
+			indexes: make([]*segment.ResolvedField, 0, len(segments)),
+		}
+		for i, seg := range segments {
+			index, ok := seg.ResolveField(fc.Field)
+			if !ok {
+				return nil, fmt.Errorf("segment[%d] missing field %s", i, fc.Field)
+			}
+			runtime.indexes = append(runtime.indexes, index)
+		}
+		runtimeFields[fc.Field] = runtime
+	}
 	return &BooleanEngine{
-		schemaCodec: codec,
-		segments:    segments,
+		fields:   runtimeFields,
+		segments: segments,
 	}, nil
 }
 
@@ -85,6 +116,9 @@ func (e *BooleanEngine) Retrieve(
 func (e *BooleanEngine) RetrieveWithCollector(
 	queries core.Assignments, collector core.ResultCollector, opts ...core.IndexOpt,
 ) error {
+	if collector == nil {
+		return core.ErrNilResultCollector
+	}
 	ctx := core.NewRetrieveCtx(queries, opts...)
 	if ctx.Collector != nil {
 		panic("can't specify collector twice")
@@ -122,6 +156,7 @@ func (e *BooleanEngine) RetrieveWithCollector(
 // the per-K cursor initialization can reuse them without re-encoding.
 type encodedField struct {
 	field   core.BEField
+	runtime *runtimeField
 	queries []parser.EncodedQuery
 }
 
@@ -135,11 +170,11 @@ type encodedField struct {
 func (e *BooleanEngine) encodeQueries(ctx *core.RetrieveContext, queries core.Assignments) ([]encodedField, error) {
 	encoded := make([]encodedField, 0, len(queries))
 	for field, values := range queries {
-		fieldCodec, ok := e.schemaCodec.Field(field)
+		runtime, ok := e.fields[field]
 		if !ok {
 			continue
 		}
-		encodedQueries, err := fieldCodec.Encoder.Query(values)
+		encodedQueries, err := runtime.codec.Encoder.Query(values)
 		if err != nil {
 			if ctx.StrictQuery {
 				return nil, fmt.Errorf("field %s query encode: %w", field, err)
@@ -150,7 +185,7 @@ func (e *BooleanEngine) encodeQueries(ctx *core.RetrieveContext, queries core.As
 		if len(encodedQueries) == 0 {
 			continue
 		}
-		encoded = append(encoded, encodedField{field: field, queries: encodedQueries})
+		encoded = append(encoded, encodedField{field: field, runtime: runtime, queries: encodedQueries})
 	}
 	return encoded, nil
 }
@@ -200,7 +235,7 @@ func (e *BooleanEngine) mergeCursors(ctx *core.RetrieveContext, fieldCursors *co
 
 			if eid.IsInclude() {
 				if e.liveDocs == nil || e.liveDocs.IsAlive(conjID.DocID()) {
-					ctx.Collector.Add(conjID.DocID(), conjID)
+					ctx.Collector.Add(conjID.DocID())
 					if obs != nil {
 						obs.OnMatch(conjID.DocID(), conjID)
 					}
@@ -250,20 +285,14 @@ func (e *BooleanEngine) initCursors(
 	for _, ef := range encoded {
 		field := ef.field
 
-		// The field's container type is already validated at construction time
-		// (NewBooleanEngine → segment.ValidateFieldMetas), so an unknown IndexType
-		// can never reach here; there is no silent fallback to the default kind.
-		containerName := core.IndexNameDefault
-		if fc, ok := e.schemaCodec.Field(field); ok {
-			if c := fc.Meta.IndexType; c != "" {
-				containerName = c
-			}
-		}
+		// The field's encoder and per-segment physical handles were resolved at
+		// engine construction, so the hot path does not repeat field map lookups.
+		containerName := ef.runtime.codec.Option.IndexType
 
 		var iterators []core.PostingIterator
-		for _, seg := range e.segments {
+		for _, index := range ef.runtime.indexes {
 			for _, q := range ef.queries {
-				iters, err := seg.IndexQuery(field, containerName, q.Value)
+				iters, err := index.MatchQuery(containerName, q.Value)
 				if err != nil {
 					if ctx.StrictQuery {
 						return nil, fmt.Errorf("field %s index query: %w", field, err)

@@ -5,15 +5,8 @@ container is registered under a name and selected per field via
 `FieldOption.IndexType`:
 
 ```go
-fields := map[be_indexer.BEField]*be_indexer.FieldMeta{
-    "city": {
-        ID:    1,
-        Field: "city",
-        FieldOption: be_indexer.FieldOption{
-            IndexType: "fst_dict", // container selection
-            Encoder:   "default",  // value encoder (empty → same as IndexType)
-        },
-    },
+fields := be_indexer.Schema{
+    "city": {IndexType: "fst_dict", Encoder: "default"},
 }
 ```
 

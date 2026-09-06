@@ -61,7 +61,7 @@ func TestFlatPostingListAlignment(t *testing.T) {
 	// block layout exercises odd-length lists.
 	buf := new(bytes.Buffer)
 	w := NewInMemorySegmentBuilder(buf)
-	w.AddField(core.FieldMeta{ID: 1, Field: "age"})
+	w.AddField("age", core.FieldOption{})
 	_ = w.AddRecord("age", "18", []core.EntryID{makeE(1, 10), makeE(1, 20), makeE(1, 30)})
 	_ = w.AddRecord("age", "19", []core.EntryID{makeE(1, 11)})
 	_ = w.AddRecord("age", "20", []core.EntryID{makeE(1, 12), makeE(1, 22)})

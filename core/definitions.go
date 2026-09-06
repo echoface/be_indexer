@@ -27,6 +27,7 @@ var (
 	ErrUnsupportedPredicate   = errors.New("unsupported predicate")
 	ErrUnknownQueryField      = errors.New("unknown query field")
 	ErrFieldIndexMissing      = errors.New("field index missing")
+	ErrNilResultCollector     = errors.New("result collector is nil")
 )
 
 // --------------------------------------------------------------------------------
@@ -36,19 +37,16 @@ var (
 // FieldOption specifies how a field should be indexed.
 type FieldOption struct {
 	IndexType string // index kind: "default", "ac_matcher", "ext_range"
-	Encoder   string // predicate encoder name (empty = use IndexType)
+	Encoder   string // predicate encoder name (empty = "default")
 }
+
+// Schema maps each field name to its indexing configuration. The map key is the
+// field's sole logical identity; FieldOption contains behavior only.
+type Schema map[BEField]FieldOption
 
 // IndexerSettings holds per-field configuration for an index.
 type IndexerSettings struct {
-	FieldConfig map[BEField]FieldOption
-}
-
-// FieldMeta combines field identity with its indexing options.
-type FieldMeta struct {
-	FieldOption
-	ID    uint64
-	Field BEField
+	FieldConfig Schema
 }
 
 // RangeRecord is the build-side interval record for ext_range containers.
@@ -60,9 +58,10 @@ type RangeRecord struct {
 // Result Collection
 // --------------------------------------------------------------------------------
 
-// ResultCollector receives matched documents during retrieval.
+// ResultCollector receives final matched document IDs. Conjunction details are
+// diagnostic data and are reported separately through RetrieveObserver.OnMatch.
 type ResultCollector interface {
-	Add(id DocID, conj ConjID)
+	Add(id DocID)
 }
 
 // RetrieveObserver is an optional observer for retrieval instrumentation.

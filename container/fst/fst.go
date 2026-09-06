@@ -2,7 +2,7 @@
 // that replaces FlatDict binary search with an ordered, prefix-compressed term
 // dictionary for exact-term fields.
 //
-// Users opt in per-field via FieldMeta.FieldOption{IndexType: "fst_dict"}.
+// Users opt in per-field via FieldOption{IndexType: "fst_dict"}.
 // No custom encoder is needed — the default ExactTermEncoder handles value
 // encoding, and the engine routes queries through the fst container when the
 // field's IndexType is "fst_dict".
@@ -33,7 +33,7 @@ import (
 	"github.com/echoface/be_indexer/segment"
 )
 
-// IndexName is the value used in FieldMeta.IndexType to select this container.
+// IndexName is the value used in FieldOption.IndexType to select this container.
 const IndexName = "fst_dict"
 
 func init() {

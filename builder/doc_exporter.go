@@ -28,7 +28,6 @@ type BuildSegmentsFromDocsOptions struct {
 
 // BuildSegmentFromDocsOptions controls single-segment physical format options.
 type BuildSegmentFromDocsOptions struct {
-	SchemaHash string
 	// IgnoreUnindexedFields tolerates documents that reference fields absent from
 	// the schema. Default (false) fails the build; see NormalizeOptions.
 	IgnoreUnindexedFields bool
@@ -41,14 +40,14 @@ func (o BuildSegmentFromDocsOptions) normalizeOptions() NormalizeOptions {
 // BuildSegmentsFromDocs exports docs into one or multiple mmap segments.
 //
 // It calls newWriter for each segment (segIdx starts from 0).
-// Every Segment v4 embeds its own wildcard entries.
+// Every Segment v5 embeds its own wildcard entries.
 func BuildSegmentsFromDocs(
 	newWriter func(segIdx int) (io.Writer, error),
-	fieldsData map[core.BEField]*core.FieldMeta,
+	schema core.Schema,
 	docs []*core.Document,
 	opt BuildSegmentsFromDocsOptions,
 ) (int, error) {
-	codec, err := parser.NewSchemaCodec(fieldsData)
+	codec, err := parser.NewSchemaCodec(schema)
 	if err != nil {
 		return 0, err
 	}
@@ -108,11 +107,11 @@ func validateUniqueDocIDs(docs []*core.Document) error {
 	return nil
 }
 
-// BuildSegmentFromDocs exports documents into a v4 segment. Z-Entries and block
+// BuildSegmentFromDocs exports documents into a v5 segment. Z-Entries and block
 // checksums are always embedded by the writer; opts carries schema metadata and
 // normalization behavior.
-func BuildSegmentFromDocs(w io.Writer, fieldsData map[core.BEField]*core.FieldMeta, docs []*core.Document, opts BuildSegmentFromDocsOptions) error {
-	codec, err := parser.NewSchemaCodec(fieldsData)
+func BuildSegmentFromDocs(w io.Writer, schema core.Schema, docs []*core.Document, opts BuildSegmentFromDocsOptions) error {
+	codec, err := parser.NewSchemaCodec(schema)
 	if err != nil {
 		return err
 	}
@@ -132,14 +131,12 @@ func writeSegmentFromDocsWithCodec(w io.Writer, codec *parser.SchemaCodec, docs 
 	if err := validateCodecContainers(codec); err != nil {
 		return err
 	}
-	sw := segment.NewInMemorySegmentBuilderWithOptions(w, segment.InMemorySegmentBuilderOptions{
-		SchemaHash: opts.SchemaHash,
-	})
+	sw := segment.NewInMemorySegmentBuilderWithOptions(w, segment.InMemorySegmentBuilderOptions{})
 	sw.SetDocCount(len(docs))
 
 	// Config fields from the compiled schema (single source of truth).
 	for _, fc := range codec.Fields() {
-		if err := sw.AddField(fc.Meta); err != nil {
+		if err := sw.AddField(fc.Field, fc.Option); err != nil {
 			return err
 		}
 	}

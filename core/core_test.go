@@ -323,9 +323,9 @@ func TestDocIDCollector_Basic(t *testing.T) {
 		t.Errorf("Initial count should be 0, got %d", c.DocCount())
 	}
 
-	c.Add(1, 0)
-	c.Add(2, 0)
-	c.Add(1, 0) // duplicate
+	c.Add(1)
+	c.Add(2)
+	c.Add(1) // duplicate
 	if c.DocCount() != 2 {
 		t.Errorf("Count should be 2 (dedup), got %d", c.DocCount())
 	}
@@ -341,7 +341,7 @@ func TestDocIDCollector_Basic(t *testing.T) {
 
 func TestDocIDCollector_Reset(t *testing.T) {
 	c := NewDocIDCollector()
-	c.Add(1, 0)
+	c.Add(1)
 	c.Reset()
 	if c.DocCount() != 0 {
 		t.Errorf("After reset, count should be 0, got %d", c.DocCount())
@@ -350,8 +350,8 @@ func TestDocIDCollector_Reset(t *testing.T) {
 
 func TestDocIDCollector_GetDocIDsInto(t *testing.T) {
 	c := NewDocIDCollector()
-	c.Add(10, 0)
-	c.Add(20, 0)
+	c.Add(10)
+	c.Add(20)
 
 	var into DocIDList
 	into = append(into, bitmapToSlice(c.Bitmap())...)
@@ -383,10 +383,10 @@ func TestDocIDCollector_WithLiveDocs(t *testing.T) {
 	c := NewDocIDCollector()
 	c.SetLiveDocs(ld)
 
-	c.Add(1, 0) // alive
-	c.Add(2, 0) // dead → filtered
-	c.Add(3, 0) // dead → filtered
-	c.Add(4, 0) // alive
+	c.Add(1) // alive
+	c.Add(2) // dead → filtered
+	c.Add(3) // dead → filtered
+	c.Add(4) // alive
 
 	if c.DocCount() != 2 {
 		t.Errorf("Count should be 2 (filtered), got %d", c.DocCount())
@@ -400,7 +400,7 @@ func TestDocIDCollector_WithLiveDocs(t *testing.T) {
 
 func TestDocIDCollector_Pool(t *testing.T) {
 	c := PickCollector()
-	c.Add(42, 0)
+	c.Add(42)
 	PutCollector(c)
 
 	c2 := PickCollector()
@@ -855,7 +855,7 @@ func (o *testObserver) OnExcludeSkip(docID DocID)            { o.exclCount++ }
 func (o *testObserver) OnCursorInit(fieldCount int)          { o.cursorInit++ }
 
 // ---------------------------------------------------------------------------
-// FieldMeta & FieldOption
+// Schema & FieldOption
 // ---------------------------------------------------------------------------
 
 func TestFieldOption(t *testing.T) {
@@ -868,14 +868,10 @@ func TestFieldOption(t *testing.T) {
 	}
 }
 
-func TestFieldMeta(t *testing.T) {
-	meta := FieldMeta{
-		ID:          1,
-		Field:       "age",
-		FieldOption: FieldOption{Encoder: "number"},
-	}
-	if meta.ID != 1 || meta.Field != "age" || meta.Encoder != "number" {
-		t.Errorf("FieldMeta not correctly initialized: %+v", meta)
+func TestSchema(t *testing.T) {
+	schema := Schema{"age": {Encoder: "number"}}
+	if schema["age"].Encoder != "number" {
+		t.Errorf("Schema not correctly initialized: %+v", schema)
 	}
 }
 
@@ -1099,7 +1095,7 @@ type testResultCollector struct {
 	ids []DocID
 }
 
-func (c *testResultCollector) Add(id DocID, _ ConjID) {
+func (c *testResultCollector) Add(id DocID) {
 	c.ids = append(c.ids, id)
 }
 
@@ -1167,11 +1163,11 @@ func TestValueExpr_OperatorNameAll(t *testing.T) {
 
 func TestDocIDCollector_ResetThenReuse(t *testing.T) {
 	c := NewDocIDCollector()
-	c.Add(1, 0)
-	c.Add(2, 0)
+	c.Add(1)
+	c.Add(2)
 	c.Reset()
 
-	c.Add(3, 0)
+	c.Add(3)
 	if c.DocCount() != 1 {
 		t.Errorf("After reset and re-add, count should be 1, got %d", c.DocCount())
 	}
@@ -1320,8 +1316,8 @@ func TestSliceIterator_DuplicateEntries(t *testing.T) {
 
 func TestDocIDCollector_GetDocIDsIntoAppend(t *testing.T) {
 	c := NewDocIDCollector()
-	c.Add(1, 0)
-	c.Add(2, 0)
+	c.Add(1)
+	c.Add(2)
 
 	into := DocIDList{0} // pre-populated
 	into = append(into, bitmapToSlice(c.Bitmap())...)

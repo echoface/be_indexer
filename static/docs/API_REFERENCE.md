@@ -59,21 +59,17 @@ func (conj *Conjunction) In(field BEField, values Values) *Conjunction
 func (conj *Conjunction) NotIn(field BEField, values Values) *Conjunction
 ```
 
-### FieldMeta
+### Schema 与 FieldOption
 
 定义字段的属性和所使用的底层存储容器（如默认的哈希，或是 AC 自动机）。
 
 ```go
-type FieldMeta struct {
-    FieldOption
-    ID    uint64
-    Field BEField
-}
-
 type FieldOption struct {
     IndexType string // 物理容器：default、ac_matcher、ext_range 等
     Encoder   string // 值编码器：default、number、ext_range 等
 }
+
+type Schema map[BEField]FieldOption
 ```
 
 ### Assignments
@@ -93,11 +89,11 @@ type Assignments map[BEField]interface{}
 这是构建过程的唯一核心入口，负责将内存中的 `Document` 列表转换为二进制的紧凑物理段。
 
 ```go
-// BuildSegmentFromDocs 将文档写入一个可 mmap 的 Segment v4。
+// BuildSegmentFromDocs 将文档写入一个可 mmap 的 Segment v5。
 // wildcard 直接内嵌在 Segment 中。
 func BuildSegmentFromDocs(
     w io.Writer, 
-    fieldsData map[core.BEField]*core.FieldMeta, 
+    schema core.Schema,
     docs []*core.Document,
     opts BuildSegmentFromDocsOptions,
 ) error
@@ -105,15 +101,15 @@ func BuildSegmentFromDocs(
 
 **示例：**
 ```go
-fieldsMeta := map[core.BEField]*core.FieldMeta{
-    "age": {Field: "age", ID: 1, FieldOption: core.FieldOption{IndexType: core.IndexNameDefault, Encoder: "number"}},
+schema := core.Schema{
+    "age": {IndexType: core.IndexNameDefault, Encoder: "number"},
 }
 
 docs := []*core.Document{ /* ... */ }
 file, _ := os.Create("data.seg")
 defer file.Close()
 
-err := builder.BuildSegmentFromDocs(file, fieldsMeta, docs, builder.BuildSegmentFromDocsOptions{})
+err := builder.BuildSegmentFromDocs(file, schema, docs, builder.BuildSegmentFromDocsOptions{})
 ```
 
 多 Segment 批量构建使用 `BuildSegmentsFromDocs`。该入口在创建任何 writer 前校验整个输入集合的 DocID 唯一性，避免相同 DocID 跨 Segment 落入同一个 ConjID 空间。超大规模全量构建建议使用 `FullIndexBuilder` 的外排路径。
@@ -161,7 +157,7 @@ type BooleanEngine struct {
 // fieldsData: 字段元数据定义
 // segments: 可挂载多个 SegmentReader，引擎内部会透明处理合并
 func NewBooleanEngine(
-    fieldsData map[core.BEField]*core.FieldMeta, 
+    schema core.Schema,
     segments []*segment.SegmentReader,
 ) (*BooleanEngine, error)
 
@@ -174,6 +170,8 @@ func (ms *BooleanEngine) Retrieve(queries core.Assignments, opts ...core.IndexOp
 // 带自定义结果收集器的 Retrieve
 func (ms *BooleanEngine) RetrieveWithCollector(queries core.Assignments, collector core.ResultCollector, opts ...core.IndexOpt) error
 ```
+
+`ResultCollector` 只接收最终匹配的 `DocID`。具体命中的 `ConjID` 属于诊断信息，通过 `RetrieveObserver.OnMatch` 获取；Composite full/delta 合并后不承诺保留 conjunction 身份。
 
 **检索示例：**
 ```go
@@ -199,10 +197,11 @@ fmt.Printf("Matched Docs: %v\n", docIDs)
 
 ```go
 type Options struct {
-    SchemaHash  string
     SegmentLoad SegmentLoadMode
 }
 ```
+
+`SchemaHash` 由字段名、规范化后的 `IndexType` 和 `Encoder` 自动派生。构建时写入 Segment 和 Manifest，加载时与运行时 `fields` 强制比对，不接受调用方手填。
 
 | 加载方式 | 默认完整性校验 |
 |---|---|

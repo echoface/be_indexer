@@ -15,11 +15,11 @@ import (
 // default-container fallback at serving time.
 func validateCodecContainers(codec *parser.SchemaCodec) error {
 	fields := codec.Fields()
-	metas := make([]core.FieldMeta, 0, len(fields))
+	options := make([]core.SchemaField, 0, len(fields))
 	for _, fc := range fields {
-		metas = append(metas, fc.Meta)
+		options = append(options, core.SchemaField{Field: fc.Field, Option: fc.Option})
 	}
-	return segment.ValidateFieldMetas(metas)
+	return segment.ValidateFieldOptions(options)
 }
 
 // NormalizeOptions controls schema-aware document validation and normalization.

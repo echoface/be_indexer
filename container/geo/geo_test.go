@@ -173,10 +173,7 @@ func TestCoveringProperty(t *testing.T) {
 
 func TestRegistration(t *testing.T) {
 	convey.Convey("proximitygeo registers encoder only, no container", t, func() {
-		enc, err := parser.NewPredicateEncoder(core.FieldMeta{
-			Field:       "loc",
-			FieldOption: core.FieldOption{Encoder: geo.EncoderName},
-		})
+		enc, err := parser.NewPredicateEncoder("loc", core.FieldOption{Encoder: geo.EncoderName})
 		convey.So(err, convey.ShouldBeNil)
 		convey.So(enc, convey.ShouldNotBeNil)
 		convey.So(segment.HasIndex(geo.EncoderName), convey.ShouldBeFalse)
@@ -196,9 +193,9 @@ func retrieve(t *testing.T, eng *be_indexer.Engine, assigns be_indexer.Assignmen
 }
 
 func TestGeoEndToEnd(t *testing.T) {
-	fields := map[be_indexer.BEField]*be_indexer.FieldMeta{
-		"location": {Field: "location", FieldOption: be_indexer.FieldOption{Encoder: geo.EncoderName}},
-		"city":     {Field: "city", FieldOption: be_indexer.FieldOption{IndexType: "default"}},
+	fields := be_indexer.Schema{
+		"location": {Encoder: geo.EncoderName},
+		"city":     {IndexType: "default"},
 	}
 
 	beijing := geo.GeoParam{Lat: 39.9042, Lng: 116.4074, Radius: 5000}

@@ -36,13 +36,11 @@ import (
 	"github.com/echoface/be_indexer/manifest"
 )
 
-const schemaHash = "sha256:push-builder-example"
-
 // fields defines the index schema: two exact-match numeric fields.
-func fields() map[core.BEField]*core.FieldMeta {
-	return map[core.BEField]*core.FieldMeta{
-		"city": {ID: 1, Field: "city", FieldOption: core.FieldOption{Encoder: "number"}},
-		"age":  {ID: 2, Field: "age", FieldOption: core.FieldOption{Encoder: "number"}},
+func fields() core.Schema {
+	return core.Schema{
+		"city": {Encoder: "number"},
+		"age":  {Encoder: "number"},
 	}
 }
 
@@ -90,7 +88,7 @@ func main() {
 	m, err := builder.NewSnapshotManifest(builder.SnapshotManifestRequest{
 		IndexName:  "push-builder-example",
 		Generation: deltaDesc.Generation,
-		SchemaHash: schemaHash,
+		Fields:     fields(),
 		Full:       fullDesc,
 		Deltas:     []manifest.DeltaIndexDescriptor{deltaDesc},
 	})
@@ -114,7 +112,7 @@ func buildFullIndex(root, fullPath string) manifest.FullIndexDescriptor {
 		SnapshotWatermark: 100,
 		Fields:            fields(),
 		// Force multiple internal segments to exercise segment rolling.
-		Options:  builder.BuildDirectoryOptions{MaxDocsPerSegment: 2, SegmentSchemaHash: schemaHash},
+		Options:  builder.BuildDirectoryOptions{MaxDocsPerSegment: 2},
 		FailMode: builder.FailFast,
 	})
 	if err != nil {
@@ -157,7 +155,7 @@ func buildDeltaIndex(root, deltaPath string) manifest.DeltaIndexDescriptor {
 		FromWatermarkExclusive: 100,
 		ToWatermarkInclusive:   110,
 		Fields:                 fields(),
-		Options:                builder.BuildDirectoryOptions{SegmentSchemaHash: schemaHash},
+		Options:                builder.BuildDirectoryOptions{},
 		FailMode:               builder.FailFast,
 		// MaxMutations: 0 => unlimited (default).
 	})
@@ -218,7 +216,7 @@ func buildDeltaIndex(root, deltaPath string) manifest.DeltaIndexDescriptor {
 //	doc 5: (1, 25)   re-created by delta (upsert v2 beats delete v1)
 //	doc 4: deleted
 func verify(root string) {
-	ce, err := loader.OpenIndex(root, fields(), loader.Options{SchemaHash: schemaHash})
+	ce, err := loader.OpenIndex(root, fields(), loader.Options{})
 	if err != nil {
 		fail("OpenIndex: %v", err)
 	}

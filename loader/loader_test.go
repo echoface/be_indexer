@@ -13,16 +13,25 @@ import (
 	"github.com/echoface/be_indexer/manifest"
 )
 
-func loaderFields() map[core.BEField]*core.FieldMeta {
-	return map[core.BEField]*core.FieldMeta{
-		"a": {ID: 1, Field: "a", FieldOption: core.FieldOption{Encoder: "number"}},
+func loaderFields() core.Schema {
+	return core.Schema{
+		"a": {Encoder: "number"},
 	}
 }
 
-func writeSegment(t *testing.T, dir string, fields map[core.BEField]*core.FieldMeta, docs []*core.Document) manifest.SegmentDescriptor {
+func loaderSchemaHash(t *testing.T) string {
+	t.Helper()
+	hash, err := core.ComputeSchemaHash(loaderFields())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return hash
+}
+
+func writeSegment(t *testing.T, dir string, fields core.Schema, docs []*core.Document) manifest.SegmentDescriptor {
 	t.Helper()
 	buf := new(bytes.Buffer)
-	err := builder.BuildSegmentFromDocs(buf, fields, docs, builder.BuildSegmentFromDocsOptions{SchemaHash: "sha256:schema"})
+	err := builder.BuildSegmentFromDocs(buf, fields, docs, builder.BuildSegmentFromDocsOptions{})
 	if err != nil {
 		t.Fatalf("BuildSegmentFromDocs failed: %v", err)
 	}
@@ -107,8 +116,8 @@ func TestOpenIndexLoadsFullDeltaSnapshot(t *testing.T) {
 		ManifestVersion: 1,
 		IndexName:       "test-index",
 		Generation:      2,
-		SchemaHash:      "sha256:schema",
-		FormatVersion:   manifest.FormatVersionSegmentV4,
+		SchemaHash:      loaderSchemaHash(t),
+		FormatVersion:   manifest.FormatVersionSegmentV5,
 		PostingEncoding: "conjid64-entryid64-v1",
 		Full: manifest.FullIndexDescriptor{
 			Generation:        1,
@@ -130,7 +139,7 @@ func TestOpenIndexLoadsFullDeltaSnapshot(t *testing.T) {
 	}
 	writeManifest(t, root, m)
 
-	ce, err := loader.OpenIndex(root, fields, loader.Options{SchemaHash: "sha256:schema"})
+	ce, err := loader.OpenIndex(root, fields, loader.Options{})
 	if err != nil {
 		t.Fatalf("OpenIndex failed: %v", err)
 	}
@@ -165,8 +174,8 @@ func TestOpenIndexRejectsChecksumMismatch(t *testing.T) {
 		ManifestVersion: 1,
 		IndexName:       "test-index",
 		Generation:      1,
-		SchemaHash:      "sha256:schema",
-		FormatVersion:   manifest.FormatVersionSegmentV4,
+		SchemaHash:      loaderSchemaHash(t),
+		FormatVersion:   manifest.FormatVersionSegmentV5,
 		PostingEncoding: "conjid64-entryid64-v1",
 		Full: manifest.FullIndexDescriptor{
 			Generation:        1,
@@ -175,7 +184,7 @@ func TestOpenIndexRejectsChecksumMismatch(t *testing.T) {
 			Segments:          []manifest.SegmentDescriptor{seg},
 		},
 	})
-	if _, err := loader.OpenIndex(root, fields, loader.Options{SchemaHash: "sha256:schema"}); err == nil {
+	if _, err := loader.OpenIndex(root, fields, loader.Options{}); err == nil {
 		t.Fatal("expected checksum mismatch")
 	}
 }
@@ -192,8 +201,8 @@ func TestOpenIndexRejectsSchemaMismatch(t *testing.T) {
 		ManifestVersion: 1,
 		IndexName:       "test-index",
 		Generation:      1,
-		SchemaHash:      "sha256:schema",
-		FormatVersion:   manifest.FormatVersionSegmentV4,
+		SchemaHash:      loaderSchemaHash(t),
+		FormatVersion:   manifest.FormatVersionSegmentV5,
 		PostingEncoding: "conjid64-entryid64-v1",
 		Full: manifest.FullIndexDescriptor{
 			Generation:        1,
@@ -202,7 +211,10 @@ func TestOpenIndexRejectsSchemaMismatch(t *testing.T) {
 			Segments:          []manifest.SegmentDescriptor{seg},
 		},
 	})
-	if _, err := loader.OpenIndex(root, fields, loader.Options{SchemaHash: "sha256:other"}); err == nil {
+	mismatchedFields := core.Schema{
+		"a": {Encoder: core.IndexNameDefault},
+	}
+	if _, err := loader.OpenIndex(root, mismatchedFields, loader.Options{}); err == nil {
 		t.Fatal("expected schema mismatch")
 	}
 }
@@ -230,8 +242,8 @@ func TestOpenIndexMultipleDeltasUpdateOverridesOlderDelta(t *testing.T) {
 		ManifestVersion: 1,
 		IndexName:       "test-index",
 		Generation:      3,
-		SchemaHash:      "sha256:schema",
-		FormatVersion:   manifest.FormatVersionSegmentV4,
+		SchemaHash:      loaderSchemaHash(t),
+		FormatVersion:   manifest.FormatVersionSegmentV5,
 		PostingEncoding: "conjid64-entryid64-v1",
 		Full:            manifest.FullIndexDescriptor{Generation: 1, SnapshotWatermark: 100, Path: "full/full-000001", Segments: []manifest.SegmentDescriptor{fullSeg}},
 		Deltas: []manifest.DeltaIndexDescriptor{
@@ -240,7 +252,7 @@ func TestOpenIndexMultipleDeltasUpdateOverridesOlderDelta(t *testing.T) {
 		},
 	})
 
-	ce, err := loader.OpenIndex(root, fields, loader.Options{SchemaHash: "sha256:schema"})
+	ce, err := loader.OpenIndex(root, fields, loader.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -289,8 +301,8 @@ func TestOpenIndexWithMmap(t *testing.T) {
 		ManifestVersion: 1,
 		IndexName:       "test-index",
 		Generation:      1,
-		SchemaHash:      "sha256:schema",
-		FormatVersion:   manifest.FormatVersionSegmentV4,
+		SchemaHash:      loaderSchemaHash(t),
+		FormatVersion:   manifest.FormatVersionSegmentV5,
 		PostingEncoding: "conjid64-entryid64-v1",
 		Full: manifest.FullIndexDescriptor{
 			Generation:        1,
@@ -301,7 +313,7 @@ func TestOpenIndexWithMmap(t *testing.T) {
 	}
 	writeManifest(t, root, m)
 
-	ce, err := loader.OpenIndex(root, fields, loader.Options{SchemaHash: "sha256:schema", SegmentLoad: loader.SegmentLoadMmapVerify})
+	ce, err := loader.OpenIndex(root, fields, loader.Options{SegmentLoad: loader.SegmentLoadMmapVerify})
 	if err != nil {
 		t.Fatalf("OpenIndex(mmap) failed: %v", err)
 	}
@@ -354,8 +366,8 @@ func TestOpenIndexWithMmapVerifiesBlockChecksumByDefault(t *testing.T) {
 		ManifestVersion: 1,
 		IndexName:       "mmap-checksum-test",
 		Generation:      1,
-		SchemaHash:      "sha256:schema",
-		FormatVersion:   manifest.FormatVersionSegmentV4,
+		SchemaHash:      loaderSchemaHash(t),
+		FormatVersion:   manifest.FormatVersionSegmentV5,
 		PostingEncoding: "conjid64-entryid64-v1",
 		Full: manifest.FullIndexDescriptor{
 			Generation:        1,
@@ -365,14 +377,13 @@ func TestOpenIndexWithMmapVerifiesBlockChecksumByDefault(t *testing.T) {
 		},
 	})
 
-	if _, err := loader.OpenIndex(root, fields, loader.Options{SchemaHash: "sha256:schema", SegmentLoad: loader.SegmentLoadMmapVerify}); err == nil {
+	if _, err := loader.OpenIndex(root, fields, loader.Options{SegmentLoad: loader.SegmentLoadMmapVerify}); err == nil {
 		t.Fatal("default mmap load must reject corrupted block payload")
 	}
 
 	// Fast-start is an explicit trust tradeoff: structure and size are checked,
 	// but payload hashes are not recomputed in the serving process.
 	ce, err := loader.OpenIndex(root, fields, loader.Options{
-		SchemaHash:  "sha256:schema",
 		SegmentLoad: loader.SegmentLoadMmapTrustPublished,
 	})
 	if err != nil {
@@ -398,8 +409,8 @@ func TestOpenIndexWithMmapRejectsManifestSizeMismatch(t *testing.T) {
 		ManifestVersion: 1,
 		IndexName:       "mmap-size-test",
 		Generation:      1,
-		SchemaHash:      "sha256:schema",
-		FormatVersion:   manifest.FormatVersionSegmentV4,
+		SchemaHash:      loaderSchemaHash(t),
+		FormatVersion:   manifest.FormatVersionSegmentV5,
 		PostingEncoding: "conjid64-entryid64-v1",
 		Full: manifest.FullIndexDescriptor{
 			Generation:        1,
@@ -410,7 +421,6 @@ func TestOpenIndexWithMmapRejectsManifestSizeMismatch(t *testing.T) {
 	})
 
 	_, err := loader.OpenIndex(root, fields, loader.Options{
-		SchemaHash:  "sha256:schema",
 		SegmentLoad: loader.SegmentLoadMmapTrustPublished,
 	})
 	if err == nil {
@@ -432,8 +442,8 @@ func TestLoadSnapshotFailureAfterFullLoadCanBeRepeated(t *testing.T) {
 		ManifestVersion: 1,
 		IndexName:       "failed-load-cleanup-test",
 		Generation:      2,
-		SchemaHash:      "sha256:schema",
-		FormatVersion:   manifest.FormatVersionSegmentV4,
+		SchemaHash:      loaderSchemaHash(t),
+		FormatVersion:   manifest.FormatVersionSegmentV5,
 		PostingEncoding: "conjid64-entryid64-v1",
 		Full: manifest.FullIndexDescriptor{
 			Generation:        1,
@@ -454,7 +464,7 @@ func TestLoadSnapshotFailureAfterFullLoadCanBeRepeated(t *testing.T) {
 	// Exercise the path where full mmap loading succeeds and delta loading then
 	// fails. Repeating it guards the ownership/cleanup path used by failed reloads.
 	for i := 0; i < 20; i++ {
-		if _, err := loader.LoadSnapshot(root, fields, loader.Options{SchemaHash: "sha256:schema", SegmentLoad: loader.SegmentLoadMmapVerify}); err == nil {
+		if _, err := loader.LoadSnapshot(root, fields, loader.Options{SegmentLoad: loader.SegmentLoadMmapVerify}); err == nil {
 			t.Fatal("expected delta load failure")
 		}
 	}

@@ -26,6 +26,8 @@ All notable changes to this project will be documented in this file.
 
 ### Removed
 
+- 删除查询路径不再使用的 `FlatPostingList.SubView` / `SubViewByK`；K 由 `mergeCursors` 从 EntryID 动态读取。
+
 - `SegmentReader.Contains()` (dead code, always returned true)
 - `segment.AllK`
 - `OnCursorInit(k int, ...)` → `OnCursorInit(fieldCount int)`

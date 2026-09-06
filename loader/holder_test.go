@@ -2,6 +2,7 @@ package loader_test
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"sync"
@@ -26,8 +27,8 @@ func writeSimpleIndex(t *testing.T, root, manifestName string, docValue int, gen
 		ManifestVersion: 1,
 		IndexName:       "test-index",
 		Generation:      generation,
-		SchemaHash:      "sha256:schema",
-		FormatVersion:   manifest.FormatVersionSegmentV4,
+		SchemaHash:      loaderSchemaHash(t),
+		FormatVersion:   manifest.FormatVersionSegmentV5,
 		PostingEncoding: "conjid64-entryid64-v1",
 		Full: manifest.FullIndexDescriptor{
 			Generation:        generation,
@@ -56,9 +57,12 @@ func TestHolderReloadKeepsOldSnapshotOnFailure(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "CURRENT"), []byte("manifest-1.json"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	h, err := loader.NewHolder(root, fields, loader.Options{SchemaHash: "sha256:schema"})
+	h, err := loader.NewHolder(root, fields, loader.Options{})
 	if err != nil {
 		t.Fatalf("NewHolder failed: %v", err)
+	}
+	if err := h.RetrieveWithCollector(nil, nil); !errors.Is(err, core.ErrNilResultCollector) {
+		t.Fatalf("expected ErrNilResultCollector, got %v", err)
 	}
 	b, err := h.Retrieve(core.Assignments{"a": 1})
 	ids := bitmapToSlice(b)
@@ -87,7 +91,7 @@ func TestHolderReloadPublishesNewSnapshot(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "CURRENT"), []byte("manifest-1.json"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	h, err := loader.NewHolder(root, fields, loader.Options{SchemaHash: "sha256:schema"})
+	h, err := loader.NewHolder(root, fields, loader.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,6 +108,31 @@ func TestHolderReloadPublishesNewSnapshot(t *testing.T) {
 	}
 }
 
+func TestHolderReloadSameCurrentIsNoOp(t *testing.T) {
+	root := t.TempDir()
+	fields := loaderFields()
+	writeSimpleIndex(t, root, "manifest-1.json", 1, 1)
+	if err := os.WriteFile(filepath.Join(root, "CURRENT"), []byte("manifest-1.json\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	h, err := loader.NewHolder(root, fields, loader.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer h.Close()
+
+	before := h.UnsafeCurrent()
+	if before == nil {
+		t.Fatal("expected initial engine")
+	}
+	if err := h.Reload(); err != nil {
+		t.Fatalf("same CURRENT reload failed: %v", err)
+	}
+	if after := h.UnsafeCurrent(); after != before {
+		t.Fatal("same CURRENT reload replaced the engine instead of returning no-op")
+	}
+}
+
 func TestHolderConcurrentRetrieveAndReload(t *testing.T) {
 	root := t.TempDir()
 	fields := loaderFields()
@@ -112,7 +141,7 @@ func TestHolderConcurrentRetrieveAndReload(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "CURRENT"), []byte("manifest-1.json"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	h, err := loader.NewHolder(root, fields, loader.Options{SchemaHash: "sha256:schema"})
+	h, err := loader.NewHolder(root, fields, loader.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,7 +173,7 @@ func TestHolderConcurrentReloadPublishesConsistentGeneration(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "CURRENT"), []byte("manifest-1.json"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	h, err := loader.NewHolder(root, fields, loader.Options{SchemaHash: "sha256:schema"})
+	h, err := loader.NewHolder(root, fields, loader.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -78,15 +78,3 @@ func TestWriteFlatDict_ValidRoundTrip(t *testing.T) {
 		t.Fatal("expected to find banana")
 	}
 }
-
-// --- dense field id ceiling -----------------------------------------------------
-
-// The dense-field-id guard is validated in SegmentReader construction. Building
-// a segment with >65536 fields is impractical here, so we assert the guard
-// constant is wired to the uint16 ceiling (a compile-time-ish invariant check
-// that documents intent and fails if someone widens/narrows it accidentally).
-func TestDenseFieldIDLimitConstant(t *testing.T) {
-	if MaxDenseFieldID != 0xFFFF {
-		t.Fatalf("MaxDenseFieldID must be the uint16 ceiling, got %d", MaxDenseFieldID)
-	}
-}

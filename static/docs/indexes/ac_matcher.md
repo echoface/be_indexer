@@ -83,15 +83,8 @@ posting lists live in the field's separate postings block as
 ## Example
 
 ```go
-fields := map[be_indexer.BEField]*be_indexer.FieldMeta{
-    "content": {
-        ID:    1,
-        Field: "content",
-        FieldOption: be_indexer.FieldOption{
-            IndexType: be_indexer.IndexNameACMatcher, // "ac_matcher"
-            Encoder:   "default",
-        },
-    },
+fields := be_indexer.Schema{
+    "content": {IndexType: be_indexer.IndexNameACMatcher, Encoder: "default"},
 }
 // Query with the full text; every indexed pattern occurring in it matches.
 ```

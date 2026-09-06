@@ -12,10 +12,10 @@ import (
 	"github.com/echoface/be_indexer/segment"
 )
 
-func oracleFields() map[core.BEField]*core.FieldMeta {
-	return map[core.BEField]*core.FieldMeta{
-		"a": {ID: 1, Field: "a", FieldOption: core.FieldOption{Encoder: "number"}},
-		"b": {ID: 2, Field: "b", FieldOption: core.FieldOption{Encoder: "number"}},
+func oracleFields() core.Schema {
+	return core.Schema{
+		"a": {Encoder: "number"},
+		"b": {Encoder: "number"},
 	}
 }
 
@@ -82,10 +82,10 @@ func TestCompositeEngineMatchesOracleAfterMutationReplay(t *testing.T) {
 		t.Fatal(err)
 	}
 	ce := engine.NewCompositeEngine(&engine.IndexSnapshot{
-		FullEngine:  buildOracleEngine(t, fullDocs),
-		DeltaEngine: buildOracleEngine(t, plan.Documents),
-		ChangedDocs: core.NewBitmapDocSet(plan.ChangedDocs...),
-		DeletedDocs: core.NewBitmapDocSet(plan.DeletedDocs...),
+		FullEngine:   buildOracleEngine(t, fullDocs),
+		DeltaEngines: []*engine.BooleanEngine{buildOracleEngine(t, plan.Documents)},
+		ChangedDocs:  core.NewBitmapDocSet(plan.ChangedDocs...),
+		DeletedDocs:  core.NewBitmapDocSet(plan.DeletedDocs...),
 	})
 
 	latestDocs := []*core.Document{

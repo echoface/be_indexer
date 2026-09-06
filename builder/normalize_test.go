@@ -10,10 +10,10 @@ import (
 	"github.com/echoface/be_indexer/parser"
 )
 
-func normFields() map[core.BEField]*core.FieldMeta {
-	return map[core.BEField]*core.FieldMeta{
-		"age":  {ID: 1, Field: "age", FieldOption: core.FieldOption{IndexType: core.IndexNameDefault, Encoder: "number"}},
-		"city": {ID: 2, Field: "city", FieldOption: core.FieldOption{IndexType: core.IndexNameDefault}},
+func normFields() core.Schema {
+	return core.Schema{
+		"age":  {IndexType: core.IndexNameDefault, Encoder: "number"},
+		"city": {IndexType: core.IndexNameDefault},
 	}
 }
 
@@ -174,8 +174,8 @@ func TestBatchBuild_DuplicateDocIDRejected(t *testing.T) {
 // --- §4.1.1: IndexType validation -----------------------------------------------
 
 func TestBuild_UnknownIndexTypeRejected(t *testing.T) {
-	fields := map[core.BEField]*core.FieldMeta{
-		"age": {ID: 1, Field: "age", FieldOption: core.FieldOption{IndexType: "no_such_container"}},
+	fields := core.Schema{
+		"age": {IndexType: "no_such_container"},
 	}
 	docs := []*core.Document{
 		core.NewDocument(1).AddConjunction(core.NewConjunction().In("age", 18)),

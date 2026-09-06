@@ -12,9 +12,9 @@ import (
 )
 
 func TestBuildSegmentsFromDocs_Consistency(t *testing.T) {
-	fields := map[core.BEField]*core.FieldMeta{
-		"age":  {ID: 1, Field: "age", FieldOption: core.FieldOption{IndexType: core.IndexNameDefault, Encoder: "number"}},
-		"city": {ID: 2, Field: "city", FieldOption: core.FieldOption{IndexType: core.IndexNameDefault}},
+	fields := core.Schema{
+		"age":  {IndexType: core.IndexNameDefault, Encoder: "number"},
+		"city": {IndexType: core.IndexNameDefault},
 	}
 
 	// docs:
@@ -104,9 +104,9 @@ func TestBuildSegmentsFromDocs_Consistency(t *testing.T) {
 // helper writes a non-empty __wildcards block into each segment that has K=0
 // conjunctions. Loader and engine read seg.Wildcards() directly.
 func TestBuildSegmentsFromDocs_EmbedsPerSegmentWildcards(t *testing.T) {
-	fields := map[core.BEField]*core.FieldMeta{
-		"age":  {ID: 1, Field: "age", FieldOption: core.FieldOption{IndexType: core.IndexNameDefault, Encoder: "number"}},
-		"city": {ID: 2, Field: "city", FieldOption: core.FieldOption{IndexType: core.IndexNameDefault}},
+	fields := core.Schema{
+		"age":  {IndexType: core.IndexNameDefault, Encoder: "number"},
+		"city": {IndexType: core.IndexNameDefault},
 	}
 	docs := []*core.Document{
 		core.NewDocument(1).AddConjunction(core.NewConjunction().In("age", 18)),

@@ -31,15 +31,24 @@ const (
 
 // Options controls OpenIndex storage and validation behavior.
 type Options struct {
-	// SchemaHash, when non-empty, must match Manifest.SchemaHash.
-	SchemaHash string
 	// SegmentLoad selects heap vs mmap loading and its verification contract.
 	SegmentLoad SegmentLoadMode
 }
 
 // OpenIndex loads index_root/CURRENT and returns a CompositeEngine snapshot.
-func OpenIndex(root string, fields map[core.BEField]*core.FieldMeta, opts Options) (*engine.CompositeEngine, error) {
-	snapshot, err := LoadSnapshot(root, fields, opts)
+func OpenIndex(root string, fields core.Schema, opts Options) (*engine.CompositeEngine, error) {
+	manifestRef, err := ReadCurrentManifestRef(root)
+	if err != nil {
+		return nil, err
+	}
+	return openIndexAt(root, manifestRef, fields, opts)
+}
+
+// openIndexAt loads the exact manifest reference already observed by the
+// caller. Keeping this separate from OpenIndex lets Holder.Reload compare and
+// load one CURRENT value without a second read that could race with publication.
+func openIndexAt(root, manifestRef string, fields core.Schema, opts Options) (*engine.CompositeEngine, error) {
+	snapshot, err := loadSnapshotAt(root, manifestRef, fields, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -47,19 +56,31 @@ func OpenIndex(root string, fields map[core.BEField]*core.FieldMeta, opts Option
 }
 
 // LoadSnapshot loads a manifest generation and all referenced segments/sidecars.
-func LoadSnapshot(root string, fields map[core.BEField]*core.FieldMeta, opts Options) (*engine.IndexSnapshot, error) {
+func LoadSnapshot(root string, fields core.Schema, opts Options) (*engine.IndexSnapshot, error) {
+	manifestRef, err := ReadCurrentManifestRef(root)
+	if err != nil {
+		return nil, err
+	}
+	return loadSnapshotAt(root, manifestRef, fields, opts)
+}
+
+func loadSnapshotAt(root, manifestRef string, fields core.Schema, opts Options) (*engine.IndexSnapshot, error) {
 	if opts.SegmentLoad > SegmentLoadMmapTrustPublished {
 		return nil, fmt.Errorf("unknown segment load mode %d", opts.SegmentLoad)
 	}
-	m, err := ReadCurrentManifest(root)
+	m, err := readManifestAt(root, manifestRef)
 	if err != nil {
 		return nil, err
 	}
 	if err := m.Validate(); err != nil {
 		return nil, err
 	}
-	if opts.SchemaHash != "" && opts.SchemaHash != m.SchemaHash {
-		return nil, fmt.Errorf("schema hash mismatch: got %s, want %s", m.SchemaHash, opts.SchemaHash)
+	runtimeSchemaHash, err := core.ComputeSchemaHash(fields)
+	if err != nil {
+		return nil, err
+	}
+	if runtimeSchemaHash != m.SchemaHash {
+		return nil, fmt.Errorf("schema hash mismatch: manifest=%s runtime=%s", m.SchemaHash, runtimeSchemaHash)
 	}
 
 	fullEngine, err := loadFullEngine(root, fields, m.SchemaHash, m.Full, opts)
@@ -89,17 +110,32 @@ func LoadSnapshot(root string, fields map[core.BEField]*core.FieldMeta, opts Opt
 	return snapshot, nil
 }
 
-// ReadCurrentManifest reads CURRENT and the referenced manifest JSON.
-func ReadCurrentManifest(root string) (manifest.Manifest, error) {
+// ReadCurrentManifestRef reads and validates the non-empty reference stored in
+// CURRENT. The returned string is the exact trimmed reference used for reload
+// identity comparisons.
+func ReadCurrentManifestRef(root string) (string, error) {
 	currentBytes, err := os.ReadFile(filepath.Join(root, "CURRENT"))
 	if err != nil {
-		return manifest.Manifest{}, err
+		return "", err
 	}
 	current := strings.TrimSpace(string(currentBytes))
 	if current == "" {
-		return manifest.Manifest{}, fmt.Errorf("CURRENT is empty")
+		return "", fmt.Errorf("CURRENT is empty")
 	}
-	manifestPath := current
+	return current, nil
+}
+
+// ReadCurrentManifest reads CURRENT once and then loads that exact manifest.
+func ReadCurrentManifest(root string) (manifest.Manifest, error) {
+	manifestRef, err := ReadCurrentManifestRef(root)
+	if err != nil {
+		return manifest.Manifest{}, err
+	}
+	return readManifestAt(root, manifestRef)
+}
+
+func readManifestAt(root, manifestRef string) (manifest.Manifest, error) {
+	manifestPath := manifestRef
 	if !filepath.IsAbs(manifestPath) {
 		if filepath.Dir(manifestPath) == "." {
 			manifestPath = filepath.Join(root, "manifests", manifestPath)
@@ -118,7 +154,7 @@ func ReadCurrentManifest(root string) (manifest.Manifest, error) {
 	return m, nil
 }
 
-func loadFullEngine(root string, fields map[core.BEField]*core.FieldMeta, schemaHash string, full manifest.FullIndexDescriptor, opts Options) (*engine.BooleanEngine, error) {
+func loadFullEngine(root string, fields core.Schema, schemaHash string, full manifest.FullIndexDescriptor, opts Options) (*engine.BooleanEngine, error) {
 	segments, err := loadSegments(root, full.Path, full.Segments, schemaHash, opts)
 	if err != nil {
 		return nil, err
@@ -131,7 +167,7 @@ func loadFullEngine(root string, fields map[core.BEField]*core.FieldMeta, schema
 	return fullEngine, nil
 }
 
-func loadDeltas(root string, fields map[core.BEField]*core.FieldMeta, schemaHash string, deltas []manifest.DeltaIndexDescriptor, opts Options) ([]*engine.BooleanEngine, *core.BitmapDocSet, *core.BitmapDocSet, error) {
+func loadDeltas(root string, fields core.Schema, schemaHash string, deltas []manifest.DeltaIndexDescriptor, opts Options) ([]*engine.BooleanEngine, *core.BitmapDocSet, *core.BitmapDocSet, error) {
 	changedDocs := core.NewBitmapDocSet()
 	deletedDocs := core.NewBitmapDocSet()
 	deltaEngines := make([]*engine.BooleanEngine, 0, len(deltas))
@@ -204,10 +240,10 @@ func loadSegments(root, base string, descs []manifest.SegmentDescriptor, schemaH
 			closeSegments(segments)
 			return nil, err
 		}
-		if reader.Version() != segment.SegmentVersionV4 {
+		if reader.Version() != segment.SegmentVersionV5 {
 			_ = reader.Close()
 			closeSegments(segments)
-			return nil, fmt.Errorf("segment %s format mismatch: got segment-v%d, want segment-v%d", desc.File, reader.Version(), segment.SegmentVersionV4)
+			return nil, fmt.Errorf("segment %s format mismatch: got segment-v%d, want segment-v%d", desc.File, reader.Version(), segment.SegmentVersionV5)
 		}
 		if schemaHash != "" && reader.SchemaHash() != schemaHash {
 			_ = reader.Close()

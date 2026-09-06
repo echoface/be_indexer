@@ -1,6 +1,6 @@
 # be_indexer
 
-基于 VLDB 09 论文 *Indexing Boolean Expressions* 的高性能布尔表达式索引 SDK，提供读写分离、mmap 友好的 Segment v4，以及 full + delta 增量快照。
+基于 VLDB 09 论文 *Indexing Boolean Expressions* 的高性能布尔表达式索引 SDK，提供读写分离、mmap 友好的 Segment v5，以及 full + delta 增量快照。
 
 项目首先保证布尔规则语义、数据完整性和线上可用性，再通过 mmap zero-copy、游标归并、外排和对象复用降低延迟与内存开销。低分配是性能手段，不是削弱功能的约束。
 
@@ -76,9 +76,9 @@ flowchart LR
 import "github.com/echoface/be_indexer"
 
 // 1. Define fields
-fields := map[be_indexer.BEField]*be_indexer.FieldMeta{
-    "age":  {ID: 1, Field: "age",  FieldOption: be_indexer.FieldOption{IndexType: "ext_range", Encoder: "ext_range"}},
-    "city": {ID: 2, Field: "city", FieldOption: be_indexer.FieldOption{IndexType: "default"}},
+fields := be_indexer.Schema{
+    "age":  {IndexType: "ext_range", Encoder: "ext_range"},
+    "city": {IndexType: "default"},
 }
 
 // 2. Build documents
@@ -118,9 +118,6 @@ fullOpt := be_indexer.FullIndexBuildOption{
     Root:       "/data/index",
     Generation: 20240701,
     Fields:     fields,
-    Options: be_indexer.BuildDirectoryOptions{
-        SegmentSchemaHash: "sha256:your-schema-hash",
-    },
 }
 full, _ := be_indexer.NewFullIndexBuilder(fullOpt)
 for _, doc := range docs {
@@ -135,9 +132,6 @@ deltaOpt := be_indexer.DeltaIndexBuildOption{
     FromWatermarkExclusive: 0,
     ToWatermarkInclusive:   1 << 60,
     Fields:               fields,
-    Options: be_indexer.BuildDirectoryOptions{
-        SegmentSchemaHash: "sha256:your-schema-hash",
-    },
 }
 delta, _ := be_indexer.NewDeltaIndexBuilder(deltaOpt)
 for _, m := range mutations {
@@ -149,7 +143,7 @@ deltaDesc, _ := delta.Build()
 manifest, _ := be_indexer.NewSnapshotManifest(be_indexer.SnapshotManifestRequest{
     IndexName:  "targeting",
     Generation: 202407010001,
-    SchemaHash: "sha256:your-schema-hash",
+    Fields:     fields,
     Full:       fullDesc,
     Deltas:     []be_indexer.DeltaIndexDescriptor{deltaDesc},
 })
@@ -173,6 +167,8 @@ holder, _ := be_indexer.NewIndexHolder("/data/index", fields, be_indexer.LoaderO
 _ = holder.Reload()
 results, _ := holder.Retrieve(assignments)
 ```
+
+Manifest 引用是不可变的：`PublishManifest` 拒绝覆盖同名 manifest。`Holder.Reload` 在 CURRENT 引用未变化时直接返回，不会重新加载或 mmap segment。
 
 ---
 
@@ -275,12 +271,12 @@ A pre-built roaring64 sidecar is available as an optional storage/load optimizat
 
 ---
 
-## Segment Binary Format (v4)
+## Segment Binary Format (v5)
 
 <div style="font-family: 'SF Mono', 'Fira Code', monospace; font-size: 12px; margin: 20px 0; line-height: 1.6;">
   <div style="display: flex; flex-direction: column; gap: 0; max-width: 560px;">
     <div style="background: #e0e0e0; border: 1px solid #999; border-radius: 4px; padding: 6px 12px; font-weight: 600;">
-      MagicNumber &nbsp; <code>"BEIDX\0\0\4"</code> <span style="color: #888;">(8B)</span>
+      MagicNumber &nbsp; <code>"BEIDX\0\0\5"</code> <span style="color: #888;">(8B)</span>
     </div>
     <div style="text-align: center; color: #999;">▼</div>
     <div style="border: 2px solid #666; border-radius: 6px; padding: 10px 12px; background: #f8fdf8;">

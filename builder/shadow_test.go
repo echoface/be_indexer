@@ -22,10 +22,10 @@ func TestBuildSegmentsFromDocs_ShadowTest(t *testing.T) {
 
 	rng := rand.New(rand.NewSource(seed))
 
-	fields := map[core.BEField]*core.FieldMeta{
-		"age":  {ID: 1, Field: "age", FieldOption: core.FieldOption{Encoder: "number"}},
-		"city": {ID: 2, Field: "city", FieldOption: core.FieldOption{}},
-		"tag":  {ID: 3, Field: "tag", FieldOption: core.FieldOption{}},
+	fields := core.Schema{
+		"age":  {Encoder: "number"},
+		"city": {},
+		"tag":  {},
 	}
 
 	cities := []string{"bj", "sh", "gz", "sz", "cd", "hz"}

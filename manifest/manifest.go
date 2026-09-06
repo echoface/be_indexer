@@ -7,10 +7,9 @@ import (
 )
 
 const (
-	// FormatVersionSegmentV4 identifies snapshots whose segments use the v4
-	// physical format (Z-list embedded in-segment, schema hash, and per-block
-	// checksums). It is aligned with SegmentVersionV4 in the segment footer.
-	FormatVersionSegmentV4 = "segment-v4"
+	// FormatVersionSegmentV5 identifies snapshots whose segments use canonical,
+	// derived schema fingerprints and field names as the sole field identity.
+	FormatVersionSegmentV5 = "segment-v5"
 )
 
 // SegmentDescriptor describes an immutable segment file in an index snapshot.
@@ -136,7 +135,7 @@ func (m Manifest) Validate() error {
 
 // IsSupportedFormatVersion reports whether a manifest format version is loadable.
 func IsSupportedFormatVersion(format string) bool {
-	return format == FormatVersionSegmentV4
+	return format == FormatVersionSegmentV5
 }
 
 func validateFull(f FullIndexDescriptor) error {

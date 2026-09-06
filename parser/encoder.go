@@ -33,9 +33,10 @@ type PredicateEncoder interface {
 }
 
 // FieldCodec is the compiled runtime representation for one schema field.
-// It pairs immutable field metadata with the field's reusable encoder.
+// It binds the schema map key to its canonical option and reusable encoder.
 type FieldCodec struct {
-	Meta    core.FieldMeta
+	Field   core.BEField
+	Option  core.FieldOption
 	Encoder PredicateEncoder
 }
 
@@ -43,37 +44,37 @@ type FieldCodec struct {
 // once per schema/load and then reuse the per-field encoders instead of creating
 // encoders inside hot document/query loops.
 type SchemaCodec struct {
-	fields map[core.BEField]FieldCodec
+	fields     map[core.BEField]FieldCodec
+	schemaHash string
 }
 
-// NewSchemaCodec validates field metadata and compiles one encoder per field.
-func NewSchemaCodec(fields map[core.BEField]*core.FieldMeta) (*SchemaCodec, error) {
-	codec := &SchemaCodec{fields: make(map[core.BEField]FieldCodec, len(fields))}
-	seenIDs := make(map[uint64]core.BEField, len(fields))
-	for field, metaPtr := range fields {
-		if metaPtr == nil {
-			return nil, fmt.Errorf("field %s metadata is nil", field)
-		}
-		meta := *metaPtr
-		if meta.Field == "" {
-			meta.Field = field
-		}
-		if meta.Field != field {
-			return nil, fmt.Errorf("field key %s does not match metadata field %s", field, meta.Field)
-		}
-		if meta.ID != 0 {
-			if prev, ok := seenIDs[meta.ID]; ok {
-				return nil, fmt.Errorf("duplicate field id %d for %s and %s", meta.ID, prev, field)
-			}
-			seenIDs[meta.ID] = field
-		}
-		encoder, err := NewPredicateEncoder(meta)
+// NewSchemaCodec validates a schema and compiles one encoder per field.
+func NewSchemaCodec(schema core.Schema) (*SchemaCodec, error) {
+	codec := &SchemaCodec{fields: make(map[core.BEField]FieldCodec, len(schema))}
+	fields, err := core.NormalizeSchema(schema)
+	if err != nil {
+		return nil, err
+	}
+	for _, field := range fields {
+		encoder, err := NewPredicateEncoder(field.Field, field.Option)
 		if err != nil {
-			return nil, fmt.Errorf("field %s encoder: %w", field, err)
+			return nil, fmt.Errorf("field %s encoder: %w", field.Field, err)
 		}
-		codec.fields[field] = FieldCodec{Meta: meta, Encoder: encoder}
+		codec.fields[field.Field] = FieldCodec{Field: field.Field, Option: field.Option, Encoder: encoder}
+	}
+	codec.schemaHash, err = core.ComputeSchemaHash(schema)
+	if err != nil {
+		return nil, err
 	}
 	return codec, nil
+}
+
+// SchemaHash returns the canonical fingerprint of this compiled schema.
+func (c *SchemaCodec) SchemaHash() string {
+	if c == nil {
+		return ""
+	}
+	return c.schemaHash
 }
 
 // Field returns the compiled codec for one field.
@@ -96,24 +97,24 @@ func (c *SchemaCodec) Fields() []FieldCodec {
 	for _, fc := range c.fields {
 		out = append(out, fc)
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Meta.Field < out[j].Meta.Field })
+	sort.Slice(out, func(i, j int) bool { return out[i].Field < out[j].Field })
 	return out
 }
 
-// EncoderFactory constructs a PredicateEncoder from field metadata.
-type EncoderFactory func(meta core.FieldMeta) (PredicateEncoder, error)
+// EncoderFactory constructs a PredicateEncoder from a field and its option.
+type EncoderFactory func(field core.BEField, option core.FieldOption) (PredicateEncoder, error)
 
 var predicateEncoderFactories = map[string]EncoderFactory{}
 
 func init() {
-	RegisterPredicateEncoder(core.IndexNameDefault, func(core.FieldMeta) (PredicateEncoder, error) {
+	RegisterPredicateEncoder(core.IndexNameDefault, func(core.BEField, core.FieldOption) (PredicateEncoder, error) {
 		return newExactTermEncoder("default")
 	})
-	RegisterPredicateEncoder("number", func(core.FieldMeta) (PredicateEncoder, error) {
+	RegisterPredicateEncoder("number", func(core.BEField, core.FieldOption) (PredicateEncoder, error) {
 		return newExactTermEncoder("number")
 	})
-	RegisterPredicateEncoder(core.IndexNameACMatcher, func(core.FieldMeta) (PredicateEncoder, error) { return ACEncoder{}, nil })
-	RegisterPredicateEncoder(core.IndexNameExtendRange, func(core.FieldMeta) (PredicateEncoder, error) { return RangeEncoder{}, nil })
+	RegisterPredicateEncoder(core.IndexNameACMatcher, func(core.BEField, core.FieldOption) (PredicateEncoder, error) { return ACEncoder{}, nil })
+	RegisterPredicateEncoder(core.IndexNameExtendRange, func(core.BEField, core.FieldOption) (PredicateEncoder, error) { return RangeEncoder{}, nil })
 }
 
 // RegisterPredicateEncoder installs or replaces the encoder factory for an
@@ -124,19 +125,20 @@ func RegisterPredicateEncoder(container string, factory EncoderFactory) {
 }
 
 // NewPredicateEncoder creates the encoder specified by FieldOption.Encoder.
-// If empty, falls back to IndexType. Encoder and IndexType are independent
+// If empty, it uses the default exact-term encoder. Encoder and IndexType are independent
 // choices — Encoder describes how values become physical keys, IndexType
 // describes how those keys are stored and queried.
-func NewPredicateEncoder(meta core.FieldMeta) (PredicateEncoder, error) {
-	encoder := meta.Encoder
-	if encoder == "" {
-		encoder = core.IndexNameDefault
+func NewPredicateEncoder(field core.BEField, option core.FieldOption) (PredicateEncoder, error) {
+	normalized, err := core.NormalizeFieldOption(field, option)
+	if err != nil {
+		return nil, err
 	}
+	encoder := normalized.Encoder
 	factory, ok := predicateEncoderFactories[encoder]
 	if !ok || factory == nil {
 		return nil, fmt.Errorf("%w: %s", core.ErrUnknownContainer, encoder)
 	}
-	return factory(meta)
+	return factory(field, normalized)
 }
 
 func newExactTermEncoder(tokenizerName string) (PredicateEncoder, error) {

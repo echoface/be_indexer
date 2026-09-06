@@ -32,7 +32,7 @@ func (c *DocIDCollector) SetLiveDocs(ld *LiveDocs) {
 }
 
 // Add implements ResultCollector. Skips deleted docs if LiveDocs is set.
-func (c *DocIDCollector) Add(docID DocID, _ ConjID) {
+func (c *DocIDCollector) Add(docID DocID) {
 	if c.liveDocs != nil && !c.liveDocs.IsAlive(docID) {
 		return
 	}

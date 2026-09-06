@@ -11,7 +11,7 @@ import (
 	"github.com/echoface/be_indexer/segment"
 )
 
-func buildBenchEngine(b *testing.B, fields map[core.BEField]*core.FieldMeta, docs []*core.Document) *engine.BooleanEngine {
+func buildBenchEngine(b *testing.B, fields core.Schema, docs []*core.Document) *engine.BooleanEngine {
 	b.Helper()
 	buf := new(bytes.Buffer)
 	err := builder.BuildSegmentFromDocs(buf, fields, docs, builder.BuildSegmentFromDocsOptions{})
@@ -34,10 +34,10 @@ func buildBenchEngine(b *testing.B, fields map[core.BEField]*core.FieldMeta, doc
 // benchmark is the primary signal for the encoder/encode-once optimization.
 func BenchmarkRetrieveHighK(b *testing.B) {
 	const numFields = 8
-	fields := map[core.BEField]*core.FieldMeta{}
+	fields := core.Schema{}
 	for i := 0; i < numFields; i++ {
 		name := fmt.Sprintf("f%d", i)
-		fields[name] = &core.FieldMeta{ID: uint64(i + 1), Field: name, FieldOption: core.FieldOption{Encoder: "number"}}
+		fields[name] = core.FieldOption{Encoder: "number"}
 	}
 
 	// Documents: each conjunction includes every field, producing high-K conjunctions.

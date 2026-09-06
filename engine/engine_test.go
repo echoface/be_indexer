@@ -2,6 +2,7 @@ package engine_test
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"sort"
 	"strings"
@@ -15,23 +16,23 @@ import (
 
 // --- helpers ---
 
-func testFields() map[core.BEField]*core.FieldMeta {
-	return map[core.BEField]*core.FieldMeta{
-		"age":  {ID: 1, Field: "age", FieldOption: core.FieldOption{Encoder: "number"}},
-		"city": {ID: 2, Field: "city", FieldOption: core.FieldOption{}},
-		"tag":  {ID: 3, Field: "tag", FieldOption: core.FieldOption{}},
+func testFields() core.Schema {
+	return core.Schema{
+		"age":  {Encoder: "number"},
+		"city": {},
+		"tag":  {},
 	}
 }
 
-func simpleFields() map[core.BEField]*core.FieldMeta {
-	return map[core.BEField]*core.FieldMeta{
-		"a": {ID: 1, Field: "a", FieldOption: core.FieldOption{Encoder: "number"}},
-		"b": {ID: 2, Field: "b", FieldOption: core.FieldOption{Encoder: "number"}},
-		"c": {ID: 3, Field: "c", FieldOption: core.FieldOption{Encoder: "number"}},
+func simpleFields() core.Schema {
+	return core.Schema{
+		"a": {Encoder: "number"},
+		"b": {Encoder: "number"},
+		"c": {Encoder: "number"},
 	}
 }
 
-func buildSingleEngine(t *testing.T, fields map[core.BEField]*core.FieldMeta, docs []*core.Document) *engine.BooleanEngine {
+func buildSingleEngine(t *testing.T, fields core.Schema, docs []*core.Document) *engine.BooleanEngine {
 	t.Helper()
 	buf := new(bytes.Buffer)
 	err := builder.BuildSegmentFromDocs(buf, fields, docs, builder.BuildSegmentFromDocsOptions{})
@@ -49,8 +50,30 @@ func buildSingleEngine(t *testing.T, fields map[core.BEField]*core.FieldMeta, do
 	return eng
 }
 
+func TestNewBooleanEngineRejectsSchemaMismatch(t *testing.T) {
+	fields := core.Schema{
+		"age": {Encoder: "number"},
+	}
+	buf := new(bytes.Buffer)
+	if err := builder.BuildSegmentFromDocs(buf, fields, []*core.Document{
+		core.NewDocument(1).AddConjunction(core.NewConjunction().In("age", 18)),
+	}, builder.BuildSegmentFromDocsOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	seg, err := segment.NewSegmentReader(buf.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	mismatched := core.Schema{
+		"age": {Encoder: core.IndexNameDefault},
+	}
+	if _, err := engine.NewBooleanEngine(mismatched, []*segment.SegmentReader{seg}); err == nil {
+		t.Fatal("expected direct engine construction to reject schema mismatch")
+	}
+}
+
 // buildMultiEngine creates an engine with docs split across segments of chunkSize.
-func buildMultiEngine(t *testing.T, fields map[core.BEField]*core.FieldMeta, docs []*core.Document, chunkSize int) *engine.BooleanEngine {
+func buildMultiEngine(t *testing.T, fields core.Schema, docs []*core.Document, chunkSize int) *engine.BooleanEngine {
 	t.Helper()
 	var bufs []*bytes.Buffer
 	_, err := builder.BuildSegmentsFromDocs(
@@ -85,7 +108,7 @@ type testResultCollector struct {
 	ids []core.DocID
 }
 
-func (c *testResultCollector) Add(id core.DocID, _ core.ConjID) { c.ids = append(c.ids, id) }
+func (c *testResultCollector) Add(id core.DocID) { c.ids = append(c.ids, id) }
 
 func bitmapToSlice(b *core.BitmapDocSet) core.DocIDList {
 	if b == nil {
@@ -116,9 +139,9 @@ func (o *testObserver) OnCursorInit(int)                        { o.cursorInit++
 // ==========================================================================
 func TestEngine_BasicQuery(t *testing.T) {
 
-	fields := map[core.BEField]*core.FieldMeta{
-		"age":  {ID: 1, Field: "age", FieldOption: core.FieldOption{Encoder: "number"}},
-		"city": {ID: 2, Field: "city", FieldOption: core.FieldOption{}},
+	fields := core.Schema{
+		"age":  {Encoder: "number"},
+		"city": {},
 	}
 	docs := []*core.Document{
 		// Doc 1: K=2 (age + city)
@@ -410,10 +433,10 @@ func TestEngine_LiveDocsAllDeleted(t *testing.T) {
 // ==========================================================================
 
 func TestEngine_MultiKLevels(t *testing.T) {
-	fields := map[core.BEField]*core.FieldMeta{
-		"a": {ID: 1, Field: "a", FieldOption: core.FieldOption{Encoder: "number"}},
-		"b": {ID: 2, Field: "b", FieldOption: core.FieldOption{Encoder: "number"}},
-		"c": {ID: 3, Field: "c", FieldOption: core.FieldOption{Encoder: "number"}},
+	fields := core.Schema{
+		"a": {Encoder: "number"},
+		"b": {Encoder: "number"},
+		"c": {Encoder: "number"},
 	}
 	docs := []*core.Document{
 		core.NewDocument(1).AddConjunction(core.NewConjunction().In("a", 1).In("b", 2).In("c", 3)), // K=3
@@ -466,6 +489,15 @@ func TestEngine_RetrieveWithCollector(t *testing.T) {
 	}
 	if len(c.ids) != 1 || c.ids[0] != 1 {
 		t.Errorf("expected [1], got %v", c.ids)
+	}
+}
+
+func TestEngine_RetrieveWithCollectorRejectsNil(t *testing.T) {
+	eng := buildSingleEngine(t, simpleFields(), []*core.Document{
+		core.NewDocument(1).AddConjunction(core.NewConjunction().In("a", 25)),
+	})
+	if err := eng.RetrieveWithCollector(core.Assignments{"a": 25}, nil); !errors.Is(err, core.ErrNilResultCollector) {
+		t.Fatalf("expected ErrNilResultCollector, got %v", err)
 	}
 }
 
@@ -530,8 +562,8 @@ func TestEngine_PoolReuse(t *testing.T) {
 // ==========================================================================
 
 func TestEngine_MultiValueQuery(t *testing.T) {
-	fields := map[core.BEField]*core.FieldMeta{
-		"age": {ID: 1, Field: "age", FieldOption: core.FieldOption{Encoder: "number"}},
+	fields := core.Schema{
+		"age": {Encoder: "number"},
 	}
 	docs := []*core.Document{
 		core.NewDocument(1).AddConjunction(core.NewConjunction().In("age", 25)),
@@ -658,7 +690,7 @@ func makeBenchmarkDocs(n int, firstDocID core.DocID, valueOffset int) []*core.Do
 	return docs
 }
 
-func buildBenchmarkEngine(b *testing.B, fields map[core.BEField]*core.FieldMeta, docs []*core.Document) *engine.BooleanEngine {
+func buildBenchmarkEngine(b *testing.B, fields core.Schema, docs []*core.Document) *engine.BooleanEngine {
 	b.Helper()
 	buf := new(bytes.Buffer)
 	err := builder.BuildSegmentFromDocs(buf, fields, docs, builder.BuildSegmentFromDocsOptions{})

@@ -8,7 +8,7 @@
 //     per-field term→PostingRef table into a byte block and answer queries
 //     against it with zero-copy posting cursors.
 //  3. Register both in init() under the same name; users select it via
-//     FieldMeta.FieldOption{IndexType: IndexName}.
+//     FieldOption{IndexType: IndexName}.
 //
 // Data flow:
 //
@@ -36,7 +36,7 @@ import (
 	"github.com/echoface/be_indexer/util"
 )
 
-// IndexName selects this index/encoder pair in FieldMeta.Index.
+// IndexName selects this index/encoder pair in FieldOption.IndexType.
 const IndexName = "example_prefix"
 
 // --- encoder (build/query translation boundary) ---
@@ -217,7 +217,7 @@ func (r *PrefixIndex) MatchQuery(ctx segment.BlockContext, field core.BEField, q
 }
 
 func init() {
-	parser.RegisterPredicateEncoder(IndexName, func(core.FieldMeta) (parser.PredicateEncoder, error) {
+	parser.RegisterPredicateEncoder(IndexName, func(core.BEField, core.FieldOption) (parser.PredicateEncoder, error) {
 		return Encoder{}, nil
 	})
 	segment.RegisterIndex(IndexName, segment.IndexDef{

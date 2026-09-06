@@ -2,6 +2,7 @@ package engine_test
 
 import (
 	"bytes"
+	"errors"
 	"sort"
 	"testing"
 
@@ -13,9 +14,9 @@ import (
 
 func buildCompositeTestEngine(t *testing.T, docs []*core.Document) *engine.BooleanEngine {
 	t.Helper()
-	fields := map[core.BEField]*core.FieldMeta{
-		"a": {ID: 1, Field: "a", FieldOption: core.FieldOption{Encoder: "number"}},
-		"b": {ID: 2, Field: "b", FieldOption: core.FieldOption{Encoder: "number"}},
+	fields := core.Schema{
+		"a": {Encoder: "number"},
+		"b": {Encoder: "number"},
 	}
 	buf := new(bytes.Buffer)
 	err := builder.BuildSegmentFromDocs(buf, fields, docs, builder.BuildSegmentFromDocsOptions{})
@@ -52,6 +53,21 @@ func assertIDs(t *testing.T, got core.DocIDList, want ...core.DocID) {
 	}
 }
 
+type compositeCollector struct {
+	ids []core.DocID
+}
+
+func (c *compositeCollector) Add(id core.DocID) { c.ids = append(c.ids, id) }
+
+func collectComposite(t *testing.T, ce *engine.CompositeEngine, query core.Assignments) core.DocIDList {
+	t.Helper()
+	collector := &compositeCollector{}
+	if err := ce.RetrieveWithCollector(query, collector); err != nil {
+		t.Fatal(err)
+	}
+	return collector.ids
+}
+
 func TestCompositeEngine_UpdateStillMatchesUsesDelta(t *testing.T) {
 	full := buildCompositeTestEngine(t, []*core.Document{
 		core.NewDocument(1).AddConjunction(core.NewConjunction().In("a", 1)),
@@ -60,10 +76,10 @@ func TestCompositeEngine_UpdateStillMatchesUsesDelta(t *testing.T) {
 		core.NewDocument(1).AddConjunction(core.NewConjunction().In("a", 2)),
 	})
 	ce := engine.NewCompositeEngine(&engine.IndexSnapshot{
-		Generation:  2,
-		FullEngine:  full,
-		DeltaEngine: delta,
-		ChangedDocs: core.NewBitmapDocSet(1),
+		Generation:   2,
+		FullEngine:   full,
+		DeltaEngines: []*engine.BooleanEngine{delta},
+		ChangedDocs:  core.NewBitmapDocSet(1),
 	})
 
 	b, err := ce.Retrieve(core.Assignments{"a": 2})
@@ -89,9 +105,9 @@ func TestCompositeEngine_UpdateNoLongerMatchesRemovesFull(t *testing.T) {
 		core.NewDocument(2).AddConjunction(core.NewConjunction().In("a", 2)),
 	})
 	ce := engine.NewCompositeEngine(&engine.IndexSnapshot{
-		FullEngine:  full,
-		DeltaEngine: delta,
-		ChangedDocs: core.NewBitmapDocSet(2),
+		FullEngine:   full,
+		DeltaEngines: []*engine.BooleanEngine{delta},
+		ChangedDocs:  core.NewBitmapDocSet(2),
 	})
 
 	b, err := ce.Retrieve(core.Assignments{"a": 1})
@@ -128,9 +144,9 @@ func TestCompositeEngine_DeleteThenRecreateReturnsDelta(t *testing.T) {
 		core.NewDocument(4).AddConjunction(core.NewConjunction().In("a", 2)),
 	})
 	ce := engine.NewCompositeEngine(&engine.IndexSnapshot{
-		FullEngine:  full,
-		DeltaEngine: delta,
-		ChangedDocs: core.NewBitmapDocSet(4),
+		FullEngine:   full,
+		DeltaEngines: []*engine.BooleanEngine{delta},
+		ChangedDocs:  core.NewBitmapDocSet(4),
 		// DeletedDocs is empty because the latest mutation is recreate/upsert.
 		DeletedDocs: core.NewBitmapDocSet(),
 	})
@@ -151,9 +167,9 @@ func TestCompositeEngine_DeduplicatesFinalResult(t *testing.T) {
 		core.NewDocument(5).AddConjunction(core.NewConjunction().In("a", 1)),
 	})
 	ce := engine.NewCompositeEngine(&engine.IndexSnapshot{
-		FullEngine:  full,
-		DeltaEngine: delta,
-		ChangedDocs: core.NewBitmapDocSet(5),
+		FullEngine:   full,
+		DeltaEngines: []*engine.BooleanEngine{delta},
+		ChangedDocs:  core.NewBitmapDocSet(5),
 	})
 
 	b, err := ce.Retrieve(core.Assignments{"a": 1})
@@ -198,4 +214,51 @@ func TestCompositeEngine_ExcludeMissingSemantics(t *testing.T) {
 	}
 	ids = bitmapToSlice(b)
 	assertIDs(t, ids, 6, 7)
+}
+
+func TestCompositeEngine_RetrieveWithCollectorFinalDocIDs(t *testing.T) {
+	full := buildCompositeTestEngine(t, []*core.Document{
+		core.NewDocument(1).AddConjunction(core.NewConjunction().In("a", 1)),
+		core.NewDocument(2).AddConjunction(core.NewConjunction().In("a", 1)),
+		core.NewDocument(3).AddConjunction(core.NewConjunction().In("a", 1)),
+		core.NewDocument(4).AddConjunction(core.NewConjunction().In("a", 1)),
+	})
+	delta := buildCompositeTestEngine(t, []*core.Document{
+		// doc 1 is updated but still matches; doc 3 is recreated and matches.
+		core.NewDocument(1).AddConjunction(core.NewConjunction().In("a", 1)),
+		core.NewDocument(3).AddConjunction(core.NewConjunction().In("a", 1)),
+		// doc 4 is updated and no longer matches a=1.
+		core.NewDocument(4).AddConjunction(core.NewConjunction().In("a", 2)),
+	})
+	ce := engine.NewCompositeEngine(&engine.IndexSnapshot{
+		FullEngine:   full,
+		DeltaEngines: []*engine.BooleanEngine{delta},
+		ChangedDocs:  core.NewBitmapDocSet(1, 2, 3, 4),
+		// doc 2 is deleted; doc 3's latest state is recreate/upsert.
+		DeletedDocs: core.NewBitmapDocSet(2),
+	})
+
+	assertIDs(t, collectComposite(t, ce, core.Assignments{"a": 1}), 1, 3)
+}
+
+func TestCompositeEngine_RetrieveWithCollectorDeduplicatesAcrossDeltas(t *testing.T) {
+	delta1 := buildCompositeTestEngine(t, []*core.Document{
+		core.NewDocument(8).AddConjunction(core.NewConjunction().In("a", 1)),
+	})
+	delta2 := buildCompositeTestEngine(t, []*core.Document{
+		core.NewDocument(8).AddConjunction(core.NewConjunction().In("a", 1)),
+	})
+	ce := engine.NewCompositeEngine(&engine.IndexSnapshot{
+		DeltaEngines: []*engine.BooleanEngine{delta1, delta2},
+		ChangedDocs:  core.NewBitmapDocSet(8),
+	})
+
+	assertIDs(t, collectComposite(t, ce, core.Assignments{"a": 1}), 8)
+}
+
+func TestCompositeEngine_RetrieveWithCollectorRejectsNil(t *testing.T) {
+	ce := engine.NewCompositeEngine(&engine.IndexSnapshot{})
+	if err := ce.RetrieveWithCollector(nil, nil); !errors.Is(err, core.ErrNilResultCollector) {
+		t.Fatalf("expected ErrNilResultCollector, got %v", err)
+	}
 }

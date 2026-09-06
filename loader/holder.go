@@ -69,15 +69,16 @@ func (rs *refSnapshot) retire() {
 // high-frequency reload. The SegmentReader GC finalizer remains as a safety net
 // only, not the primary reclamation path.
 type Holder struct {
-	root   string
-	fields map[core.BEField]*core.FieldMeta
-	opts   Options
-	mu     sync.Mutex
-	cur    atomic.Value // *refSnapshot
+	root               string
+	fields             core.Schema
+	opts               Options
+	mu                 sync.Mutex
+	currentManifestRef string       // guarded by mu; manifests are immutable by reference
+	cur                atomic.Value // *refSnapshot
 }
 
 // NewHolder loads the initial index and returns a reloadable holder.
-func NewHolder(root string, fields map[core.BEField]*core.FieldMeta, opts Options) (*Holder, error) {
+func NewHolder(root string, fields core.Schema, opts Options) (*Holder, error) {
 	h := &Holder{root: root, fields: fields, opts: opts}
 	if err := h.Reload(); err != nil {
 		return nil, err
@@ -132,13 +133,21 @@ func (h *Holder) UnsafeCurrent() *engine.CompositeEngine {
 }
 
 // Reload atomically publishes a newly loaded engine and retires the previous
-// snapshot. The old snapshot's segments are unmapped once its in-flight queries
-// drain.
+// snapshot. If CURRENT still contains the already-loaded immutable manifest
+// reference, Reload is a no-op and does not reopen any segment.
 func (h *Holder) Reload() error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	ce, err := OpenIndex(h.root, h.fields, h.opts)
+	manifestRef, err := ReadCurrentManifestRef(h.root)
+	if err != nil {
+		return err
+	}
+	if manifestRef == h.currentManifestRef && h.currentRef() != nil {
+		return nil
+	}
+
+	ce, err := openIndexAt(h.root, manifestRef, h.fields, h.opts)
 	if err != nil {
 		return err
 	}
@@ -151,6 +160,7 @@ func (h *Holder) Reload() error {
 	// Publish first, then retire the old snapshot so any acquire() racing with
 	// this store observes a live snapshot to retry against.
 	h.cur.Store(newRef)
+	h.currentManifestRef = manifestRef
 	if old != nil {
 		old.retire()
 	}
@@ -171,6 +181,9 @@ func (h *Holder) Retrieve(queries core.Assignments, opts ...core.IndexOpt) (*cor
 // RetrieveWithCollector executes a query against the current engine, holding a
 // reference for the duration of the call.
 func (h *Holder) RetrieveWithCollector(queries core.Assignments, collector core.ResultCollector, opts ...core.IndexOpt) error {
+	if collector == nil {
+		return core.ErrNilResultCollector
+	}
 	rs := h.acquire()
 	if rs == nil {
 		return nil
@@ -197,6 +210,7 @@ func (h *Holder) Close() error {
 	// Drop the published reference so future acquire() sees nothing and the
 	// snapshot is closed once outstanding queries drain.
 	h.cur.Store((*refSnapshot)(nil))
+	h.currentManifestRef = ""
 	rs.retire()
 	return nil
 }

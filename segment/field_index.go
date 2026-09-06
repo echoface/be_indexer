@@ -87,7 +87,7 @@ type IndexDef struct {
 var registry = map[string]IndexDef{}
 
 // RegisterIndex installs a named index kind. kind is the value used in
-// FieldMeta.Index (e.g. "default", "ac_matcher", "ext_range").
+// FieldOption.IndexType (e.g. "default", "ac_matcher", "ext_range").
 func RegisterIndex(kind string, def IndexDef) {
 	if _, dup := registry[kind]; dup {
 		panic(fmt.Sprintf("RegisterIndex(%q): duplicate registration", kind))
@@ -125,7 +125,7 @@ func HasIndex(kind string) bool {
 	return ok
 }
 
-// ValidateFieldMetas verifies that every field's IndexType resolves to a
+// ValidateFieldOptions verifies that every field's IndexType resolves to a
 // registered index kind. An empty IndexType is treated as the default kind.
 //
 // This is the single guard that turns a missing side-effect import (e.g. a
@@ -133,14 +133,11 @@ func HasIndex(kind string) bool {
 // instead of a silent fallback to the default container at query time. The
 // parser package validates encoders but cannot see this registry (it must not
 // import segment), so IndexType validation lives here.
-func ValidateFieldMetas(metas []core.FieldMeta) error {
-	for _, meta := range metas {
-		kind := meta.IndexType
-		if kind == "" {
-			kind = core.IndexNameDefault
-		}
+func ValidateFieldOptions(fields []core.SchemaField) error {
+	for _, field := range fields {
+		kind := field.Option.IndexType
 		if !HasIndex(kind) {
-			return fmt.Errorf("field %s: %w: %q", meta.Field, core.ErrUnknownContainer, kind)
+			return fmt.Errorf("field %s: %w: %q", field.Field, core.ErrUnknownContainer, kind)
 		}
 	}
 	return nil

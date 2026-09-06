@@ -18,11 +18,9 @@ import (
 type IndexSnapshot struct {
 	Generation uint64
 
-	FullEngine  *BooleanEngine
-	DeltaEngine *BooleanEngine
+	FullEngine *BooleanEngine
 	// DeltaEngines contains per-delta engines with older delta versions filtered
-	// by later changed_docs. When present, it supersedes DeltaEngine and is needed
-	// for correct multi-delta update/update semantics.
+	// by later changed_docs.
 	DeltaEngines []*BooleanEngine
 
 	ChangedDocs *core.BitmapDocSet
@@ -78,7 +76,7 @@ func (e *CompositeEngine) Retrieve(queries core.Assignments, opts ...core.IndexO
 	// is reused directly as the accumulator; subsequent ones are Or'ed in.
 	// With no delta engine, deltaSet stays nil (Or/AndNot are nil-safe).
 	var deltaSet *core.BitmapDocSet
-	for _, deltaEngine := range s.deltaEngines() {
+	for _, deltaEngine := range s.DeltaEngines {
 		deltaResult, err := deltaEngine.Retrieve(queries, opts...)
 		if err != nil {
 			return nil, err
@@ -109,29 +107,17 @@ func (e *CompositeEngine) Retrieve(queries core.Assignments, opts ...core.IndexO
 func (e *CompositeEngine) RetrieveWithCollector(
 	queries core.Assignments, collector core.ResultCollector, opts ...core.IndexOpt,
 ) error {
+	if collector == nil {
+		return core.ErrNilResultCollector
+	}
 	result, err := e.Retrieve(queries, opts...)
 	if err != nil {
 		return err
 	}
-	if result == nil || collector == nil {
+	if result == nil {
 		return nil
 	}
-	result.ForEach(func(id core.DocID) {
-		collector.Add(id, 0)
-	})
-	return nil
-}
-
-func (s *IndexSnapshot) deltaEngines() []*BooleanEngine {
-	if s == nil {
-		return nil
-	}
-	if len(s.DeltaEngines) > 0 {
-		return s.DeltaEngines
-	}
-	if s.DeltaEngine != nil {
-		return []*BooleanEngine{s.DeltaEngine}
-	}
+	result.ForEach(collector.Add)
 	return nil
 }
 
@@ -149,9 +135,6 @@ func (s *IndexSnapshot) Close() error {
 	}
 	if s.FullEngine != nil {
 		record(s.FullEngine.Close())
-	}
-	if s.DeltaEngine != nil {
-		record(s.DeltaEngine.Close())
 	}
 	for _, de := range s.DeltaEngines {
 		record(de.Close())

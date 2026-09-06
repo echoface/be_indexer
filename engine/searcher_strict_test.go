@@ -12,8 +12,8 @@ import (
 
 func buildStrictEngine(t *testing.T) *engine.BooleanEngine {
 	t.Helper()
-	fields := map[core.BEField]*core.FieldMeta{
-		"age": {ID: 1, Field: "age", FieldOption: core.FieldOption{IndexType: core.IndexNameDefault, Encoder: "number"}},
+	fields := core.Schema{
+		"age": {IndexType: core.IndexNameDefault, Encoder: "number"},
 	}
 	docs := []*core.Document{
 		core.NewDocument(1).AddConjunction(core.NewConjunction().In("age", 18)),

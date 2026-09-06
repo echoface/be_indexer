@@ -23,9 +23,9 @@ func TestRangeShadowAgainstOracle(t *testing.T) {
 	const numQueries = 2000
 	rng := rand.New(rand.NewSource(7))
 
-	fields := map[core.BEField]*core.FieldMeta{
-		"age":  {ID: 1, Field: "age", FieldOption: core.FieldOption{IndexType: core.IndexNameExtendRange, Encoder: core.IndexNameExtendRange}},
-		"city": {ID: 2, Field: "city", FieldOption: core.FieldOption{}},
+	fields := core.Schema{
+		"age":  {IndexType: core.IndexNameExtendRange, Encoder: core.IndexNameExtendRange},
+		"city": {},
 	}
 	cities := []string{"bj", "sh", "gz"}
 
@@ -122,8 +122,8 @@ func TestRangeShadowAgainstOracle(t *testing.T) {
 // TestRangeUnboundedEdges checks GT/LT against the int64 domain extremes flow
 // through build + retrieve without overflow surprises.
 func TestRangeUnboundedEdges(t *testing.T) {
-	fields := map[core.BEField]*core.FieldMeta{
-		"v": {ID: 1, Field: "v", FieldOption: core.FieldOption{IndexType: core.IndexNameExtendRange, Encoder: core.IndexNameExtendRange}},
+	fields := core.Schema{
+		"v": {IndexType: core.IndexNameExtendRange, Encoder: core.IndexNameExtendRange},
 	}
 	doc := core.NewDocument(1)
 	doc.AddConjunction(core.NewConjunction().GreaterThan("v", 0))

@@ -15,20 +15,31 @@ import (
 	"github.com/echoface/be_indexer/core"
 )
 
-// blockKey is a dense field id used for block lookup.
-// blockKey resolution is O(1) via integer map key, avoiding hashing a field
-// string on the retrieval hot path.
-type blockKey uint16
-
-func makeBlockKey(fieldID uint16) blockKey {
-	return blockKey(fieldID)
-}
-
 // blockLookup holds pre-resolved references for a field (all K values merged).
 type blockLookup struct {
 	dict    *FlatDict
 	pl      []byte
 	readers map[string]IndexReader
+}
+
+// ResolvedField is an immutable, pre-resolved view of one field in a segment.
+// BooleanEngine resolves these views once at construction time, so retrieval
+// does not repeat field-name map lookups for every encoded query value.
+type ResolvedField struct {
+	name  core.BEField
+	block *blockLookup
+}
+
+// MatchQuery dispatches a physical query to this field's registered index.
+func (f *ResolvedField) MatchQuery(kind string, query interface{}) ([]core.PostingIterator, error) {
+	if f == nil || f.block == nil || f.block.readers == nil {
+		return nil, nil
+	}
+	reader, ok := f.block.readers[kind]
+	if !ok {
+		return nil, nil
+	}
+	return reader.MatchQuery(BlockContext{Pl: f.block.pl}, f.name, query)
 }
 
 type BlockChecksumMode int
@@ -64,8 +75,7 @@ type OpenFileOptions struct {
 type SegmentReader struct {
 	b         []byte
 	meta      *MetaBlock
-	blocks    map[blockKey]*blockLookup
-	fieldID   map[string]uint16 // field name -> dense id used in blockKey
+	fields    map[core.BEField]*ResolvedField
 	wildcards core.Entries
 	// closer releases the backing storage (e.g. munmap). It is nil for readers
 	// over caller-owned byte slices, whose memory is reclaimed by the GC.
@@ -100,11 +110,10 @@ func NewSegmentReaderWithOptions(b []byte, opts ReaderOptions) (*SegmentReader, 
 	if err := json.Unmarshal(metaBytes, &meta); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal metadata: %w", err)
 	}
-	if meta.Version != SegmentVersionV4 {
-		return nil, fmt.Errorf("unsupported segment version %d (expected v4)", meta.Version)
+	if meta.Version != SegmentVersionV5 {
+		return nil, fmt.Errorf("unsupported segment version %d (expected v5)", meta.Version)
 	}
-
-	blocks := make(map[blockKey]*blockLookup)
+	fields := make(map[core.BEField]*ResolvedField, len(meta.Fields))
 	var wildcards core.Entries
 	// Validate byte ranges before checksum metadata so malformed offsets and
 	// sizes retain their direct, deterministic diagnostics.
@@ -119,6 +128,13 @@ func NewSegmentReaderWithOptions(b []byte, opts ReaderOptions) (*SegmentReader, 
 		}
 	} else if err := verifyBlockChecksumMetadata(meta.BlockIndex); err != nil {
 		return nil, err
+	}
+	expectedSchemaHash, err := schemaHashFromFieldDumps(meta.Fields)
+	if err != nil {
+		return nil, fmt.Errorf("invalid segment schema: %w", err)
+	}
+	if meta.SchemaHash != expectedSchemaHash {
+		return nil, fmt.Errorf("segment schema hash mismatch: got %s, computed %s", meta.SchemaHash, expectedSchemaHash)
 	}
 	if meta.WildcardsBlock == "" {
 		return nil, fmt.Errorf("wildcards block is required")
@@ -136,17 +152,15 @@ func NewSegmentReaderWithOptions(b []byte, opts ReaderOptions) (*SegmentReader, 
 		return nil, fmt.Errorf("failed to parse wildcards block: %w", err)
 	}
 
-	// Assign a dense field id per declared field for the integer blockKey. The
-	// id is a uint16, so a segment declaring more than MaxDenseFieldID+1 distinct
-	// fields would wrap and alias two fields onto the same key; reject it.
-	fieldID := make(map[string]uint16, len(meta.Fields))
 	for _, fieldMeta := range meta.Fields {
-		if _, ok := fieldID[fieldMeta.Name]; !ok {
-			if len(fieldID) > MaxDenseFieldID {
-				return nil, fmt.Errorf("segment declares too many fields: %d exceeds dense field id limit %d", len(fieldID)+1, MaxDenseFieldID+1)
-			}
-			fieldID[fieldMeta.Name] = uint16(len(fieldID))
+		name := core.BEField(fieldMeta.Name)
+		if name == "" {
+			return nil, fmt.Errorf("segment declares an empty field name")
 		}
+		if _, exists := fields[name]; exists {
+			return nil, fmt.Errorf("segment declares duplicate field %q", name)
+		}
+		fields[name] = &ResolvedField{name: name, block: &blockLookup{}}
 	}
 
 	// Single O(blocks) pass: structured BlockDef carries (Field, kind).
@@ -154,16 +168,11 @@ func NewSegmentReaderWithOptions(b []byte, opts ReaderOptions) (*SegmentReader, 
 		if def.Kind == BlockKindWildcards {
 			continue // already decoded above
 		}
-		fid, ok := fieldID[def.Field]
+		resolved, ok := fields[core.BEField(def.Field)]
 		if !ok {
 			return nil, fmt.Errorf("block %s references unknown field %q", name, def.Field)
 		}
-		key := makeBlockKey(fid)
-		blk, exists := blocks[key]
-		if !exists {
-			blk = &blockLookup{}
-			blocks[key] = blk
-		}
+		blk := resolved.block
 
 		blockBytes, err := checkedBlockBytes(b, metaOffset, def)
 		if err != nil {
@@ -171,12 +180,18 @@ func NewSegmentReaderWithOptions(b []byte, opts ReaderOptions) (*SegmentReader, 
 		}
 		switch def.Kind {
 		case BlockKindDict:
+			if blk.dict != nil {
+				return nil, fmt.Errorf("field %s has duplicate %s block", def.Field, def.Kind)
+			}
 			dict, err := NewFlatDict(blockBytes)
 			if err != nil {
 				return nil, fmt.Errorf("failed to parse dict for %s: %w", name, err)
 			}
 			blk.dict = dict
 		case BlockKindPostings:
+			if blk.pl != nil {
+				return nil, fmt.Errorf("field %s has duplicate %s block", def.Field, def.Kind)
+			}
 			blk.pl = blockBytes
 		default:
 			cr, err := NewIndexReader(def.Kind, blockBytes)
@@ -186,13 +201,17 @@ func NewSegmentReaderWithOptions(b []byte, opts ReaderOptions) (*SegmentReader, 
 			if blk.readers == nil {
 				blk.readers = make(map[string]IndexReader)
 			}
+			if _, exists := blk.readers[def.Kind]; exists {
+				return nil, fmt.Errorf("field %s has duplicate %s block", def.Field, def.Kind)
+			}
 			blk.readers[def.Kind] = cr
 		}
 	}
 
 	// Ensure fields with a dict get a DictIndex with the loaded dict
 	// so IndexQuery("default", ...) works for the default path.
-	for _, blk := range blocks {
+	for _, field := range fields {
+		blk := field.block
 		if blk.dict != nil {
 			if blk.readers == nil {
 				blk.readers = make(map[string]IndexReader)
@@ -206,8 +225,7 @@ func NewSegmentReaderWithOptions(b []byte, opts ReaderOptions) (*SegmentReader, 
 	return &SegmentReader{
 		b:         b,
 		meta:      &meta,
-		blocks:    blocks,
-		fieldID:   fieldID,
+		fields:    fields,
 		wildcards: wildcards,
 	}, nil
 }
@@ -309,15 +327,14 @@ func checkedBlockBytes(b []byte, metaOffset uint64, blockDef BlockDef) ([]byte, 
 	return b[blockDef.Offset : blockDef.Offset+blockDef.Size], nil
 }
 
-// lookupBlock resolves the pre-parsed block group for the given field via the
-// dense field id, avoiding a string-keyed map lookup on the retrieval hot path.
-func (sr *SegmentReader) lookupBlock(field core.BEField) (*blockLookup, bool) {
-	fid, ok := sr.fieldID[string(field)]
-	if !ok {
+// ResolveField returns an immutable field handle. Callers on a hot path should
+// resolve once and reuse the handle for all physical query values.
+func (sr *SegmentReader) ResolveField(field core.BEField) (*ResolvedField, bool) {
+	if sr == nil {
 		return nil, false
 	}
-	blk, ok := sr.blocks[makeBlockKey(fid)]
-	return blk, ok
+	resolved, ok := sr.fields[field]
+	return resolved, ok
 }
 
 // GetPostingsByTerm returns a posting iterator for a physical term in the
@@ -338,16 +355,11 @@ func (sr *SegmentReader) GetPostingsByTerm(field core.BEField, term string) (cor
 // posting iterators. kind is the container type (e.g. "default",
 // "ac_matcher", "ext_range").
 func (sr *SegmentReader) IndexQuery(field core.BEField, kind string, query interface{}) ([]core.PostingIterator, error) {
-	blk, ok := sr.lookupBlock(field)
+	resolved, ok := sr.ResolveField(field)
 	if !ok {
 		return nil, core.ErrUnknownQueryField
 	}
-	cr, ok := blk.readers[kind]
-	if !ok {
-		return nil, nil
-	}
-	ctx := BlockContext{Pl: blk.pl}
-	return cr.MatchQuery(ctx, field, query)
+	return resolved.MatchQuery(kind, query)
 }
 
 // MultiPatternSearch performs AC automaton matching on the input text and
@@ -362,7 +374,7 @@ func (sr *SegmentReader) GetRangePostings(field core.BEField, point int64) ([]co
 	return sr.IndexQuery(field, BlockKindRange, point)
 }
 
-// SchemaHash returns the embedded schema hash for segment v4 files.
+// SchemaHash returns the embedded canonical schema hash for segment v5 files.
 func (sr *SegmentReader) SchemaHash() string {
 	if sr == nil || sr.meta == nil {
 		return ""
@@ -378,7 +390,7 @@ func (sr *SegmentReader) Version() int {
 	return sr.meta.Version
 }
 
-// Wildcards returns embedded Z-list entries for Segment v4 files.
+// Wildcards returns embedded Z-list entries for Segment v5 files.
 // The returned slice is a view into the segment's backing memory (mmap or heap);
 // it is valid only while the SegmentReader remains open and must not be modified.
 func (sr *SegmentReader) Wildcards() core.Entries {

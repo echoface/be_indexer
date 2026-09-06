@@ -76,15 +76,8 @@ hash and are **not** retained.
 ## Example
 
 ```go
-fields := map[be_indexer.BEField]*be_indexer.FieldMeta{
-    "device_id": {
-        ID:    1,
-        Field: "device_id",
-        FieldOption: be_indexer.FieldOption{
-            IndexType: "mph_dict",
-            Encoder:   "default",
-        },
-    },
+fields := be_indexer.Schema{
+    "device_id": {IndexType: "mph_dict", Encoder: "default"},
 }
 ```
 

@@ -96,15 +96,8 @@ nodeRecord (24 bytes)
 ## Example
 
 ```go
-fields := map[be_indexer.BEField]*be_indexer.FieldMeta{
-    "age": {
-        ID:    1,
-        Field: "age",
-        FieldOption: be_indexer.FieldOption{
-            IndexType: be_indexer.IndexNameExtendRange, // "ext_range"
-            Encoder:   "ext_range",                     // interval encoder
-        },
-    },
+fields := be_indexer.Schema{
+    "age": {IndexType: be_indexer.IndexNameExtendRange, Encoder: "ext_range"},
 }
 // Document predicate: age between [18, 35]; query assignment: age = 20 → matches.
 ```

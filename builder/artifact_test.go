@@ -12,9 +12,9 @@ import (
 	"github.com/echoface/be_indexer/manifest"
 )
 
-func artifactFields() map[core.BEField]*core.FieldMeta {
-	return map[core.BEField]*core.FieldMeta{
-		"a": {ID: 1, Field: "a", FieldOption: core.FieldOption{Encoder: "number"}},
+func artifactFields() core.Schema {
+	return core.Schema{
+		"a": {Encoder: "number"},
 	}
 }
 
@@ -130,7 +130,7 @@ func TestBuildArtifactThenOpenIndexEndToEnd(t *testing.T) {
 		Generation:        1,
 		SnapshotWatermark: 100,
 		Fields:            fields,
-		Options:           builder.BuildDirectoryOptions{SegmentSchemaHash: "sha256:schema"},
+		Options:           builder.BuildDirectoryOptions{},
 	}, []*core.Document{
 		core.NewDocument(1).AddConjunction(core.NewConjunction().In("a", 1)),
 		core.NewDocument(2).AddConjunction(core.NewConjunction().In("a", 1)),
@@ -142,7 +142,7 @@ func TestBuildArtifactThenOpenIndexEndToEnd(t *testing.T) {
 		FromWatermarkExclusive: 100,
 		ToWatermarkInclusive:   110,
 		Fields:                 fields,
-		Options:                builder.BuildDirectoryOptions{SegmentSchemaHash: "sha256:schema"},
+		Options:                builder.BuildDirectoryOptions{},
 	}, []builder.Mutation{
 		{DocID: 1, Version: 1, Op: builder.MutationUpsert, Document: core.NewDocument(1).AddConjunction(core.NewConjunction().In("a", 2))},
 		{DocID: 2, Version: 1, Op: builder.MutationDelete},
@@ -152,7 +152,7 @@ func TestBuildArtifactThenOpenIndexEndToEnd(t *testing.T) {
 	m, err := builder.NewSnapshotManifest(builder.SnapshotManifestRequest{
 		IndexName:  "ad-targeting-test",
 		Generation: 2,
-		SchemaHash: "sha256:schema",
+		Fields:     fields,
 		Full:       full,
 		Deltas:     []manifest.DeltaIndexDescriptor{delta},
 	})
@@ -162,7 +162,7 @@ func TestBuildArtifactThenOpenIndexEndToEnd(t *testing.T) {
 	if err := manifest.PublishManifest(root, "manifest-000002.json", m); err != nil {
 		t.Fatalf("PublishManifest failed: %v", err)
 	}
-	ce, err := loader.OpenIndex(root, fields, loader.Options{SchemaHash: "sha256:schema"})
+	ce, err := loader.OpenIndex(root, fields, loader.Options{})
 	if err != nil {
 		t.Fatalf("OpenIndex failed: %v", err)
 	}
@@ -191,7 +191,7 @@ func TestFullIndexBuilderStreamingMultiSegmentEndToEnd(t *testing.T) {
 		Generation:        1,
 		SnapshotWatermark: 100,
 		Fields:            fields,
-		Options:           builder.BuildDirectoryOptions{MaxDocsPerSegment: 2, MaxPostingsInMemory: 1, SegmentSchemaHash: "sha256:schema"},
+		Options:           builder.BuildDirectoryOptions{MaxDocsPerSegment: 2, MaxPostingsInMemory: 1},
 	}, []*core.Document{
 		core.NewDocument(1).AddConjunction(core.NewConjunction().In("a", 1)),
 		core.NewDocument(2).AddConjunction(core.NewConjunction().In("a", 1)),
@@ -203,7 +203,7 @@ func TestFullIndexBuilderStreamingMultiSegmentEndToEnd(t *testing.T) {
 	m, err := builder.NewSnapshotManifest(builder.SnapshotManifestRequest{
 		IndexName:  "stream-full-test",
 		Generation: 1,
-		SchemaHash: "sha256:schema",
+		Fields:     fields,
 		Full:       full,
 	})
 	if err != nil {
@@ -212,7 +212,7 @@ func TestFullIndexBuilderStreamingMultiSegmentEndToEnd(t *testing.T) {
 	if err := manifest.PublishManifest(root, "manifest-000001.json", m); err != nil {
 		t.Fatal(err)
 	}
-	ce, err := loader.OpenIndex(root, fields, loader.Options{SchemaHash: "sha256:schema"})
+	ce, err := loader.OpenIndex(root, fields, loader.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -228,7 +228,7 @@ func TestFullIndexBuilderStreamingMultiSegmentEndToEnd(t *testing.T) {
 	assertArtifactIDs(t, ids, 3)
 }
 
-func TestFullIndexBuilderV4EmbedsWildcards(t *testing.T) {
+func TestFullIndexBuilderV5EmbedsWildcards(t *testing.T) {
 	root := t.TempDir()
 	fields := artifactFields()
 	full := buildFull(t, builder.FullIndexBuildOption{
@@ -236,15 +236,15 @@ func TestFullIndexBuilderV4EmbedsWildcards(t *testing.T) {
 		Generation:        1,
 		SnapshotWatermark: 100,
 		Fields:            fields,
-		Options:           builder.BuildDirectoryOptions{SegmentSchemaHash: "sha256:schema", MaxDocsPerSegment: 1},
+		Options:           builder.BuildDirectoryOptions{MaxDocsPerSegment: 1},
 	}, []*core.Document{
 		core.NewDocument(100).AddConjunction(core.NewConjunction().NotIn("a", 99)),
 		core.NewDocument(1).AddConjunction(core.NewConjunction().NotIn("a", 99)),
 	})
 	m, err := builder.NewSnapshotManifest(builder.SnapshotManifestRequest{
-		IndexName:  "segment-v4-test",
+		IndexName:  "segment-v5-test",
 		Generation: 1,
-		SchemaHash: "sha256:schema",
+		Fields:     fields,
 		Full:       full,
 	})
 	if err != nil {
@@ -253,7 +253,7 @@ func TestFullIndexBuilderV4EmbedsWildcards(t *testing.T) {
 	if err := manifest.PublishManifest(root, "manifest-000001.json", m); err != nil {
 		t.Fatal(err)
 	}
-	ce, err := loader.OpenIndex(root, fields, loader.Options{SchemaHash: "sha256:schema"})
+	ce, err := loader.OpenIndex(root, fields, loader.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -277,7 +277,7 @@ func TestDeltaIndexBuilderDeleteOnly(t *testing.T) {
 		Generation:        1,
 		SnapshotWatermark: 10,
 		Fields:            fields,
-		Options:           builder.BuildDirectoryOptions{SegmentSchemaHash: "sha256:schema"},
+		Options:           builder.BuildDirectoryOptions{},
 	}, []*core.Document{core.NewDocument(9).AddConjunction(core.NewConjunction().In("a", 1))})
 
 	delta := buildDelta(t, builder.DeltaIndexBuildOption{
@@ -297,7 +297,7 @@ func TestDeltaIndexBuilderDeleteOnly(t *testing.T) {
 	m, err := builder.NewSnapshotManifest(builder.SnapshotManifestRequest{
 		IndexName:  "delete-only-test",
 		Generation: 2,
-		SchemaHash: "sha256:schema",
+		Fields:     fields,
 		Full:       full,
 		Deltas:     []manifest.DeltaIndexDescriptor{delta},
 	})
@@ -307,7 +307,7 @@ func TestDeltaIndexBuilderDeleteOnly(t *testing.T) {
 	if err := manifest.PublishManifest(root, "manifest-000002.json", m); err != nil {
 		t.Fatal(err)
 	}
-	ce, err := loader.OpenIndex(root, fields, loader.Options{SchemaHash: "sha256:schema"})
+	ce, err := loader.OpenIndex(root, fields, loader.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -433,7 +433,7 @@ func TestFullIndexBuilderFailSkipContinues(t *testing.T) {
 		SnapshotWatermark: 1,
 		Fields:            artifactFields(),
 		FailMode:          builder.FailSkip,
-		Options:           builder.BuildDirectoryOptions{SegmentSchemaHash: "sha256:schema"},
+		Options:           builder.BuildDirectoryOptions{},
 		OnSkip: func(docID core.DocID, err error) {
 			skippedIDs = append(skippedIDs, docID)
 		},
@@ -462,7 +462,7 @@ func TestFullIndexBuilderFailSkipContinues(t *testing.T) {
 	m, err := builder.NewSnapshotManifest(builder.SnapshotManifestRequest{
 		IndexName:  "failskip-test",
 		Generation: 1,
-		SchemaHash: "sha256:schema",
+		Fields:     artifactFields(),
 		Full:       full,
 	})
 	if err != nil {
@@ -471,7 +471,7 @@ func TestFullIndexBuilderFailSkipContinues(t *testing.T) {
 	if err := manifest.PublishManifest(root, "manifest-000001.json", m); err != nil {
 		t.Fatal(err)
 	}
-	ce, err := loader.OpenIndex(root, artifactFields(), loader.Options{SchemaHash: "sha256:schema"})
+	ce, err := loader.OpenIndex(root, artifactFields(), loader.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -548,7 +548,7 @@ func TestOpenIndexMultipleDeltasDeleteThenRecreate(t *testing.T) {
 		Generation:        1,
 		SnapshotWatermark: 10,
 		Fields:            fields,
-		Options:           builder.BuildDirectoryOptions{SegmentSchemaHash: "sha256:schema"},
+		Options:           builder.BuildDirectoryOptions{},
 	}, []*core.Document{core.NewDocument(7).AddConjunction(core.NewConjunction().In("a", 1))})
 
 	deleteDelta := buildDelta(t, builder.DeltaIndexBuildOption{
@@ -557,7 +557,7 @@ func TestOpenIndexMultipleDeltasDeleteThenRecreate(t *testing.T) {
 		FromWatermarkExclusive: 10,
 		ToWatermarkInclusive:   11,
 		Fields:                 fields,
-		Options:                builder.BuildDirectoryOptions{SegmentSchemaHash: "sha256:schema"},
+		Options:                builder.BuildDirectoryOptions{},
 	}, []builder.Mutation{{DocID: 7, Version: 1, Op: builder.MutationDelete}})
 
 	recreateDelta := buildDelta(t, builder.DeltaIndexBuildOption{
@@ -566,7 +566,7 @@ func TestOpenIndexMultipleDeltasDeleteThenRecreate(t *testing.T) {
 		FromWatermarkExclusive: 11,
 		ToWatermarkInclusive:   12,
 		Fields:                 fields,
-		Options:                builder.BuildDirectoryOptions{SegmentSchemaHash: "sha256:schema"},
+		Options:                builder.BuildDirectoryOptions{},
 	}, []builder.Mutation{
 		{DocID: 7, Version: 2, Op: builder.MutationUpsert, Document: core.NewDocument(7).AddConjunction(core.NewConjunction().In("a", 2))},
 	})
@@ -574,7 +574,7 @@ func TestOpenIndexMultipleDeltasDeleteThenRecreate(t *testing.T) {
 	m, err := builder.NewSnapshotManifest(builder.SnapshotManifestRequest{
 		IndexName:  "multi-delta-test",
 		Generation: 3,
-		SchemaHash: "sha256:schema",
+		Fields:     fields,
 		Full:       full,
 		Deltas:     []manifest.DeltaIndexDescriptor{deleteDelta, recreateDelta},
 	})
@@ -584,7 +584,7 @@ func TestOpenIndexMultipleDeltasDeleteThenRecreate(t *testing.T) {
 	if err := manifest.PublishManifest(root, "manifest-000003.json", m); err != nil {
 		t.Fatal(err)
 	}
-	ce, err := loader.OpenIndex(root, fields, loader.Options{SchemaHash: "sha256:schema"})
+	ce, err := loader.OpenIndex(root, fields, loader.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}

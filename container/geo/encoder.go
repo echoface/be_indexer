@@ -151,7 +151,7 @@ func validateLatLng(lat, lng float64) error {
 }
 
 func init() {
-	parser.RegisterPredicateEncoder(EncoderName, func(core.FieldMeta) (parser.PredicateEncoder, error) {
+	parser.RegisterPredicateEncoder(EncoderName, func(core.BEField, core.FieldOption) (parser.PredicateEncoder, error) {
 		return Encoder{}, nil
 	})
 }

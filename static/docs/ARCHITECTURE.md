@@ -74,7 +74,7 @@ type PostingIterator interface {   // Single posting list cursor
     Term() Term
     ReachEnd() bool
 }
-type ResultCollector interface { Add(id DocID, conj ConjID) }
+type ResultCollector interface { Add(id DocID) }
 type RetrieveObserver interface { ... }   // Instrumentation hooks
 ```
 
@@ -89,7 +89,7 @@ PostingIterator 的两个实现：
 <div style="font-family: 'SF Mono', 'Fira Code', monospace; font-size: 12px; margin: 20px 0; line-height: 1.6;">
   <div style="display: flex; flex-direction: column; gap: 0; max-width: 560px;">
     <div style="background: #e0e0e0; border: 1px solid #999; border-radius: 4px; padding: 6px 12px; font-weight: 600;">
-      MagicNumber &nbsp; <code>"BEIDX\0\0\4"</code> <span style="color: #888;">(8B)</span>
+      MagicNumber &nbsp; <code>"BEIDX\0\0\5"</code> <span style="color: #888;">(8B)</span>
     </div>
     <div style="text-align: center; color: #999;">▼</div>
     <div style="border: 2px solid #666; border-radius: 6px; padding: 10px 12px; background: #f8fdf8;">
@@ -311,8 +311,8 @@ EntryID = (ConjID << 4) | incl/excl
    I/E = 0 排除(excl) / 1 包含(incl)
 ```
 
-`KStartEntryID(k)` 返回 `k << 56`，区间 `[KStartEntryID(k), KStartEntryID(k+1))` 即同一 K 组，
-`FlatPostingList.SubViewByK` 通过两次二分定位该区间（零拷贝子视图）。
+`KStartEntryID(k)` 返回 `k << 56`，区间 `[KStartEntryID(k), KStartEntryID(k+1))` 即同一 K 组。
+当前检索路径不再按 K 创建 posting 子视图，而是在 `mergeCursors` 中从 EntryID 动态读取 K。
 
 ### 2.2 Galloping SkipTo
 
@@ -358,7 +358,7 @@ index_root/
   │   └── manifest-000001.json
   ├── full/
   │   └── full-20240701/
-  │       ├── segment-000000.bei      (mmap segment, v4)
+  │       ├── segment-000000.bei      (mmap segment, v5)
   │       ├── segment-000001.bei
   │       └── segment-000002.bei
   └── delta/
@@ -376,7 +376,7 @@ index_root/
   "index_name": "ad_targeting",
   "generation": 20240701,
   "schema_hash": "sha256:...",
-  "format_version": "segment-v4",
+  "format_version": "segment-v5",
   "full": {
     "path": "full/full-20240701",
     "segments": [{"segment_id": 0, "file": "segment-000000.bei", ...}]
@@ -395,6 +395,8 @@ index_root/
 ```
 Result = (FullResult − ChangedDocs) ∪ Σ(DeltaResult − DeletedDocs)
 ```
+
+Manifest 文件按引用 create-once，不允许同名覆盖。`Holder.Reload` 对 CURRENT 只读取一次；若引用与当前已加载引用相同则直接 no-op，否则按该精确引用构建新快照后原子发布。
 
 - `ChangedDocs` = union of all delta changed_docs — removes stale full entries
 - `DeletedDocs` = union of all delta deleted_docs — removes deleted entries
@@ -458,7 +460,7 @@ builder := segment.NewExternalBuilder(writer, runDir, segment.ExternalBuilderOpt
 |------|------|------|
 | 读写分离 | `builder` 离线产出 `segment`，`engine` 只读 mmap 段 | 构建可重放，查询无锁、并发安全 |
 | mmap 零拷贝 | `mmap` + `unsafe.Slice` 直接映射 `EntryID[]` | 避免复制大型 posting/wildcard 数据；完整 Retrieve 可保留必要的受控临时分配 |
-| K 高位编码 | K 编入 `EntryID[56:63]` | 排序即分组，免物理分桶；`SubViewByK` 二分定位 |
+| K 高位编码 | K 编入 `EntryID[56:63]` | 排序即分组，免物理分桶；归并时动态读取 K |
 | 可插拔容器 | `RegisterIndex` + `IndexReader/IndexBuilder` | `ac_matcher`/`ext_range` 及自定义容器按统一接口扩展 |
 | Wildcard 短路 | K=0 单列 Z-Entry，归并时永远命中 | 无约束文档走独立快路径 |
 | Exclude 优化 | `ShortCircuitAfter` 跳过后续游标 | 避免排除命中导致的误判匹配 |

@@ -3,7 +3,6 @@ package segment
 import (
 	"encoding/binary"
 	"fmt"
-	"sort"
 	"unsafe"
 
 	"github.com/echoface/be_indexer/core"
@@ -11,7 +10,7 @@ import (
 
 // FlatPostingList represents a memory-mapped array of EntryIDs.
 //
-// Layout (v4, 8-byte aligned):
+// Layout (v5, 8-byte aligned):
 //
 //	[Count (uint32)]
 //	[Pad   (uint32) = 0]   // makes the EntryID array start at offset 8
@@ -207,21 +206,3 @@ func (pl *FlatPostingList) Count() int { return int(pl.count) }
 
 // EntryIndex returns the i-th EntryID. Caller must ensure i < int(pl.count).
 func (pl *FlatPostingList) EntryIndex(i uint32) core.EntryID { return pl.data[i] }
-
-// SubView returns a zero-copy sub-posting-list of entries in [start, end).
-func (pl *FlatPostingList) SubView(start, end int) *FlatPostingList {
-	if start >= end {
-		return &FlatPostingList{count: 0}
-	}
-	return &FlatPostingList{count: uint32(end - start), data: pl.data[start:end]}
-}
-
-// SubViewByK returns a zero-copy sub-posting-list containing only entries
-// with conjunction size K. It uses binary search to locate the K-range
-// boundaries within the EntryID-sorted posting list.
-func (pl *FlatPostingList) SubViewByK(k int) *FlatPostingList {
-	count := int(pl.count)
-	start := sort.Search(count, func(i int) bool { return pl.data[i] >= core.KStartEntryID(k) })
-	end := sort.Search(count, func(i int) bool { return pl.data[i] >= core.KStartEntryID(k+1) })
-	return pl.SubView(start, end)
-}

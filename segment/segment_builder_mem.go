@@ -16,8 +16,7 @@ import (
 // InMemorySegmentBuilderOptions controls optional features for
 // InMemorySegmentBuilder.
 type InMemorySegmentBuilderOptions struct {
-	SchemaHash string
-	Wildcards  core.Entries
+	Wildcards core.Entries
 }
 
 // InMemorySegmentBuilder builds a complete memory-mappable segment. All
@@ -33,7 +32,6 @@ type InMemorySegmentBuilder struct {
 	w      io.Writer
 	offset uint64
 
-	schemaHash     string
 	wildcards      core.Entries
 	blockChecksums map[string]string
 	curChecksum    hash.Hash
@@ -48,7 +46,6 @@ func NewInMemorySegmentBuilderWithOptions(w io.Writer, opts InMemorySegmentBuild
 		fields:         make(map[string]FieldMetaDump),
 		builders:       make(map[string]IndexBuilder),
 		w:              w,
-		schemaHash:     opts.SchemaHash,
 		wildcards:      append(core.Entries(nil), opts.Wildcards...),
 		blockChecksums: make(map[string]string),
 	}
@@ -58,25 +55,25 @@ func (sw *InMemorySegmentBuilder) SetDocCount(count int) {
 	sw.docCount = count
 }
 
-func (sw *InMemorySegmentBuilder) SetSchemaHash(schemaHash string) {
-	sw.schemaHash = schemaHash
-}
-
 func (sw *InMemorySegmentBuilder) SetWildcards(entries core.Entries) {
 	sw.wildcards = append(sw.wildcards[:0], entries...)
 }
 
-func (sw *InMemorySegmentBuilder) AddField(meta core.FieldMeta) error {
-	name := string(meta.Field)
+func (sw *InMemorySegmentBuilder) AddField(field core.BEField, option core.FieldOption) error {
+	normalized, err := core.NormalizeFieldOption(field, option)
+	if err != nil {
+		return err
+	}
+	name := string(field)
+	if _, exists := sw.fields[name]; exists {
+		return fmt.Errorf("field %s already added", name)
+	}
 	sw.fields[name] = FieldMetaDump{
 		Name:      name,
-		ID:        meta.ID,
-		IndexType: meta.IndexType,
+		IndexType: normalized.IndexType,
+		Encoder:   normalized.Encoder,
 	}
-	indexName := meta.IndexType
-	if indexName == "" {
-		indexName = core.IndexNameDefault
-	}
+	indexName := normalized.IndexType
 	env := BuilderEnv{MaxPostingsInMemory: 0, TmpDir: ""}
 	cb, err := NewIndexBuilder(indexName, env)
 	if err != nil {
@@ -137,15 +134,19 @@ func (sw *InMemorySegmentBuilder) Write() error {
 	}
 
 	meta := MetaBlock{
-		Version:        SegmentVersionV4,
+		Version:        SegmentVersionV5,
 		DocCount:       sw.docCount,
-		SchemaHash:     sw.schemaHash,
 		BlockIndex:     blockIndex,
 		WildcardsBlock: wildcardsBlockName,
 	}
 	for _, field := range sortedFields {
 		meta.Fields = append(meta.Fields, sw.fields[field])
 	}
+	schemaHash, err := schemaHashFromFieldDumps(meta.Fields)
+	if err != nil {
+		return err
+	}
+	meta.SchemaHash = schemaHash
 
 	// Fold checksums into BlockDef entries (segmentBlockWriter already registered
 	// checksums directly; fold any remaining).

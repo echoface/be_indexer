@@ -5,6 +5,7 @@ import (
 	"io"
 	"sort"
 
+	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/echoface/be_indexer/core"
 	"github.com/echoface/be_indexer/parser"
 	"github.com/echoface/be_indexer/segment"
@@ -40,30 +41,33 @@ func (o BuildSegmentFromDocsOptions) normalizeOptions() NormalizeOptions {
 // BuildSegmentsFromDocs exports docs into one or multiple mmap segments.
 //
 // It calls newWriter for each segment (segIdx starts from 0).
-// The returned wildcard entries is the union of all segments and should be passed to BooleanEngine.
+// Every Segment v4 embeds its own wildcard entries.
 func BuildSegmentsFromDocs(
 	newWriter func(segIdx int) (io.Writer, error),
 	fieldsData map[core.BEField]*core.FieldMeta,
 	docs []*core.Document,
 	opt BuildSegmentsFromDocsOptions,
-) (core.Entries, int, error) {
+) (int, error) {
 	codec, err := parser.NewSchemaCodec(fieldsData)
 	if err != nil {
-		return nil, 0, err
+		return 0, err
+	}
+	// Validate the complete corpus before creating any writer. This makes the
+	// failure boundary identical for single- and multi-segment builds.
+	if err := validateUniqueDocIDs(docs); err != nil {
+		return 0, err
 	}
 	if opt.MaxDocsPerSegment <= 0 || opt.MaxDocsPerSegment >= len(docs) {
 		w, err := newWriter(0)
 		if err != nil {
-			return nil, 0, err
+			return 0, err
 		}
-		wildcards, err := buildSegmentFromDocsWithCodec(w, codec, docs, BuildSegmentFromDocsOptions{})
+		err = writeSegmentFromDocsWithCodec(w, codec, docs, BuildSegmentFromDocsOptions{})
 		if err != nil {
-			return nil, 0, err
+			return 0, err
 		}
-		return wildcards, 1, nil
+		return 1, nil
 	}
-
-	var allWildcards core.Entries
 	segIdx := 0
 	for start := 0; start < len(docs); start += opt.MaxDocsPerSegment {
 		end := start + opt.MaxDocsPerSegment
@@ -74,45 +78,59 @@ func BuildSegmentsFromDocs(
 
 		w, err := newWriter(segIdx)
 		if err != nil {
-			return nil, segIdx, err
+			return segIdx, err
 		}
 
 		// Reuse the single-segment path so each segment embeds a sorted
 		// __wildcards block (SetWildcards + Write). Loader recovery depends
-		// on per-segment wildcards, not only the returned union.
-		wildcards, err := buildSegmentFromDocsWithCodec(w, codec, chunk, BuildSegmentFromDocsOptions{})
+		// exclusively on these per-segment wildcard blocks.
+		err = writeSegmentFromDocsWithCodec(w, codec, chunk, BuildSegmentFromDocsOptions{})
 		if err != nil {
-			return nil, segIdx + 1, err
+			return segIdx + 1, err
 		}
-		allWildcards = append(allWildcards, wildcards...)
 		segIdx++
 	}
-
-	sort.Slice(allWildcards, func(i, j int) bool {
-		return allWildcards[i] < allWildcards[j]
-	})
-	return allWildcards, segIdx, nil
+	return segIdx, nil
 }
 
-// BuildSegmentFromDocs exports documents directly into a memory-mappable segment
-// It returns the wildcard entries that should be passed to BooleanEngine.
-func BuildSegmentFromDocs(w io.Writer, fieldsData map[core.BEField]*core.FieldMeta, docs []*core.Document) (core.Entries, error) {
-	return BuildSegmentFromDocsWithOptions(w, fieldsData, docs, BuildSegmentFromDocsOptions{})
+func validateUniqueDocIDs(docs []*core.Document) error {
+	seen := roaring64.New()
+	for _, doc := range docs {
+		if doc == nil {
+			return fmt.Errorf("nil document")
+		}
+		key := docIDKey(doc.ID)
+		if seen.Contains(key) {
+			return fmt.Errorf("duplicate doc id %d in full build", doc.ID)
+		}
+		seen.Add(key)
+	}
+	return nil
 }
 
-// BuildSegmentFromDocsWithOptions exports documents into a segment with optional
-// physical format features such as segment v2 embedded Z-list and block checksums.
-func BuildSegmentFromDocsWithOptions(w io.Writer, fieldsData map[core.BEField]*core.FieldMeta, docs []*core.Document, opts BuildSegmentFromDocsOptions) (core.Entries, error) {
+// BuildSegmentFromDocs exports documents into a v4 segment. Z-Entries and block
+// checksums are always embedded by the writer; opts carries schema metadata and
+// normalization behavior.
+func BuildSegmentFromDocs(w io.Writer, fieldsData map[core.BEField]*core.FieldMeta, docs []*core.Document, opts BuildSegmentFromDocsOptions) error {
 	codec, err := parser.NewSchemaCodec(fieldsData)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	return buildSegmentFromDocsWithCodec(w, codec, docs, opts)
 }
 
-func buildSegmentFromDocsWithCodec(w io.Writer, codec *parser.SchemaCodec, docs []*core.Document, opts BuildSegmentFromDocsOptions) (core.Entries, error) {
+func buildSegmentFromDocsWithCodec(w io.Writer, codec *parser.SchemaCodec, docs []*core.Document, opts BuildSegmentFromDocsOptions) error {
+	if err := validateUniqueDocIDs(docs); err != nil {
+		return err
+	}
+	return writeSegmentFromDocsWithCodec(w, codec, docs, opts)
+}
+
+// writeSegmentFromDocsWithCodec writes a corpus whose DocIDs were already
+// validated as globally unique by the owning build operation.
+func writeSegmentFromDocsWithCodec(w io.Writer, codec *parser.SchemaCodec, docs []*core.Document, opts BuildSegmentFromDocsOptions) error {
 	if err := validateCodecContainers(codec); err != nil {
-		return nil, err
+		return err
 	}
 	sw := segment.NewInMemorySegmentBuilderWithOptions(w, segment.InMemorySegmentBuilderOptions{
 		SchemaHash: opts.SchemaHash,
@@ -122,13 +140,13 @@ func buildSegmentFromDocsWithCodec(w io.Writer, codec *parser.SchemaCodec, docs 
 	// Config fields from the compiled schema (single source of truth).
 	for _, fc := range codec.Fields() {
 		if err := sw.AddField(fc.Meta); err != nil {
-			return nil, err
+			return err
 		}
 	}
 
 	wildcardEIDs, err := exportDocsToSegment(sw, codec, docs, opts.normalizeOptions())
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	sort.Slice(wildcardEIDs, func(i, j int) bool {
@@ -136,26 +154,14 @@ func buildSegmentFromDocsWithCodec(w io.Writer, codec *parser.SchemaCodec, docs 
 	})
 	sw.SetWildcards(wildcardEIDs)
 
-	return wildcardEIDs, sw.Write()
+	return sw.Write()
 }
 
 func exportDocsToSegment(sw *segment.InMemorySegmentBuilder, codec *parser.SchemaCodec, docs []*core.Document, normOpt NormalizeOptions) (core.Entries, error) {
 	var wildcardEIDs core.Entries
 
-	// Enforce DocID uniqueness (§4.1.5): two documents sharing a DocID would
-	// generate colliding ConjIDs and let predicates from different versions merge
-	// into a phantom conjunction. The batch path holds all docs in memory anyway,
-	// so a plain set is the cheapest guard here.
-	seen := make(map[core.DocID]struct{}, len(docs))
-
 	// Iterate over all documents
 	for _, doc := range docs {
-		if doc == nil {
-			return nil, fmt.Errorf("nil document")
-		}
-		if _, dup := seen[doc.ID]; dup {
-			return nil, fmt.Errorf("duplicate doc id %d in full build", doc.ID)
-		}
 		encoded, err := encodeDocument(codec, doc, normOpt)
 		if err != nil {
 			return nil, err
@@ -163,7 +169,6 @@ func exportDocsToSegment(sw *segment.InMemorySegmentBuilder, codec *parser.Schem
 		if err := commitEncodedDoc(sw, encoded); err != nil {
 			return nil, err
 		}
-		seen[doc.ID] = struct{}{}
 		wildcardEIDs = append(wildcardEIDs, encoded.wildcards...)
 	}
 

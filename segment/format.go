@@ -9,9 +9,6 @@ const (
 
 	wildcardsBlockName = "__wildcards"
 	checksumPrefix     = "sha256:"
-
-	// deprecated: kept for legacy references (may be removed in future cleanup)
-	SegmentVersionV3 = 3
 )
 
 // Block kind discriminators stored in BlockDef.Kind.

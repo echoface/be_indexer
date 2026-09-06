@@ -7,21 +7,6 @@ import (
 	"github.com/echoface/be_indexer/manifest"
 )
 
-func TestEntriesSidecarRoundTrip(t *testing.T) {
-	entries := core.Entries{core.EntryID(17), core.EntryID(33)}
-	data := manifest.EncodeEntries(entries)
-	if err := manifest.VerifyBytes(data, uint64(len(data)), manifest.SHA256Checksum(data)); err != nil {
-		t.Fatalf("VerifyBytes failed: %v", err)
-	}
-	got, err := manifest.DecodeEntries(data)
-	if err != nil {
-		t.Fatalf("DecodeEntries failed: %v", err)
-	}
-	if len(got) != len(entries) || got[0] != entries[0] || got[1] != entries[1] {
-		t.Fatalf("entries mismatch: got=%v want=%v", got, entries)
-	}
-}
-
 func TestDocIDsSidecarRoundTrip(t *testing.T) {
 	ids := []core.DocID{1, 9, 42}
 	data := manifest.EncodeDocIDs(ids)

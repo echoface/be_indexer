@@ -95,11 +95,6 @@ func (sw *InMemorySegmentBuilder) AddRecord(field string, record any, entries []
 	return cb.AddRecord(record, entries)
 }
 
-// AddPosting is deprecated; use AddRecord instead.
-func (sw *InMemorySegmentBuilder) AddPosting(k int, field string, term string, entries []core.EntryID) error {
-	return sw.AddRecord(field, term, entries)
-}
-
 // Write produces the final segment binary.
 func (sw *InMemorySegmentBuilder) Write() error {
 	if err := sw.writeBytes(MagicNumber); err != nil {

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 
 	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/echoface/be_indexer/core"
@@ -150,14 +149,14 @@ type FullIndexBuilder struct {
 	maxDocsPerSegment int
 
 	// current segment build state
-	segIdx     int
-	curSeg     *segmentBuild
-	segments   []manifest.SegmentDescriptor
-	docCount   int
-	skipped    int
-	state      builderState
-	fatalErr   error
-	closeOnce  bool
+	segIdx    int
+	curSeg    *segmentBuild
+	segments  []manifest.SegmentDescriptor
+	docCount  int
+	skipped   int
+	state     builderState
+	fatalErr  error
+	closeOnce bool
 
 	// seenDocs enforces global DocID uniqueness across the whole full build
 	// (§4.1.5). Duplicate DocIDs would collide in ConjID space and merge
@@ -602,7 +601,7 @@ func (b *DeltaIndexBuilder) Build() (manifest.DeltaIndexDescriptor, error) {
 		return manifest.DeltaIndexDescriptor{}, e
 	}
 
-	segments, _, err := buildSegmentsToDir(tmpDir, b.opt.Fields, plan.Documents, b.opt.Options)
+	segments, err := buildSegmentsToDir(tmpDir, b.opt.Fields, plan.Documents, b.opt.Options)
 	if err != nil {
 		return fail(err)
 	}
@@ -687,13 +686,16 @@ func NewSnapshotManifest(req SnapshotManifestRequest) (manifest.Manifest, error)
 // Internal helpers (shared by delta build path and tests).
 // --------------------------------------------------------------------------------
 
-func buildSegmentsToDir(dir string, fields map[core.BEField]*core.FieldMeta, docs []*core.Document, opts BuildDirectoryOptions) ([]manifest.SegmentDescriptor, core.Entries, error) {
+func buildSegmentsToDir(dir string, fields map[core.BEField]*core.FieldMeta, docs []*core.Document, opts BuildDirectoryOptions) ([]manifest.SegmentDescriptor, error) {
 	if len(docs) == 0 {
-		return nil, nil, nil
+		return nil, nil
 	}
 	codec, err := parser.NewSchemaCodec(fields)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
+	}
+	if err := validateUniqueDocIDs(docs); err != nil {
+		return nil, err
 	}
 	maxDocsPerSegment := opts.MaxDocsPerSegment
 	if maxDocsPerSegment <= 0 || maxDocsPerSegment > len(docs) {
@@ -701,7 +703,6 @@ func buildSegmentsToDir(dir string, fields map[core.BEField]*core.FieldMeta, doc
 	}
 
 	segments := make([]manifest.SegmentDescriptor, 0, (len(docs)+maxDocsPerSegment-1)/maxDocsPerSegment)
-	var allWildcards core.Entries
 	segIdx := 0
 	for start := 0; start < len(docs); start += maxDocsPerSegment {
 		end := start + maxDocsPerSegment
@@ -710,17 +711,17 @@ func buildSegmentsToDir(dir string, fields map[core.BEField]*core.FieldMeta, doc
 		}
 		chunk := docs[start:end]
 		buf := new(bytes.Buffer)
-		wildcards, err := buildSegmentFromDocsWithCodec(buf, codec, chunk, BuildSegmentFromDocsOptions{
+		err := writeSegmentFromDocsWithCodec(buf, codec, chunk, BuildSegmentFromDocsOptions{
 			SchemaHash:            opts.SegmentSchemaHash,
 			IgnoreUnindexedFields: opts.IgnoreUnindexedFields,
 		})
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		file := fmt.Sprintf("segment-%06d.bei", segIdx)
 		data := buf.Bytes()
 		if err := manifest.AtomicWriteFile(filepath.Join(dir, file), data, 0o644); err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		minDoc, maxDoc := docRange(chunk)
 		segments = append(segments, manifest.SegmentDescriptor{
@@ -732,11 +733,9 @@ func buildSegmentsToDir(dir string, fields map[core.BEField]*core.FieldMeta, doc
 			MinDocID:  int64(minDoc),
 			MaxDocID:  int64(maxDoc),
 		})
-		allWildcards = append(allWildcards, wildcards...)
 		segIdx++
 	}
-	sort.Slice(allWildcards, func(i, j int) bool { return allWildcards[i] < allWildcards[j] })
-	return segments, allWildcards, nil
+	return segments, nil
 }
 
 func docRange(docs []*core.Document) (core.DocID, core.DocID) {

@@ -310,9 +310,10 @@ func TestLiveDocs_Clone(t *testing.T) {
 	clone.MarkDeleted(99)
 	if !ld.IsAlive(99) {
 		t.Error("Clone mutation should not affect original")
+	}
+	// ---------------------------------------------------------------------------
 }
-// ---------------------------------------------------------------------------
-}
+
 // DocIDCollector
 // ---------------------------------------------------------------------------
 
@@ -689,7 +690,7 @@ func TestConjunction_LessThan(t *testing.T) {
 	}
 	if preds[0].Operator != ValueOptLT {
 		t.Errorf("Operator should be LT, got %v", preds[0].Operator)
-}
+	}
 
 }
 func TestConjunction_Between(t *testing.T) {
@@ -743,9 +744,9 @@ func TestConjunction_CalcConjSize_ExcludeOnly(t *testing.T) {
 
 func TestConjunction_CalcConjSize_Mixed(t *testing.T) {
 	conj := NewConjunction()
-	conj.In("age", 25)    // include → counts
+	conj.In("age", 25)       // include → counts
 	conj.NotIn("city", "bj") // exclude → doesn't count
-	conj.In("tag", "vip") // include → counts
+	conj.In("tag", "vip")    // include → counts
 
 	if size := conj.CalcConjSize(); size != 2 {
 		t.Errorf("Should have K=2, got %d", size)
@@ -851,7 +852,7 @@ func (o *testObserver) OnRetrieveStart(ctx *RetrieveContext) { o.startCount++ }
 func (o *testObserver) OnRetrieveEnd(ctx *RetrieveContext)   { o.endCount++ }
 func (o *testObserver) OnMatch(docID DocID, conjID ConjID)   { o.matchCount++ }
 func (o *testObserver) OnExcludeSkip(docID DocID)            { o.exclCount++ }
-func (o *testObserver) OnCursorInit(fieldCount int)   { o.cursorInit++ }
+func (o *testObserver) OnCursorInit(fieldCount int)          { o.cursorInit++ }
 
 // ---------------------------------------------------------------------------
 // FieldMeta & FieldOption
@@ -869,8 +870,8 @@ func TestFieldOption(t *testing.T) {
 
 func TestFieldMeta(t *testing.T) {
 	meta := FieldMeta{
-		ID:    1,
-		Field: "age",
+		ID:          1,
+		Field:       "age",
 		FieldOption: FieldOption{Encoder: "number"},
 	}
 	if meta.ID != 1 || meta.Field != "age" || meta.Encoder != "number" {
@@ -1035,7 +1036,6 @@ func TestValueExpr_OperatorName(t *testing.T) {
 	}
 }
 
-
 // ---------------------------------------------------------------------------
 // Entries helper
 // ---------------------------------------------------------------------------
@@ -1095,7 +1095,6 @@ func TestConjID_SortedByEntryID(t *testing.T) {
 	}
 }
 
-
 type testResultCollector struct {
 	ids []DocID
 }
@@ -1114,7 +1113,6 @@ func bitmapToSlice(b *BitmapDocSet) DocIDList {
 	})
 	return ids
 }
-
 
 // ---------------------------------------------------------------------------
 // LiveDocs serialization edge cases
@@ -1159,9 +1157,10 @@ func TestValueExpr_OperatorNameAll(t *testing.T) {
 		expr := ValueExpr{Operator: tc.op}
 		if name := expr.OperatorName(); name != tc.want {
 			t.Errorf("OperatorName(%d) = '%s', want '%s'", tc.op, name, tc.want)
-	}
+		}
 	}
 }
+
 // ---------------------------------------------------------------------------
 // DocIDCollector edge cases
 // ---------------------------------------------------------------------------

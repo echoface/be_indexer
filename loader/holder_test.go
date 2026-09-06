@@ -19,7 +19,7 @@ func writeSimpleIndex(t *testing.T, root, manifestName string, docValue int, gen
 	if err := os.MkdirAll(fullDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	seg, _ := writeSegment(t, fullDir, fields, []*core.Document{
+	seg := writeSegment(t, fullDir, fields, []*core.Document{
 		core.NewDocument(1).AddConjunction(core.NewConjunction().In("a", docValue)),
 	})
 	m := manifest.Manifest{
@@ -162,7 +162,7 @@ func TestHolderConcurrentReloadPublishesConsistentGeneration(t *testing.T) {
 		}()
 	}
 	wg.Wait()
-	cur := h.Current()
+	cur := h.UnsafeCurrent()
 	if cur == nil || cur.Snapshot() == nil || cur.Snapshot().Generation != 2 {
 		t.Fatalf("expected generation 2, got %#v", cur)
 	}

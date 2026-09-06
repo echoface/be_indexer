@@ -132,7 +132,7 @@ func TestExternalBuilderACMatcherAcrossRuns(t *testing.T) {
 	}
 }
 
-func TestExternalBuilderSegmentV2EmbedsWildcards(t *testing.T) {
+func TestExternalBuilderV4EmbedsWildcards(t *testing.T) {
 	buf := new(bytes.Buffer)
 	b := NewExternalBuilder(buf, t.TempDir(), ExternalBuilderOptions{
 		MaxPostingsInMemory: 1,
@@ -141,7 +141,7 @@ func TestExternalBuilderSegmentV2EmbedsWildcards(t *testing.T) {
 	})
 	b.SetDocCount(2)
 	b.AddField(core.FieldMeta{ID: 1, Field: "a", FieldOption: core.FieldOption{Encoder: "number"}})
-	if err := b.AddPosting(1, "a", "1", []core.EntryID{mkE(1, 20)}); err != nil {
+	if err := b.AddRecord("a", "1", []core.EntryID{mkE(1, 20)}); err != nil {
 		t.Fatal(err)
 	}
 	if err := b.Write(); err != nil {
@@ -152,7 +152,7 @@ func TestExternalBuilderSegmentV2EmbedsWildcards(t *testing.T) {
 		t.Fatal(err)
 	}
 	if reader.Version() != SegmentVersionV4 || reader.SchemaHash() != "sha256:schema" {
-		t.Fatalf("v3 metadata mismatch: version=%d schema=%s", reader.Version(), reader.SchemaHash())
+		t.Fatalf("v4 metadata mismatch: version=%d schema=%s", reader.Version(), reader.SchemaHash())
 	}
 	wildcards := reader.Wildcards()
 	if len(wildcards) != 2 || wildcards[0] != 10 || wildcards[1] != 30 {
@@ -160,14 +160,14 @@ func TestExternalBuilderSegmentV2EmbedsWildcards(t *testing.T) {
 	}
 }
 
-func TestExternalBuilderSegmentV2MatchesBuilderAcrossRuns(t *testing.T) {
+func TestExternalBuilderV4MatchesBuilderAcrossRuns(t *testing.T) {
 	build := func(useExternal bool) []byte {
 		buf := new(bytes.Buffer)
 		var sink interface {
 			SetDocCount(int)
 			SetWildcards(core.Entries)
 			AddField(core.FieldMeta) error
-			AddPosting(int, string, string, []core.EntryID) error
+			AddRecord(string, any, []core.EntryID) error
 			Write() error
 		}
 		if useExternal {
@@ -187,11 +187,11 @@ func TestExternalBuilderSegmentV2MatchesBuilderAcrossRuns(t *testing.T) {
 			{term: "1", entry: mkE(1, 10)},
 			{term: "1", entry: mkE(1, 20)},
 		} {
-			if err := sink.AddPosting(1, "a", posting.term, []core.EntryID{posting.entry}); err != nil {
+			if err := sink.AddRecord("a", posting.term, []core.EntryID{posting.entry}); err != nil {
 				t.Fatal(err)
 			}
 		}
-		if err := sink.AddPosting(2, "b", "9", []core.EntryID{mkE(2, 40)}); err != nil {
+		if err := sink.AddRecord("b", "9", []core.EntryID{mkE(2, 40)}); err != nil {
 			t.Fatal(err)
 		}
 		if err := sink.Write(); err != nil {
@@ -200,7 +200,7 @@ func TestExternalBuilderSegmentV2MatchesBuilderAcrossRuns(t *testing.T) {
 		return buf.Bytes()
 	}
 	if got, want := build(true), build(false); !bytes.Equal(got, want) {
-		t.Fatal("external v2 builder bytes mismatch")
+		t.Fatal("external v4 builder bytes mismatch")
 	}
 }
 
@@ -225,7 +225,7 @@ func TestExternalBuilderWildcardStreamingMatchesBuffered(t *testing.T) {
 		if err := b.AddField(core.FieldMeta{ID: 1, Field: "a", FieldOption: core.FieldOption{Encoder: "number"}}); err != nil {
 			t.Fatal(err)
 		}
-		if err := b.AddPosting(1, "a", "1", []core.EntryID{mkE(1, 20)}); err != nil {
+		if err := b.AddRecord("a", "1", []core.EntryID{mkE(1, 20)}); err != nil {
 			t.Fatal(err)
 		}
 		if useBlockFile {

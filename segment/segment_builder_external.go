@@ -113,10 +113,6 @@ func (b *ExternalBuilder) AddRecord(field string, record any, entries []core.Ent
 	return cb.AddRecord(record, entries)
 }
 
-func (b *ExternalBuilder) AddPosting(k int, field string, term string, entries []core.EntryID) error {
-	return b.AddRecord(field, term, entries)
-}
-
 func (b *ExternalBuilder) Write() error {
 	defer b.cleanupRuns()
 	if err := b.writeBytes(MagicNumber); err != nil {
@@ -199,9 +195,9 @@ func (b *ExternalBuilder) writeWildcards(blockIndex map[string]BlockDef, data []
 	}
 	b.finishBlock()
 	blockIndex[wildcardsBlockName] = BlockDef{
-		Kind: BlockKindWildcards,
+		Kind:   BlockKindWildcards,
 		Offset: wcOff,
-		Size: b.offset - wcOff,
+		Size:   b.offset - wcOff,
 	}
 	return nil
 }

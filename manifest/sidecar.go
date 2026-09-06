@@ -13,9 +13,8 @@ import (
 )
 
 const (
-	entriesSidecarMagic = "BEIENT1\x00"
-	docIDsSidecarMagic  = "BEIDOC1\x00"
-	sidecarHeaderSize   = 16 // magic(8) + count(uint64)
+	docIDsSidecarMagic = "BEIDOC1\x00"
+	sidecarHeaderSize  = 16 // magic(8) + count(uint64)
 )
 
 // SHA256Checksum returns the manifest checksum representation for data.
@@ -60,33 +59,6 @@ func ReadAndVerify(path string, expectedSize uint64, expectedChecksum string) ([
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	return data, nil
-}
-
-// EncodeEntries serializes wildcard/Z-list entries into a deterministic sidecar.
-func EncodeEntries(entries core.Entries) []byte {
-	buf := make([]byte, sidecarHeaderSize+len(entries)*8)
-	copy(buf[:8], entriesSidecarMagic)
-	binary.LittleEndian.PutUint64(buf[8:16], uint64(len(entries)))
-	for i, entry := range entries {
-		binary.LittleEndian.PutUint64(buf[sidecarHeaderSize+i*8:sidecarHeaderSize+(i+1)*8], uint64(entry))
-	}
-	return buf
-}
-
-// DecodeEntries deserializes wildcard/Z-list entries.
-func DecodeEntries(data []byte) (core.Entries, error) {
-	if len(data) < sidecarHeaderSize || string(data[:8]) != entriesSidecarMagic {
-		return nil, fmt.Errorf("invalid entries sidecar")
-	}
-	count := binary.LittleEndian.Uint64(data[8:16])
-	if count > uint64((len(data)-sidecarHeaderSize)/8) || len(data) != sidecarHeaderSize+int(count)*8 {
-		return nil, fmt.Errorf("truncated entries sidecar")
-	}
-	entries := make(core.Entries, count)
-	for i := range entries {
-		entries[i] = core.EntryID(binary.LittleEndian.Uint64(data[sidecarHeaderSize+i*8 : sidecarHeaderSize+(i+1)*8]))
-	}
-	return entries, nil
 }
 
 // EncodeDocIDs serializes a DocID set sidecar such as changed_docs or deleted_docs.

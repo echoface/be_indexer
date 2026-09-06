@@ -74,7 +74,7 @@ func TestNormalize_UnindexedIncludeFalseNegativeGuard(t *testing.T) {
 		core.NewDocument(1).AddConjunction(core.NewConjunction().In("age", 18).In("ghost", "x")),
 	}
 	buf := new(bytes.Buffer)
-	_, err := BuildSegmentFromDocs(buf, fields, docs)
+	err := BuildSegmentFromDocs(buf, fields, docs, BuildSegmentFromDocsOptions{})
 	if err == nil {
 		t.Fatal("expected build failure for unindexed include field")
 	}
@@ -162,7 +162,7 @@ func TestBatchBuild_DuplicateDocIDRejected(t *testing.T) {
 		core.NewDocument(7).AddConjunction(core.NewConjunction().In("age", 20)),
 	}
 	buf := new(bytes.Buffer)
-	_, err := BuildSegmentFromDocs(buf, fields, docs)
+	err := BuildSegmentFromDocs(buf, fields, docs, BuildSegmentFromDocsOptions{})
 	if err == nil {
 		t.Fatal("expected duplicate doc id to be rejected in batch full build")
 	}
@@ -181,7 +181,7 @@ func TestBuild_UnknownIndexTypeRejected(t *testing.T) {
 		core.NewDocument(1).AddConjunction(core.NewConjunction().In("age", 18)),
 	}
 	buf := new(bytes.Buffer)
-	_, err := BuildSegmentFromDocs(buf, fields, docs)
+	err := BuildSegmentFromDocs(buf, fields, docs, BuildSegmentFromDocsOptions{})
 	if err == nil {
 		t.Fatal("expected unknown IndexType to be rejected at build time")
 	}

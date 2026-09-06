@@ -34,7 +34,7 @@ func simpleFields() map[core.BEField]*core.FieldMeta {
 func buildSingleEngine(t *testing.T, fields map[core.BEField]*core.FieldMeta, docs []*core.Document) *engine.BooleanEngine {
 	t.Helper()
 	buf := new(bytes.Buffer)
-	wildcards, err := builder.BuildSegmentFromDocs(buf, fields, docs)
+	err := builder.BuildSegmentFromDocs(buf, fields, docs, builder.BuildSegmentFromDocsOptions{})
 	if err != nil {
 		t.Fatalf("BuildSegmentFromDocs failed: %v", err)
 	}
@@ -42,7 +42,7 @@ func buildSingleEngine(t *testing.T, fields map[core.BEField]*core.FieldMeta, do
 	if err != nil {
 		t.Fatalf("NewSegmentReader failed: %v", err)
 	}
-	eng, err := engine.NewBooleanEngine(fields, wildcards, []*segment.SegmentReader{seg})
+	eng, err := engine.NewBooleanEngine(fields, []*segment.SegmentReader{seg})
 	if err != nil {
 		t.Fatalf("NewBooleanEngine failed: %v", err)
 	}
@@ -53,7 +53,7 @@ func buildSingleEngine(t *testing.T, fields map[core.BEField]*core.FieldMeta, do
 func buildMultiEngine(t *testing.T, fields map[core.BEField]*core.FieldMeta, docs []*core.Document, chunkSize int) *engine.BooleanEngine {
 	t.Helper()
 	var bufs []*bytes.Buffer
-	wildcards, _, err := builder.BuildSegmentsFromDocs(
+	_, err := builder.BuildSegmentsFromDocs(
 		func(_ int) (io.Writer, error) {
 			b := new(bytes.Buffer)
 			bufs = append(bufs, b)
@@ -73,7 +73,7 @@ func buildMultiEngine(t *testing.T, fields map[core.BEField]*core.FieldMeta, doc
 		}
 		segs = append(segs, sr)
 	}
-	eng, err := engine.NewBooleanEngine(fields, wildcards, segs)
+	eng, err := engine.NewBooleanEngine(fields, segs)
 	if err != nil {
 		t.Fatalf("NewBooleanEngine failed: %v", err)
 	}
@@ -111,7 +111,7 @@ func (o *testObserver) OnRetrieveStart(*core.RetrieveContext)   { o.startCount++
 func (o *testObserver) OnRetrieveEnd(*core.RetrieveContext)     { o.endCount++ }
 func (o *testObserver) OnMatch(docID core.DocID, _ core.ConjID) { o.matchCount++ }
 func (o *testObserver) OnExcludeSkip(core.DocID)                { o.exclCount++ }
-func (o *testObserver) OnCursorInit(int)                   { o.cursorInit++ }
+func (o *testObserver) OnCursorInit(int)                        { o.cursorInit++ }
 
 // ==========================================================================
 func TestEngine_BasicQuery(t *testing.T) {
@@ -661,7 +661,7 @@ func makeBenchmarkDocs(n int, firstDocID core.DocID, valueOffset int) []*core.Do
 func buildBenchmarkEngine(b *testing.B, fields map[core.BEField]*core.FieldMeta, docs []*core.Document) *engine.BooleanEngine {
 	b.Helper()
 	buf := new(bytes.Buffer)
-	wildcards, err := builder.BuildSegmentFromDocs(buf, fields, docs)
+	err := builder.BuildSegmentFromDocs(buf, fields, docs, builder.BuildSegmentFromDocsOptions{})
 	if err != nil {
 		b.Fatalf("BuildSegmentFromDocs failed: %v", err)
 	}
@@ -669,7 +669,7 @@ func buildBenchmarkEngine(b *testing.B, fields map[core.BEField]*core.FieldMeta,
 	if err != nil {
 		b.Fatalf("NewSegmentReader failed: %v", err)
 	}
-	eng, err := engine.NewBooleanEngine(fields, wildcards, []*segment.SegmentReader{seg})
+	eng, err := engine.NewBooleanEngine(fields, []*segment.SegmentReader{seg})
 	if err != nil {
 		b.Fatalf("NewBooleanEngine failed: %v", err)
 	}

@@ -12,8 +12,8 @@ import (
 // can still assert on matched term strings (AC now returns posting refs, not
 // terms). Each pattern is assigned PostingRef{Offset: index+1}.
 type acHarness struct {
-	r      *ACIndex
-	byRef  map[uint64]string
+	r     *ACIndex
+	byRef map[uint64]string
 }
 
 func buildOurAC(t testing.TB, patterns []string) *acHarness {

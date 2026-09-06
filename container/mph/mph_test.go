@@ -38,7 +38,6 @@ func retrieve(t *testing.T, eng *be_indexer.Engine, assigns be_indexer.Assignmen
 	return ids
 }
 
-
 type testBW struct {
 	blocks map[string][]byte
 }
@@ -64,7 +63,7 @@ func TestContainerRoundTrip(t *testing.T) {
 			pl := mustWritePL(t, core.Entries{eid})
 
 			cb := mph.NewMPHBuilder(segment.BuilderEnv{})
-					cb.AddPosting(string("hello"), segment.PostingRef{Offset: 0, Count: 1})
+			cb.AddPosting(string("hello"), segment.PostingRef{Offset: 0, Count: 1})
 			blob, err := buildMPH(cb)
 			convey.So(err, convey.ShouldBeNil)
 
@@ -154,7 +153,7 @@ func TestContainerRoundTrip(t *testing.T) {
 
 		convey.Convey("large dictionary round-trip", func() {
 			size := 10000
-			perEntry := 16 // posting header(8) + one EntryID(8)
+			perEntry := 16                            // posting header(8) + one EntryID(8)
 			usePosting := make([]byte, size*perEntry) // header(8) + entry(8) per term
 			var off uint64 = 0
 			cb := mph.NewMPHBuilder(segment.BuilderEnv{})
@@ -203,13 +202,13 @@ func TestExtensionEndToEnd(t *testing.T) {
 
 	convey.Convey("mph e2e", t, func() {
 		buf := new(bytes.Buffer)
-		wildcards, err := be_indexer.BuildSegment(buf, fields, docs)
+		err := be_indexer.BuildSegment(buf, fields, docs, be_indexer.BuildSegmentOptions{})
 		convey.So(err, convey.ShouldBeNil)
 
 		reader, err := be_indexer.NewSegmentReader(buf.Bytes())
 		convey.So(err, convey.ShouldBeNil)
 
-		eng, err := be_indexer.NewEngine(fields, wildcards, []*be_indexer.SegmentReader{reader})
+		eng, err := be_indexer.NewEngine(fields, []*be_indexer.SegmentReader{reader})
 		convey.So(err, convey.ShouldBeNil)
 		defer eng.Close()
 
@@ -264,13 +263,13 @@ func TestLargeDictionary(t *testing.T) {
 		}
 
 		buf := new(bytes.Buffer)
-		wildcards, err := be_indexer.BuildSegment(buf, fields, docs)
+		err := be_indexer.BuildSegment(buf, fields, docs, be_indexer.BuildSegmentOptions{})
 		convey.So(err, convey.ShouldBeNil)
 
 		reader, err := be_indexer.NewSegmentReader(buf.Bytes())
 		convey.So(err, convey.ShouldBeNil)
 
-		eng, err := be_indexer.NewEngine(fields, wildcards, []*be_indexer.SegmentReader{reader})
+		eng, err := be_indexer.NewEngine(fields, []*be_indexer.SegmentReader{reader})
 		convey.So(err, convey.ShouldBeNil)
 		defer eng.Close()
 
@@ -301,13 +300,13 @@ func TestExcludePredicate(t *testing.T) {
 		}
 
 		buf := new(bytes.Buffer)
-		wildcards, err := be_indexer.BuildSegment(buf, fields, docs)
+		err := be_indexer.BuildSegment(buf, fields, docs, be_indexer.BuildSegmentOptions{})
 		convey.So(err, convey.ShouldBeNil)
 
 		reader, err := be_indexer.NewSegmentReader(buf.Bytes())
 		convey.So(err, convey.ShouldBeNil)
 
-		eng, err := be_indexer.NewEngine(fields, wildcards, []*be_indexer.SegmentReader{reader})
+		eng, err := be_indexer.NewEngine(fields, []*be_indexer.SegmentReader{reader})
 		convey.So(err, convey.ShouldBeNil)
 		defer eng.Close()
 
@@ -322,8 +321,6 @@ func TestExcludePredicate(t *testing.T) {
 		})
 	})
 }
-
-
 
 // --- benchmarks ---
 
@@ -461,4 +458,3 @@ func TestMPHQueryZeroAlloc(t *testing.T) {
 		t.Fatalf("miss query should be zero-alloc, got %f (string->[]byte conversion leaked?)", missAllocs)
 	}
 }
-

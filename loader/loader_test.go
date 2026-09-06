@@ -19,14 +19,14 @@ func loaderFields() map[core.BEField]*core.FieldMeta {
 	}
 }
 
-func writeSegment(t *testing.T, dir string, fields map[core.BEField]*core.FieldMeta, docs []*core.Document) (manifest.SegmentDescriptor, core.Entries) {
+func writeSegment(t *testing.T, dir string, fields map[core.BEField]*core.FieldMeta, docs []*core.Document) manifest.SegmentDescriptor {
 	t.Helper()
 	buf := new(bytes.Buffer)
-	wildcards, err := builder.BuildSegmentFromDocsWithOptions(buf, fields, docs, builder.BuildSegmentFromDocsOptions{SchemaHash: "sha256:schema"})
+	err := builder.BuildSegmentFromDocs(buf, fields, docs, builder.BuildSegmentFromDocsOptions{SchemaHash: "sha256:schema"})
 	if err != nil {
 		t.Fatalf("BuildSegmentFromDocs failed: %v", err)
 	}
-	return writeSegmentBytes(t, dir, buf.Bytes(), docs), wildcards
+	return writeSegmentBytes(t, dir, buf.Bytes(), docs)
 }
 
 func writeSegmentBytes(t *testing.T, dir string, data []byte, docs []*core.Document) manifest.SegmentDescriptor {
@@ -70,7 +70,6 @@ func writeManifest(t *testing.T, root string, m manifest.Manifest) {
 	}
 }
 
-
 func bitmapToSlice(b *core.BitmapDocSet) core.DocIDList {
 	if b == nil {
 		return nil
@@ -94,11 +93,11 @@ func TestOpenIndexLoadsFullDeltaSnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	fullSeg, _ := writeSegment(t, fullDir, fields, []*core.Document{
+	fullSeg := writeSegment(t, fullDir, fields, []*core.Document{
 		core.NewDocument(1).AddConjunction(core.NewConjunction().In("a", 1)),
 		core.NewDocument(2).AddConjunction(core.NewConjunction().In("a", 1)),
 	})
-	deltaSeg, _ := writeSegment(t, deltaDir, fields, []*core.Document{
+	deltaSeg := writeSegment(t, deltaDir, fields, []*core.Document{
 		core.NewDocument(1).AddConjunction(core.NewConjunction().In("a", 2)),
 	})
 	changedFile, changedChecksum := writeSidecar(t, deltaDir, "changed_docs.bin", manifest.EncodeDocIDs([]core.DocID{1}))
@@ -160,7 +159,7 @@ func TestOpenIndexRejectsChecksumMismatch(t *testing.T) {
 	if err := os.MkdirAll(fullDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	seg, _ := writeSegment(t, fullDir, fields, []*core.Document{core.NewDocument(1).AddConjunction(core.NewConjunction().In("a", 1))})
+	seg := writeSegment(t, fullDir, fields, []*core.Document{core.NewDocument(1).AddConjunction(core.NewConjunction().In("a", 1))})
 	seg.Checksum = "sha256:bad"
 	writeManifest(t, root, manifest.Manifest{
 		ManifestVersion: 1,
@@ -188,7 +187,7 @@ func TestOpenIndexRejectsSchemaMismatch(t *testing.T) {
 	if err := os.MkdirAll(fullDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	seg, _ := writeSegment(t, fullDir, fields, []*core.Document{core.NewDocument(1).AddConjunction(core.NewConjunction().In("a", 1))})
+	seg := writeSegment(t, fullDir, fields, []*core.Document{core.NewDocument(1).AddConjunction(core.NewConjunction().In("a", 1))})
 	writeManifest(t, root, manifest.Manifest{
 		ManifestVersion: 1,
 		IndexName:       "test-index",
@@ -219,9 +218,9 @@ func TestOpenIndexMultipleDeltasUpdateOverridesOlderDelta(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	fullSeg, _ := writeSegment(t, fullDir, fields, []*core.Document{core.NewDocument(7).AddConjunction(core.NewConjunction().In("a", 0))})
-	delta2Seg, _ := writeSegment(t, delta2Dir, fields, []*core.Document{core.NewDocument(7).AddConjunction(core.NewConjunction().In("a", 1))})
-	delta3Seg, _ := writeSegment(t, delta3Dir, fields, []*core.Document{core.NewDocument(7).AddConjunction(core.NewConjunction().In("a", 2))})
+	fullSeg := writeSegment(t, fullDir, fields, []*core.Document{core.NewDocument(7).AddConjunction(core.NewConjunction().In("a", 0))})
+	delta2Seg := writeSegment(t, delta2Dir, fields, []*core.Document{core.NewDocument(7).AddConjunction(core.NewConjunction().In("a", 1))})
+	delta3Seg := writeSegment(t, delta3Dir, fields, []*core.Document{core.NewDocument(7).AddConjunction(core.NewConjunction().In("a", 2))})
 	delta2ChangedFile, delta2ChangedChecksum := writeSidecar(t, delta2Dir, "changed_docs.bin", manifest.EncodeDocIDs([]core.DocID{7}))
 	delta2DeletedFile, delta2DeletedChecksum := writeSidecar(t, delta2Dir, "deleted_docs.bin", manifest.EncodeDocIDs(nil))
 	delta3ChangedFile, delta3ChangedChecksum := writeSidecar(t, delta3Dir, "changed_docs.bin", manifest.EncodeDocIDs([]core.DocID{7}))
@@ -281,7 +280,7 @@ func TestOpenIndexWithMmap(t *testing.T) {
 	if err := os.MkdirAll(fullDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	fullSeg, _ := writeSegment(t, fullDir, fields, []*core.Document{
+	fullSeg := writeSegment(t, fullDir, fields, []*core.Document{
 		core.NewDocument(1).AddConjunction(core.NewConjunction().In("a", 1)),
 		core.NewDocument(2).AddConjunction(core.NewConjunction().In("a", 1)),
 		core.NewDocument(3).AddConjunction(core.NewConjunction().In("a", 2)),
@@ -302,7 +301,7 @@ func TestOpenIndexWithMmap(t *testing.T) {
 	}
 	writeManifest(t, root, m)
 
-	ce, err := loader.OpenIndex(root, fields, loader.Options{SchemaHash: "sha256:schema", UseMmap: true})
+	ce, err := loader.OpenIndex(root, fields, loader.Options{SchemaHash: "sha256:schema", SegmentLoad: loader.SegmentLoadMmapVerify})
 	if err != nil {
 		t.Fatalf("OpenIndex(mmap) failed: %v", err)
 	}
@@ -321,5 +320,142 @@ func TestOpenIndexWithMmap(t *testing.T) {
 	}
 	if err := ce.Close(); err != nil {
 		t.Fatalf("second close failed: %v", err)
+	}
+}
+
+func TestOpenIndexWithMmapVerifiesBlockChecksumByDefault(t *testing.T) {
+	root := t.TempDir()
+	fields := loaderFields()
+	fullDir := filepath.Join(root, "full", "full-000001")
+	if err := os.MkdirAll(fullDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	seg := writeSegment(t, fullDir, fields, []*core.Document{
+		core.NewDocument(1).AddConjunction(core.NewConjunction().In("a", 1)),
+	})
+
+	// Flip an EntryID payload byte without changing the file size or metadata.
+	// The segment remains structurally parseable, so only content verification
+	// can detect this corruption.
+	path := filepath.Join(fullDir, seg.File)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(data) <= 16 {
+		t.Fatalf("segment unexpectedly short: %d", len(data))
+	}
+	data[16] ^= 0x02
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	writeManifest(t, root, manifest.Manifest{
+		ManifestVersion: 1,
+		IndexName:       "mmap-checksum-test",
+		Generation:      1,
+		SchemaHash:      "sha256:schema",
+		FormatVersion:   manifest.FormatVersionSegmentV4,
+		PostingEncoding: "conjid64-entryid64-v1",
+		Full: manifest.FullIndexDescriptor{
+			Generation:        1,
+			SnapshotWatermark: 1,
+			Path:              "full/full-000001",
+			Segments:          []manifest.SegmentDescriptor{seg},
+		},
+	})
+
+	if _, err := loader.OpenIndex(root, fields, loader.Options{SchemaHash: "sha256:schema", SegmentLoad: loader.SegmentLoadMmapVerify}); err == nil {
+		t.Fatal("default mmap load must reject corrupted block payload")
+	}
+
+	// Fast-start is an explicit trust tradeoff: structure and size are checked,
+	// but payload hashes are not recomputed in the serving process.
+	ce, err := loader.OpenIndex(root, fields, loader.Options{
+		SchemaHash:  "sha256:schema",
+		SegmentLoad: loader.SegmentLoadMmapTrustPublished,
+	})
+	if err != nil {
+		t.Fatalf("explicit fast-start load failed: %v", err)
+	}
+	if err := ce.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestOpenIndexWithMmapRejectsManifestSizeMismatch(t *testing.T) {
+	root := t.TempDir()
+	fields := loaderFields()
+	fullDir := filepath.Join(root, "full", "full-000001")
+	if err := os.MkdirAll(fullDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	seg := writeSegment(t, fullDir, fields, []*core.Document{
+		core.NewDocument(1).AddConjunction(core.NewConjunction().In("a", 1)),
+	})
+	seg.Size++
+	writeManifest(t, root, manifest.Manifest{
+		ManifestVersion: 1,
+		IndexName:       "mmap-size-test",
+		Generation:      1,
+		SchemaHash:      "sha256:schema",
+		FormatVersion:   manifest.FormatVersionSegmentV4,
+		PostingEncoding: "conjid64-entryid64-v1",
+		Full: manifest.FullIndexDescriptor{
+			Generation:        1,
+			SnapshotWatermark: 1,
+			Path:              "full/full-000001",
+			Segments:          []manifest.SegmentDescriptor{seg},
+		},
+	})
+
+	_, err := loader.OpenIndex(root, fields, loader.Options{
+		SchemaHash:  "sha256:schema",
+		SegmentLoad: loader.SegmentLoadMmapTrustPublished,
+	})
+	if err == nil {
+		t.Fatal("mmap load must reject a manifest/file size mismatch")
+	}
+}
+
+func TestLoadSnapshotFailureAfterFullLoadCanBeRepeated(t *testing.T) {
+	root := t.TempDir()
+	fields := loaderFields()
+	fullDir := filepath.Join(root, "full", "full-000001")
+	if err := os.MkdirAll(fullDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fullSeg := writeSegment(t, fullDir, fields, []*core.Document{
+		core.NewDocument(1).AddConjunction(core.NewConjunction().In("a", 1)),
+	})
+	writeManifest(t, root, manifest.Manifest{
+		ManifestVersion: 1,
+		IndexName:       "failed-load-cleanup-test",
+		Generation:      2,
+		SchemaHash:      "sha256:schema",
+		FormatVersion:   manifest.FormatVersionSegmentV4,
+		PostingEncoding: "conjid64-entryid64-v1",
+		Full: manifest.FullIndexDescriptor{
+			Generation:        1,
+			SnapshotWatermark: 1,
+			Path:              "full/full-000001",
+			Segments:          []manifest.SegmentDescriptor{fullSeg},
+		},
+		Deltas: []manifest.DeltaIndexDescriptor{{
+			Generation:             2,
+			FromWatermarkExclusive: 1,
+			ToWatermarkInclusive:   2,
+			Path:                   "delta/delta-000002",
+			ChangedDocsFile:        "missing-changed.bin",
+			ChangedDocsChecksum:    "sha256:missing",
+		}},
+	})
+
+	// Exercise the path where full mmap loading succeeds and delta loading then
+	// fails. Repeating it guards the ownership/cleanup path used by failed reloads.
+	for i := 0; i < 20; i++ {
+		if _, err := loader.LoadSnapshot(root, fields, loader.Options{SchemaHash: "sha256:schema", SegmentLoad: loader.SegmentLoadMmapVerify}); err == nil {
+			t.Fatal("expected delta load failure")
+		}
 	}
 }

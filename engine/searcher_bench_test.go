@@ -14,7 +14,7 @@ import (
 func buildBenchEngine(b *testing.B, fields map[core.BEField]*core.FieldMeta, docs []*core.Document) *engine.BooleanEngine {
 	b.Helper()
 	buf := new(bytes.Buffer)
-	wildcards, err := builder.BuildSegmentFromDocs(buf, fields, docs)
+	err := builder.BuildSegmentFromDocs(buf, fields, docs, builder.BuildSegmentFromDocsOptions{})
 	if err != nil {
 		b.Fatalf("BuildSegmentFromDocs failed: %v", err)
 	}
@@ -22,7 +22,7 @@ func buildBenchEngine(b *testing.B, fields map[core.BEField]*core.FieldMeta, doc
 	if err != nil {
 		b.Fatalf("NewSegmentReader failed: %v", err)
 	}
-	eng, err := engine.NewBooleanEngine(fields, wildcards, []*segment.SegmentReader{seg})
+	eng, err := engine.NewBooleanEngine(fields, []*segment.SegmentReader{seg})
 	if err != nil {
 		b.Fatalf("NewBooleanEngine failed: %v", err)
 	}

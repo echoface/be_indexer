@@ -19,7 +19,7 @@
 | **Z-Entry (Wildcard)** | `WildcardFieldName = "_Z_"` | K=0 的 Conjunction 产生的 EntryID。无 Include 约束，永远命中。索引引擎和段存储中统称为 wildcard。 |
 | **ConjID** | `ConjID` | 描述一个 Conjunction 身份的 64 位整数，编码了 K、DocID、子句 Index 和负号位。 |
 | **EntryID** | `EntryID` | 唯一标识一个倒排条目，基于 ConjID 增加了 Include/Exclude (1 bit) 信息。K 编码在 bits 56-63。 |
-| **Posting List** | `TermIterator` / `PostingIterator` | `core` 包中的倒排迭代器接口，`SliceIterator`（内存）和 `flatPostingCursor`（mmap）均实现此接口。`FieldCursor` 封装若干个 PostingIterator 做多路归并。 |
+| **Posting List** | `PostingIterator` | `core` 包中的倒排迭代器接口，`SliceIterator`（内存）和 `flatPostingCursor`（mmap）均实现此接口。`FieldCursor` 封装若干个 PostingIterator 做多路归并。 |
 
 ## Build & Test
 

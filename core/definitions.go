@@ -21,12 +21,12 @@ const (
 )
 
 var (
-	ErrFieldNotConfigured    = errors.New("field not configured")
+	ErrFieldNotConfigured     = errors.New("field not configured")
 	ErrFieldContainerRequired = errors.New("field container required")
-	ErrUnknownContainer      = errors.New("unknown field container")
-	ErrUnsupportedPredicate  = errors.New("unsupported predicate")
-	ErrUnknownQueryField     = errors.New("unknown query field")
-	ErrFieldIndexMissing     = errors.New("field index missing")
+	ErrUnknownContainer       = errors.New("unknown field container")
+	ErrUnsupportedPredicate   = errors.New("unsupported predicate")
+	ErrUnknownQueryField      = errors.New("unknown query field")
+	ErrFieldIndexMissing      = errors.New("field index missing")
 )
 
 // --------------------------------------------------------------------------------
@@ -83,6 +83,7 @@ type RetrieveObserver interface {
 type FieldErrorObserver interface {
 	OnFieldError(field BEField, err error)
 }
+
 // --------------------------------------------------------------------------------
 // Retrieval Context
 // --------------------------------------------------------------------------------
@@ -92,7 +93,7 @@ type RetrieveContext struct {
 	DumpStepInfo bool
 	// StrictQuery controls how per-field query errors (encoder or container
 	// lookup failures) are handled. Default (false) is lenient: an errored field
-	// is skipped and retrieval continues, preserving historical behavior. When
+	// is skipped and retrieval continues. When
 	// true, the first field error aborts retrieval and is returned to the caller.
 	StrictQuery bool
 	Collector   ResultCollector
@@ -124,18 +125,15 @@ type Term struct {
 
 var WildcardTerm = NewTerm(WildcardFieldName, 0)
 
-// TermIterator is the minimal cursor abstraction for a single posting list.
+// PostingIterator is the minimal cursor abstraction for a single posting list.
 // Both in-memory (SliceIterator) and mmap (flatPostingCursor) implement this.
-type TermIterator interface {
+type PostingIterator interface {
 	Current() EntryID
 	SkipTo(target EntryID) EntryID
 	Term() Term
 	// ReachEnd reports whether the iterator has exhausted its posting list.
 	ReachEnd() bool
 }
-
-// PostingIterator is an alias for TermIterator.
-type PostingIterator = TermIterator
 
 // NewTerm creates a Term for a field/value pair.
 func NewTerm(field BEField, v interface{}) Term {

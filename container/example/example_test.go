@@ -24,7 +24,6 @@ func mustWritePL(t *testing.T, entries core.Entries) []byte {
 	return b
 }
 
-
 type testBW struct {
 	blocks map[string][]byte
 }
@@ -52,10 +51,10 @@ func TestContainerRoundTrip(t *testing.T) {
 		plB := mustWritePL(t, core.Entries{eidB})
 		postingBlock := append(append([]byte{}, plA...), plB...)
 
-	cb := example.NewPrefixBuilder(segment.BuilderEnv{})
-	cb.AddPosting("/api", segment.PostingRef{Offset: 0, Count: 1})
-	cb.AddPosting("/static", segment.PostingRef{Offset: uint64(len(plA)), Count: 1})
-	blob, err := buildPrefix(cb)
+		cb := example.NewPrefixBuilder(segment.BuilderEnv{})
+		cb.AddPosting("/api", segment.PostingRef{Offset: 0, Count: 1})
+		cb.AddPosting("/static", segment.PostingRef{Offset: uint64(len(plA)), Count: 1})
+		blob, err := buildPrefix(cb)
 		convey.So(err, convey.ShouldBeNil)
 
 		cr, err := example.NewPrefixReader(blob)
@@ -121,7 +120,7 @@ func TestExtensionEndToEnd(t *testing.T) {
 	}
 
 	buf := new(bytes.Buffer)
-	wildcards, err := be_indexer.BuildSegment(buf, fields, docs)
+	err := be_indexer.BuildSegment(buf, fields, docs, be_indexer.BuildSegmentOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,7 +128,7 @@ func TestExtensionEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	eng, err := be_indexer.NewEngine(fields, wildcards, []*be_indexer.SegmentReader{reader})
+	eng, err := be_indexer.NewEngine(fields, []*be_indexer.SegmentReader{reader})
 	if err != nil {
 		t.Fatal(err)
 	}

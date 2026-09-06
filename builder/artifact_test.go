@@ -228,7 +228,7 @@ func TestFullIndexBuilderStreamingMultiSegmentEndToEnd(t *testing.T) {
 	assertArtifactIDs(t, ids, 3)
 }
 
-func TestFullIndexBuilderSegmentV2EmbedsWildcards(t *testing.T) {
+func TestFullIndexBuilderV4EmbedsWildcards(t *testing.T) {
 	root := t.TempDir()
 	fields := artifactFields()
 	full := buildFull(t, builder.FullIndexBuildOption{
@@ -242,7 +242,7 @@ func TestFullIndexBuilderSegmentV2EmbedsWildcards(t *testing.T) {
 		core.NewDocument(1).AddConjunction(core.NewConjunction().NotIn("a", 99)),
 	})
 	m, err := builder.NewSnapshotManifest(builder.SnapshotManifestRequest{
-		IndexName:  "segment-v2-test",
+		IndexName:  "segment-v4-test",
 		Generation: 1,
 		SchemaHash: "sha256:schema",
 		Full:       full,

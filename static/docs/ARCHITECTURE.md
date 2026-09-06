@@ -1,6 +1,6 @@
-# Architecture Design
+# 架构设计
 
-This document covers the internal architecture, core algorithms, physical layout, and extension mechanisms of be_indexer.
+本文描述 be_indexer 的内部架构、核心算法、物理布局和扩展机制。设计目标按优先级依次是：布尔语义正确、索引能力完整、线上生命周期可靠，以及在真实负载下获得高吞吐和低延迟。mmap zero-copy、低分配和对象复用是实现性能目标的手段。
 
 ## 1. Layered Architecture
 
@@ -30,7 +30,7 @@ This document covers the internal architecture, core algorithms, physical layout
   </div>
 </div>
 
-### 1.0 Layer Stack & Dependency Direction
+### 1.0 分层与依赖方向
 
 依赖单向向下（上层依赖下层，下层不感知上层）。`core` 处于最底层，仅定义类型与接口，无业务逻辑。
 
@@ -56,7 +56,7 @@ be_indexer (公共 API / 类型重导出 / 工厂函数)
 
 ### 1.1 core — Foundation Types
 
-Stateless type definitions only. No business logic.
+`core` 提供最底层类型、ID 编解码、游标和结果集合，不依赖上层业务包。
 
 ```go
 type BEField  string            // Field identifier
@@ -68,7 +68,7 @@ type EntryID  uint64            // Posting list entry (packed)
 Key interfaces:
 
 ```go
-type TermIterator interface {   // Single posting list cursor
+type PostingIterator interface {   // Single posting list cursor
     Current() EntryID
     SkipTo(target EntryID) EntryID
     Term() Term
@@ -78,7 +78,7 @@ type ResultCollector interface { Add(id DocID, conj ConjID) }
 type RetrieveObserver interface { ... }   // Instrumentation hooks
 ```
 
-Two implementations of TermIterator:
+PostingIterator 的两个实现：
 - `SliceIterator` — wraps `[]EntryID` with galloping (exponential+)binary search SkipTo
 - `flatPostingCursor` — mmap zero-copy view with same galloping SkipTo
 
@@ -148,10 +148,13 @@ flowchart TD
 
 #### Containers
 
-Pluggable index structures registered via:
+可插拔索引通过注册表接入：
 
 ```go
-segment.RegisterContainer(name string, builder ContainerBuilder, reader ContainerReader)
+segment.RegisterIndex(kind, segment.IndexDef{
+    Reader:  readerFactory,
+    Builder: builderFactory,
+})
 ```
 
 Built-in containers:
@@ -203,10 +206,9 @@ Retrieve(assignments)
         └── Single-pass multiway merge, K read from EntryID dynamically
 ```
 
-`initCursors` 依据 `EncodedQuery.Kind` 路由到不同段访问路径：`Term` → `GetPostingsByTerm`，
-`Range` → `GetRangePostings`，`AC` → `MultiPatternSearch`，其余自定义类型落入 `default` 分支经
-`ContainerQuery` 分发。所有路径返回的 `PostingIterator` 统一封装进 `FieldCursor`，由内部 min-heap
-做懒归并（与字段游标完全一致的模式）。
+`initCursors` 通过字段 Schema 的 `IndexType` 调用统一的 `SegmentReader.IndexQuery`，再由已注册的
+`IndexReader.MatchQuery` 完成 default、range、AC 或自定义容器查询。所有路径返回的
+`PostingIterator` 都封装进 `FieldCursor`，由内部 min-heap 做懒归并。
 
 #### mergeCursors Algorithm
 
@@ -248,7 +250,7 @@ OpenIndex(root, fields, opts)
   ├── ReadCurrentManifest(root) → Manifest
   ├── loadFullEngine(root, fields, full, opts)
   │     ├── loadSegments → []*SegmentReader
-  │     └── NewBooleanEngine(fields, nil, segments)  // wildcards from segments directly
+  │     └── NewBooleanEngine(fields, segments)  // wildcards from segments directly
   ├── loadDeltas(root, fields, deltas, opts)
   │     ├── Per delta: loadSegments, changed_docs, deleted_docs
   │     ├── Build BooleanEngine × N (with LiveDocs for dedup across deltas)
@@ -257,16 +259,31 @@ OpenIndex(root, fields, opts)
        └── CompositeEngine(snapshot)
 ```
 
-`UseMmap: true` → `OpenSegmentFile(path)` → mmaps the file, zero-copy views for all posting/wildcard data.
+`SegmentLoadMmapVerify` 默认先按 Manifest 顺序计算整文件 SHA-256，再 mmap 文件并为 posting/wildcard 建立 zero-copy 视图。只有显式选择 `SegmentLoadMmapTrustPublished` 才跳过内容哈希扫描。
+
+加载采用“临时拥有，成功后移交”的资源模型：
+
+```mermaid
+flowchart TD
+    A[读取 CURRENT 和 Manifest] --> B[加载并校验 Full]
+    B --> C[加载 Delta、changed/deleted sidecar]
+    C --> D{全部成功?}
+    D -->|是| E[构造不可变 IndexSnapshot]
+    E --> F[Holder 发布新快照]
+    D -->|否| G[关闭已创建 Engine 和 mmap]
+    G --> H[返回错误，旧快照继续服务]
+```
+
+正常 reload 时，Holder 先发布新 `refSnapshot`，再 retire 旧快照；旧 mmap 在最后一个在途查询 release 后关闭。
 
 ### 1.6 compact — Compaction Policy
 
 Monitors full age and delta accumulation, recommends compaction:
 
 ```go
-stats := be_indexer.CollectCompactStats(manifest)
-decision := be_indexer.DecideCompact(stats, be_indexer.DefaultCompactPolicy)
-// → Decision{Decision: DecisionMajor/DecisionMinor/DecisionNone, Reason: ...}
+stats := be_indexer.CollectCompactStats(manifestValue)
+recommendation := be_indexer.DecideCompactStats(stats, be_indexer.CompactOptions{})
+// → Recommendation{Decision: DecisionMajor/DecisionMinor/DecisionNone, Reasons: ...}
 ```
 
 ---
@@ -388,32 +405,35 @@ Result = (FullResult − ChangedDocs) ∪ Σ(DeltaResult − DeletedDocs)
 
 ## 4. Extension Points
 
-### 4.1 Custom Containers (field-level index)
+### 4.1 自定义索引容器
 
 ```go
-type ContainerBuilder interface {
-    Add(term string, ref PostingRef)
-    Build() ([]byte, error)
+type IndexBuilder interface {
+    AddRecord(record any, entries []core.EntryID) error
+    Build(writer BlockWriter) error
 }
-type ContainerReader interface {
-    Retrieve(postingBlock []byte, field core.BEField, query interface{}) ([]core.PostingIterator, error)
+type IndexReader interface {
+    MatchQuery(ctx BlockContext, field core.BEField, query any) ([]core.PostingIterator, error)
 }
 
 func init() {
-    segment.RegisterContainer("my_index", &myBuilder{}, &myReader{})
+    segment.RegisterIndex("my_index", segment.IndexDef{
+        Reader:  func(data []byte) (segment.IndexReader, error) { return newMyReader(data) },
+        Builder: func(env segment.BuilderEnv) segment.IndexBuilder { return newMyBuilder(env) },
+    })
 }
 ```
 
-### 4.2 Custom Tokenizers (value → term conversion)
+### 4.2 自定义 Predicate Encoder
 
 ```go
-type FieldValueEncoder interface {
-    Query(values any) ([]EncodedQuery, error)
-    Build(expr ValueExpr) ([]BuildPosting, error)
+type PredicateEncoder interface {
+    Build(expr *core.ValueExpr) ([]parser.EncodedPosting, error)
+    Query(value any) ([]parser.EncodedQuery, error)
 }
 
 func init() {
-    parser.RegisterTokenizer("my_tokenizer", &myEncoder{})
+    parser.RegisterPredicateEncoder("my_encoder", factory)
 }
 ```
 
@@ -428,7 +448,7 @@ builder := segment.NewExternalBuilder(writer, runDir, segment.ExternalBuilderOpt
 // Add docs via exportDocToSink pattern
 ```
 
-Memory is bounded by `MaxPostingsInMemory` — overflow spills to sorted run files.
+超过 `MaxPostingsInMemory` 后会写 sorted run。该阈值控制当前 distinct key 记录数；单个超热 key 的 EntryID 列表、最终字典和文档级编码缓冲仍会占用内存，因此应结合真实 key 分布压测峰值。
 
 ---
 
@@ -437,10 +457,43 @@ Memory is bounded by `MaxPostingsInMemory` — overflow spills to sorted run fil
 | 角度 | 决策 | 收益 |
 |------|------|------|
 | 读写分离 | `builder` 离线产出 `segment`，`engine` 只读 mmap 段 | 构建可重放，查询无锁、并发安全 |
-| 零拷贝 | `mmap` + `unsafe.Slice` 直接映射 `EntryID[]` | Retrieve 路径零堆分配，复用 `ResultCollector` |
+| mmap 零拷贝 | `mmap` + `unsafe.Slice` 直接映射 `EntryID[]` | 避免复制大型 posting/wildcard 数据；完整 Retrieve 可保留必要的受控临时分配 |
 | K 高位编码 | K 编入 `EntryID[56:63]` | 排序即分组，免物理分桶；`SubViewByK` 二分定位 |
-| 可插拔容器 | `RegisterContainer` + `ContainerReader/Builder` | `ac_matcher`/`ext_range` 及自定义容器热插拔 |
+| 可插拔容器 | `RegisterIndex` + `IndexReader/IndexBuilder` | `ac_matcher`/`ext_range` 及自定义容器按统一接口扩展 |
 | Wildcard 短路 | K=0 单列 Z-Entry，归并时永远命中 | 无约束文档走独立快路径 |
 | Exclude 优化 | `ShortCircuitAfter` 跳过后续游标 | 避免排除命中导致的误判匹配 |
 | 增量索引 | `manifest`(CURRENT)+ `delta` 段 + LiveDocs | full/delta 合成 `CompositeEngine`，支持在线更新 |
-| 块对齐 | 8 字节对齐 + sha256 块校验 | 跨平台端序安全，零拷贝映射合法 |
+| 块对齐 | 8 字节对齐 + SHA-256 block 校验 | 保证当前 little-endian 平台上的零拷贝映射合法，并检测内容损坏 |
+
+### 5.1 DocID 唯一性边界
+
+DocID 被编码进 ConjID，因此必须在整个 full corpus 内唯一，而不只是单个 Segment 内唯一：
+
+```mermaid
+flowchart LR
+    A[完整 Documents 输入] --> B{全局 DocID 去重校验}
+    B -->|重复| C[构建失败，不创建 Segment writer]
+    B -->|唯一| D[按 MaxDocsPerSegment 切分]
+    D --> E[Segment 0]
+    D --> F[Segment 1]
+    D --> G[Segment N]
+```
+
+`BuildSegmentsFromDocs` 会在多段构建开始前做全局校验；流式 `FullIndexBuilder` 使用跨 Segment 的 roaring64 seen-set。这样可防止相同 DocID 的 posting 在不同 Segment 中合并为错误的 Conjunction。
+
+### 5.2 完整性与冷启动性能
+
+| 加载模式 | 校验行为 | 使用建议 |
+|---|---|---|
+| `SegmentLoadHeapVerify` | 读取到 heap，校验 manifest 文件尺寸和整文件 SHA-256 | 测试、小文件或必须加载进堆的场景 |
+| `SegmentLoadMmapVerify` | 同一文件句柄校验尺寸和整文件 SHA-256，再 mmap | 生产推荐，覆盖数据块、metadata 和 footer |
+| `SegmentLoadMmapTrustPublished` | 同一文件句柄校验尺寸后 mmap，再校验结构与边界 | 仅当发布链路已可信校验，且冷启动扫描成本不可接受时使用 |
+
+快速启动通过 `SegmentLoad: SegmentLoadMmapTrustPublished` 开启。它不会重新计算文件哈希，因此这是显式的完整性与启动性能取舍。
+
+### 5.3 性能口径
+
+- 功能正确性、规则表达能力和端到端性能优先。
+- mmap zero-copy 描述的是大型索引数据不复制到 Go heap，并不等价于整个 Retrieve 没有任何分配。
+- `SkipTo` 等核心循环应保持零分配；查询编码、迭代器组合和独立结果所有权可以有受控分配。
+- 优化决策应同时观察吞吐、P99、内存峰值、冷启动时间和 Shadow Testing 结果。

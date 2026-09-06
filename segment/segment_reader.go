@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"runtime"
 
@@ -25,8 +26,8 @@ func makeBlockKey(fieldID uint16) blockKey {
 
 // blockLookup holds pre-resolved references for a field (all K values merged).
 type blockLookup struct {
-	dict       *FlatDict
-	pl         []byte
+	dict    *FlatDict
+	pl      []byte
 	readers map[string]IndexReader
 }
 
@@ -37,16 +38,24 @@ const (
 	// the strictest mode and remains the default for direct NewSegmentReader calls and
 	// tests that validate corruption handling.
 	BlockChecksumOnOpen BlockChecksumMode = iota
-	// BlockChecksumDisabled trusts the caller/manifest-level file checksum and
-	// skips the O(segment_size) block checksum scan during reader construction.
-	// This is useful for serving paths where cold-start latency matters more than
-	// duplicate validation.
+	// BlockChecksumDisabled validates checksum metadata but skips the
+	// O(segment_size) payload scan during reader construction. The caller must
+	// explicitly establish trust in the artifact when choosing this mode.
 	BlockChecksumDisabled
 )
 
 // ReaderOptions controls validation performed when constructing a segment reader.
 type ReaderOptions struct {
 	BlockChecksumMode BlockChecksumMode
+}
+
+// OpenFileOptions controls validation performed against the exact file handle
+// that is subsequently memory-mapped, avoiding a path-level TOCTOU window.
+type OpenFileOptions struct {
+	ReaderOptions
+	ExpectedSize     uint64
+	ExpectedChecksum string
+	VerifyFile       bool
 }
 
 // SegmentReader serves queries from an immutable segment byte slice. The byte slice
@@ -65,7 +74,7 @@ type SegmentReader struct {
 
 // NewSegmentReader parses an immutable segment byte slice using strict block
 // checksum validation. Use NewSegmentReaderWithOptions for serving paths that have
-// already verified the whole file and want to skip the extra block scan.
+// already established artifact trust and explicitly want to skip the block scan.
 func NewSegmentReader(b []byte) (*SegmentReader, error) {
 	return NewSegmentReaderWithOptions(b, ReaderOptions{BlockChecksumMode: BlockChecksumOnOpen})
 }
@@ -97,6 +106,13 @@ func NewSegmentReaderWithOptions(b []byte, opts ReaderOptions) (*SegmentReader, 
 
 	blocks := make(map[blockKey]*blockLookup)
 	var wildcards core.Entries
+	// Validate byte ranges before checksum metadata so malformed offsets and
+	// sizes retain their direct, deterministic diagnostics.
+	for name, def := range meta.BlockIndex {
+		if _, err := checkedBlockBytes(b, metaOffset, def); err != nil {
+			return nil, fmt.Errorf("invalid block %s: %w", name, err)
+		}
+	}
 	if opts.BlockChecksumMode == BlockChecksumOnOpen {
 		if err := verifyBlockChecksums(b, metaOffset, meta.BlockIndex); err != nil {
 			return nil, err
@@ -203,21 +219,40 @@ func NewSegmentReaderWithOptions(b []byte, opts ReaderOptions) (*SegmentReader, 
 //
 // Prefer this over reading the whole file into the heap for serving paths: the
 // OS page cache is shared across readers/processes and only touched pages count
-// toward RSS. Because mmap defers paging, BlockChecksumDisabled is recommended
-// (a full block checksum scan would fault in every page, defeating mmap).
-func OpenSegmentFile(path string, opts ReaderOptions) (*SegmentReader, error) {
+// toward RSS. File verification and mmap use the same file handle.
+func OpenSegmentFile(path string, opts OpenFileOptions) (*SegmentReader, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if opts.ExpectedSize != 0 && uint64(info.Size()) != opts.ExpectedSize {
+		return nil, fmt.Errorf("%s: size mismatch: got %d, want %d", path, info.Size(), opts.ExpectedSize)
+	}
+	if opts.VerifyFile {
+		if opts.ExpectedChecksum == "" {
+			return nil, fmt.Errorf("%s: expected checksum is required", path)
+		}
+		h := sha256.New()
+		if _, err := io.Copy(h, f); err != nil {
+			return nil, err
+		}
+		got := checksumPrefix + hex.EncodeToString(h.Sum(nil))
+		if got != opts.ExpectedChecksum {
+			return nil, fmt.Errorf("%s: checksum mismatch", path)
+		}
+	}
 
 	data, err := mmapgo.Map(f, mmapgo.RDONLY, 0)
 	if err != nil {
 		return nil, fmt.Errorf("mmap %s: %w", path, err)
 	}
 
-	reader, err := NewSegmentReaderWithOptions(data, opts)
+	reader, err := NewSegmentReaderWithOptions(data, opts.ReaderOptions)
 	if err != nil {
 		_ = data.Unmap()
 		return nil, err
@@ -232,8 +267,12 @@ func verifyBlockChecksumMetadata(blocks map[string]BlockDef) error {
 		return fmt.Errorf("segment requires at least one block")
 	}
 	for name, def := range blocks {
-		if def.Checksum == "" {
-			return fmt.Errorf("block %s checksum missing", name)
+		if len(def.Checksum) != len(checksumPrefix)+sha256.Size*2 || def.Checksum[:len(checksumPrefix)] != checksumPrefix {
+			return fmt.Errorf("block %s checksum must use sha256 format", name)
+		}
+		decoded, err := hex.DecodeString(def.Checksum[len(checksumPrefix):])
+		if err != nil || len(decoded) != sha256.Size {
+			return fmt.Errorf("block %s checksum must use sha256 format", name)
 		}
 	}
 	return nil
@@ -339,7 +378,7 @@ func (sr *SegmentReader) Version() int {
 	return sr.meta.Version
 }
 
-// Wildcards returns embedded Z-list entries for segment v2 files.
+// Wildcards returns embedded Z-list entries for Segment v4 files.
 // The returned slice is a view into the segment's backing memory (mmap or heap);
 // it is valid only while the SegmentReader remains open and must not be modified.
 func (sr *SegmentReader) Wildcards() core.Entries {

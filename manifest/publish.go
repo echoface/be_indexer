@@ -81,21 +81,6 @@ func PublishManifest(root, manifestName string, m Manifest) error {
 	return PublishCurrent(root, manifestName)
 }
 
-// WriteEntriesSidecar writes wildcard/Z-list entries and returns file name and checksum.
-func WriteEntriesSidecar(dir, name string, entries core.Entries) (string, string, error) {
-	if name == "" {
-		return "", "", fmt.Errorf("sidecar name is required")
-	}
-	if filepath.IsAbs(name) || filepath.Dir(name) != "." {
-		return "", "", fmt.Errorf("sidecar name must be a file name, got %q", name)
-	}
-	entriesCopy := append(core.Entries(nil), entries...)
-	sort.Slice(entriesCopy, func(i, j int) bool { return entriesCopy[i] < entriesCopy[j] })
-	data := EncodeEntries(entriesCopy)
-	checksum := SHA256Checksum(data)
-	return name, checksum, AtomicWriteFile(filepath.Join(dir, name), data, 0o644)
-}
-
 // WriteDocIDsSidecar writes a deterministic DocID sidecar and returns file name and checksum.
 func WriteDocIDsSidecar(dir, name string, ids []core.DocID) (string, string, error) {
 	if name == "" {

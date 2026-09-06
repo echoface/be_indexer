@@ -112,15 +112,15 @@ func (h *Holder) acquire() *refSnapshot {
 	}
 }
 
-// Current returns the currently published engine, or nil before a successful
+// UnsafeCurrent returns the currently published engine, or nil before a successful
 // load.
 //
 // Caution: the returned engine is only safe to use immediately. It is NOT
 // reference-counted for the caller, so a subsequent Reload may retire and close
 // it while a long-lived caller still holds it. Use Retrieve/RetrieveWithCollector
 // for query traffic (they take an internal reference for the duration of the
-// call); treat Current as diagnostic-only and never hold it across a Reload.
-func (h *Holder) Current() *engine.CompositeEngine {
+// call); treat UnsafeCurrent as diagnostic-only and never hold it across a Reload.
+func (h *Holder) UnsafeCurrent() *engine.CompositeEngine {
 	if h == nil {
 		return nil
 	}

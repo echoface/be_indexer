@@ -11,7 +11,7 @@ import (
 
 // FlatPostingList represents a memory-mapped array of EntryIDs.
 //
-// Layout (v2, 8-byte aligned):
+// Layout (v4, 8-byte aligned):
 //
 //	[Count (uint32)]
 //	[Pad   (uint32) = 0]   // makes the EntryID array start at offset 8

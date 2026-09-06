@@ -72,7 +72,7 @@ func TestBuildSegmentsFromDocs_ShadowTest(t *testing.T) {
 
 	// Baseline: single segment
 	buf := new(bytes.Buffer)
-	baselineWildcards, err := BuildSegmentFromDocs(buf, fields, docs)
+	err := BuildSegmentFromDocs(buf, fields, docs, BuildSegmentFromDocsOptions{})
 	if err != nil {
 		t.Fatalf("baseline build failed: %v", err)
 	}
@@ -80,7 +80,7 @@ func TestBuildSegmentsFromDocs_ShadowTest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("baseline reader failed: %v", err)
 	}
-	baselineEngine, err := engine.NewBooleanEngine(fields, baselineWildcards, []*segment.SegmentReader{baselineSeg})
+	baselineEngine, err := engine.NewBooleanEngine(fields, []*segment.SegmentReader{baselineSeg})
 	if err != nil {
 		t.Fatalf("NewBooleanEngine failed: %v", err)
 	}
@@ -96,7 +96,7 @@ func TestBuildSegmentsFromDocs_ShadowTest(t *testing.T) {
 	} {
 		t.Run(cfg.name, func(t *testing.T) {
 			var segBuffers []*bytes.Buffer
-			wildcards, _, err := BuildSegmentsFromDocs(
+			_, err := BuildSegmentsFromDocs(
 				func(segIdx int) (io.Writer, error) {
 					b := new(bytes.Buffer)
 					segBuffers = append(segBuffers, b)
@@ -117,7 +117,7 @@ func TestBuildSegmentsFromDocs_ShadowTest(t *testing.T) {
 				}
 				segs = append(segs, sr)
 			}
-			multiEngine, err := engine.NewBooleanEngine(fields, wildcards, segs)
+			multiEngine, err := engine.NewBooleanEngine(fields, segs)
 			if err != nil {
 				t.Fatalf("NewBooleanEngine failed: %v", err)
 			}

@@ -239,13 +239,13 @@ func TestExtensionEndToEnd(t *testing.T) {
 
 	convey.Convey("fst e2e", t, func() {
 		buf := new(bytes.Buffer)
-		wildcards, err := be_indexer.BuildSegment(buf, fields, docs)
+		err := be_indexer.BuildSegment(buf, fields, docs, be_indexer.BuildSegmentOptions{})
 		convey.So(err, convey.ShouldBeNil)
 
 		reader, err := be_indexer.NewSegmentReader(buf.Bytes())
 		convey.So(err, convey.ShouldBeNil)
 
-		eng, err := be_indexer.NewEngine(fields, wildcards, []*be_indexer.SegmentReader{reader})
+		eng, err := be_indexer.NewEngine(fields, []*be_indexer.SegmentReader{reader})
 		convey.So(err, convey.ShouldBeNil)
 		defer eng.Close()
 
@@ -300,13 +300,13 @@ func TestLargeDictionary(t *testing.T) {
 		}
 
 		buf := new(bytes.Buffer)
-		wildcards, err := be_indexer.BuildSegment(buf, fields, docs)
+		err := be_indexer.BuildSegment(buf, fields, docs, be_indexer.BuildSegmentOptions{})
 		convey.So(err, convey.ShouldBeNil)
 
 		reader, err := be_indexer.NewSegmentReader(buf.Bytes())
 		convey.So(err, convey.ShouldBeNil)
 
-		eng, err := be_indexer.NewEngine(fields, wildcards, []*be_indexer.SegmentReader{reader})
+		eng, err := be_indexer.NewEngine(fields, []*be_indexer.SegmentReader{reader})
 		convey.So(err, convey.ShouldBeNil)
 		defer eng.Close()
 
@@ -337,13 +337,13 @@ func TestExcludePredicate(t *testing.T) {
 		}
 
 		buf := new(bytes.Buffer)
-		wildcards, err := be_indexer.BuildSegment(buf, fields, docs)
+		err := be_indexer.BuildSegment(buf, fields, docs, be_indexer.BuildSegmentOptions{})
 		convey.So(err, convey.ShouldBeNil)
 
 		reader, err := be_indexer.NewSegmentReader(buf.Bytes())
 		convey.So(err, convey.ShouldBeNil)
 
-		eng, err := be_indexer.NewEngine(fields, wildcards, []*be_indexer.SegmentReader{reader})
+		eng, err := be_indexer.NewEngine(fields, []*be_indexer.SegmentReader{reader})
 		convey.So(err, convey.ShouldBeNil)
 		defer eng.Close()
 
@@ -381,11 +381,11 @@ func TestShadowAgainstDefault(t *testing.T) {
 				"k": {Field: "k", FieldOption: be_indexer.FieldOption{IndexType: indexType, Encoder: "default"}},
 			}
 			buf := new(bytes.Buffer)
-			wildcards, err := be_indexer.BuildSegment(buf, fields, docs)
+			err := be_indexer.BuildSegment(buf, fields, docs, be_indexer.BuildSegmentOptions{})
 			convey.So(err, convey.ShouldBeNil)
 			reader, err := be_indexer.NewSegmentReader(buf.Bytes())
 			convey.So(err, convey.ShouldBeNil)
-			eng, err := be_indexer.NewEngine(fields, wildcards, []*be_indexer.SegmentReader{reader})
+			eng, err := be_indexer.NewEngine(fields, []*be_indexer.SegmentReader{reader})
 			convey.So(err, convey.ShouldBeNil)
 			return eng
 		}

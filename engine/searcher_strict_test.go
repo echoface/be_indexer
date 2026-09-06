@@ -19,7 +19,7 @@ func buildStrictEngine(t *testing.T) *engine.BooleanEngine {
 		core.NewDocument(1).AddConjunction(core.NewConjunction().In("age", 18)),
 	}
 	buf := new(bytes.Buffer)
-	wildcards, err := builder.BuildSegmentFromDocs(buf, fields, docs)
+	err := builder.BuildSegmentFromDocs(buf, fields, docs, builder.BuildSegmentFromDocsOptions{})
 	if err != nil {
 		t.Fatalf("BuildSegmentFromDocs: %v", err)
 	}
@@ -27,7 +27,7 @@ func buildStrictEngine(t *testing.T) *engine.BooleanEngine {
 	if err != nil {
 		t.Fatalf("NewSegmentReader: %v", err)
 	}
-	eng, err := engine.NewBooleanEngine(fields, wildcards, []*segment.SegmentReader{seg})
+	eng, err := engine.NewBooleanEngine(fields, []*segment.SegmentReader{seg})
 	if err != nil {
 		t.Fatalf("NewBooleanEngine: %v", err)
 	}

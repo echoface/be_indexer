@@ -241,9 +241,8 @@ func (it *MergeIter) Close() error {
 	return firstErr
 }
 
-// Merge drains MergeIter into a single slice. It preserves the historical
-// behavior (and, in memory mode, the zero-extra-copy return of c.records) for
-// callers that still want the whole result at once.
+// Merge drains MergeIter into a single slice. In memory mode it returns
+// c.records without an extra copy; use MergeIter for bounded streaming output.
 func (c *KeyedPostingCollector) Merge() ([]KeyedRecord, error) {
 	it, err := c.MergeIter()
 	if err != nil {
@@ -387,7 +386,7 @@ type keyedHeapItem struct {
 
 type keyedRecordHeap []keyedHeapItem
 
-func (h keyedRecordHeap) Len() int           { return len(h) }
+func (h keyedRecordHeap) Len() int            { return len(h) }
 func (h keyedRecordHeap) Less(i, j int) bool  { return bytes.Compare(h[i].rec.Key, h[j].rec.Key) < 0 }
 func (h keyedRecordHeap) Swap(i, j int)       { h[i], h[j] = h[j], h[i] }
 func (h *keyedRecordHeap) Push(x interface{}) { *h = append(*h, x.(keyedHeapItem)) }

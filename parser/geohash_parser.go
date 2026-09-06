@@ -63,7 +63,6 @@ func (p *GeoOption) InitDefault() {
 	p.CompressPrecisionCutoff = util.MinInt(p.CompressPrecisionCutoff, p.Precision)
 }
 
-
 // lat:lon:radius
 
 func parseLatLonRadius(s string) (lat, lon, r float64, err error) {
@@ -120,7 +119,6 @@ func (p *GeoHashParser) TokenizeAssign(v interface{}) ([]string, error) {
 	}
 	return p.genQueryAssignGeoHash(lat, lon), nil
 }
-
 
 // TokenizeValue implements ValueTokenizer for indexing phase
 // Parses range strings like "30:90:1000" into multiple geohash strings

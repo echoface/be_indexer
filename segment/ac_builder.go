@@ -10,7 +10,7 @@ import (
 // ACBuilder builds an Aho-Corasick automaton serialized as a Double-Array
 // Trie (DAT) for zero-copy mmap matching.
 //
-// Alphabet compression
+// # Alphabet compression
 //
 // Transitions are addressed by base[state] + symbolID rather than
 // base[state] + rune. Every rune that appears in any pattern is mapped to a
@@ -40,10 +40,10 @@ type flatNode struct {
 
 func NewACBuilder(env BuilderEnv) *ACBuilder {
 	builder := &ACBuilder{
-		nodes:   make([]flatNode, 1, 1024),
-		outputs: make([][]uint32, 1, 1024),
-		symOf:   make(map[rune]uint32),
-		syms:    []rune{0},
+		nodes:     make([]flatNode, 1, 1024),
+		outputs:   make([][]uint32, 1, 1024),
+		symOf:     make(map[rune]uint32),
+		syms:      []rune{0},
 		collector: NewKeyedPostingCollector(env.MaxPostingsInMemory, env.TmpDir),
 	}
 	return builder

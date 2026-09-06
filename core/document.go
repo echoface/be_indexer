@@ -124,7 +124,7 @@ func (conj *Conjunction) Exclude(field BEField, values Values) *Conjunction {
 
 func (conj *Conjunction) GreaterThan(field BEField, value int64) *Conjunction {
 	conj.AddPredicates(&Predicate{
-		Field:      field,
+		Field:     field,
 		ValueExpr: NewGTValueExpr(value),
 	})
 	return conj
@@ -132,7 +132,7 @@ func (conj *Conjunction) GreaterThan(field BEField, value int64) *Conjunction {
 
 func (conj *Conjunction) LessThan(field BEField, value int64) *Conjunction {
 	conj.AddPredicates(&Predicate{
-		Field:      field,
+		Field:     field,
 		ValueExpr: NewLTValueExpr(value),
 	})
 	return conj
@@ -140,7 +140,7 @@ func (conj *Conjunction) LessThan(field BEField, value int64) *Conjunction {
 
 func (conj *Conjunction) Between(field BEField, l, h int64) *Conjunction {
 	conj.AddPredicates(&Predicate{
-		Field:      field,
+		Field:     field,
 		ValueExpr: NewValueExpr(ValueOptBetween, []int64{l, h}, true),
 	})
 	return conj

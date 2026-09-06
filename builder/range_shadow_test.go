@@ -75,7 +75,7 @@ func TestRangeShadowAgainstOracle(t *testing.T) {
 	}
 
 	buf := new(bytes.Buffer)
-	wildcards, err := BuildSegmentFromDocs(buf, fields, docs)
+	err := BuildSegmentFromDocs(buf, fields, docs, BuildSegmentFromDocsOptions{})
 	if err != nil {
 		t.Fatalf("build: %v", err)
 	}
@@ -83,7 +83,7 @@ func TestRangeShadowAgainstOracle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reader: %v", err)
 	}
-	eng, err := engine.NewBooleanEngine(fields, wildcards, []*segment.SegmentReader{seg})
+	eng, err := engine.NewBooleanEngine(fields, []*segment.SegmentReader{seg})
 	if err != nil {
 		t.Fatalf("NewBooleanEngine failed: %v", err)
 	}
@@ -130,12 +130,12 @@ func TestRangeUnboundedEdges(t *testing.T) {
 	docs := []*core.Document{doc}
 
 	buf := new(bytes.Buffer)
-	wildcards, err := BuildSegmentFromDocs(buf, fields, docs)
+	err := BuildSegmentFromDocs(buf, fields, docs, BuildSegmentFromDocsOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	seg, _ := segment.NewSegmentReader(buf.Bytes())
-	eng, err := engine.NewBooleanEngine(fields, wildcards, []*segment.SegmentReader{seg})
+	eng, err := engine.NewBooleanEngine(fields, []*segment.SegmentReader{seg})
 	if err != nil {
 		t.Fatalf("NewBooleanEngine failed: %v", err)
 	}

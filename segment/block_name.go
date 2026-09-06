@@ -7,6 +7,6 @@ func blockName(field string) string {
 	return field
 }
 
-func dictBlockName(field string) string  { return blockName(field) + "_dict" }
-func plBlockName(field string) string    { return blockName(field) + "_postings" }
+func dictBlockName(field string) string            { return blockName(field) + "_dict" }
+func plBlockName(field string) string              { return blockName(field) + "_postings" }
 func containerBlockName(field, kind string) string { return blockName(field) + "_" + kind }

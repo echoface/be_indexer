@@ -226,7 +226,7 @@ func TestGeoEndToEnd(t *testing.T) {
 	}
 
 	buf := new(bytes.Buffer)
-	wildcards, err := be_indexer.BuildSegment(buf, fields, docs)
+	err := be_indexer.BuildSegment(buf, fields, docs, be_indexer.BuildSegmentOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -234,7 +234,7 @@ func TestGeoEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	eng, err := be_indexer.NewEngine(fields, wildcards, []*be_indexer.SegmentReader{reader})
+	eng, err := be_indexer.NewEngine(fields, []*be_indexer.SegmentReader{reader})
 	if err != nil {
 		t.Fatal(err)
 	}

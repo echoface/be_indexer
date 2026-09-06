@@ -1,4 +1,4 @@
-# Boolean Expression Indexer - API Reference
+# Boolean Expression Indexer API 参考
 
 ## 目录
 
@@ -28,8 +28,9 @@ be_indexer 是一个高性能的布尔表达式索引引擎，它在最新的架
 
 ```go
 type Document struct {
-    ID   DocID          `json:"id"`   // 文档ID
-    Cons []*Conjunction `json:"cons"` // 布尔表达式列表（OR关系）
+    ID      DocID          `json:"id"`      // 文档 ID
+    Version uint64         `json:"version"` // 业务版本号
+    Cons    []*Conjunction `json:"cons"`    // 布尔表达式列表（OR 关系）
 }
 
 // 创建新文档
@@ -45,7 +46,7 @@ func (doc *Document) AddConjunction(cons ...*Conjunction) *Document
 
 ```go
 type Conjunction struct {
-    // 内部结构
+    Predicates map[BEField][]*ValueExpr `json:"predicates"`
 }
 
 // 创建新Conjunction
@@ -64,10 +65,14 @@ func (conj *Conjunction) NotIn(field BEField, values Values) *Conjunction
 
 ```go
 type FieldMeta struct {
-    ID        uint64
-    Field     BEField
-    Container string // core.IndexNameDefault 或 core.IndexNameACMatcher
-    Tokenizer string // 解析器名称（如 "number", "default"）
+    FieldOption
+    ID    uint64
+    Field BEField
+}
+
+type FieldOption struct {
+    IndexType string // 物理容器：default、ac_matcher、ext_range 等
+    Encoder   string // 值编码器：default、number、ext_range 等
 }
 ```
 
@@ -88,27 +93,30 @@ type Assignments map[BEField]interface{}
 这是构建过程的唯一核心入口，负责将内存中的 `Document` 列表转换为二进制的紧凑物理段。
 
 ```go
-// BuildSegmentFromDocs exports documents directly into a memory-mappable segment
-// 返回生成的 wildcard entries（K=0 或者是纯 Exclude 的条件），这些需要被引擎外挂加载。
+// BuildSegmentFromDocs 将文档写入一个可 mmap 的 Segment v4。
+// wildcard 直接内嵌在 Segment 中。
 func BuildSegmentFromDocs(
     w io.Writer, 
     fieldsData map[core.BEField]*core.FieldMeta, 
     docs []*core.Document,
-) (core.Entries, error)
+    opts BuildSegmentFromDocsOptions,
+) error
 ```
 
 **示例：**
 ```go
 fieldsMeta := map[core.BEField]*core.FieldMeta{
-    "age": {Field: "age", ID: 1, Container: core.IndexNameDefault},
+    "age": {Field: "age", ID: 1, FieldOption: core.FieldOption{IndexType: core.IndexNameDefault, Encoder: "number"}},
 }
 
 docs := []*core.Document{ /* ... */ }
 file, _ := os.Create("data.seg")
 defer file.Close()
 
-wildcards, err := builder.BuildSegmentFromDocs(file, fieldsMeta, docs)
+err := builder.BuildSegmentFromDocs(file, fieldsMeta, docs, builder.BuildSegmentFromDocsOptions{})
 ```
+
+多 Segment 批量构建使用 `BuildSegmentsFromDocs`。该入口在创建任何 writer 前校验整个输入集合的 DocID 唯一性，避免相同 DocID 跨 Segment 落入同一个 ConjID 空间。超大规模全量构建建议使用 `FullIndexBuilder` 的外排路径。
 
 ---
 
@@ -125,20 +133,20 @@ type SegmentReader struct {
     // 内部结构
 }
 
-// 从字节切片（通常是 mmap 的结果）初始化 Reader
+// 从调用方持有的字节切片初始化 Reader
 func NewSegmentReader(data []byte) (*SegmentReader, error)
 
-// 从文件路径通过 mmap 加载（推荐生产使用）
-func OpenSegmentFile(path string, opts ...SegmentReaderOption) (*SegmentReader, error)
+// 对同一文件句柄完成尺寸/checksum 校验后建立 mmap
+func OpenSegmentFile(path string, opts OpenFileOptions) (*SegmentReader, error)
 ```
 
-> **注意：** 在生产环境中，推荐使用 `OpenSegmentFile` 直接通过 mmap 加载 `.seg` 文件，零拷贝读取所有 posting/wildcard 数据。
+> **注意：** 生产快照优先通过 `loader.OpenIndex` 或 `loader.NewHolder` 加载，由 Loader 统一传入 Manifest 尺寸、checksum 和 Schema。底层 `OpenSegmentFile` 在同一个已打开文件句柄上校验后再 mmap，避免路径被替换造成 TOCTOU。
 
 ---
 
 ## 检索执行 API (engine)
 
-`engine` 包是查询的大脑，它组合底层的 Segment 和外置的 Wildcards 提供毫秒级的布尔检索能力。
+`engine` 包是查询的大脑，它组合不可变 Segment，并基于内嵌 wildcard 与字段 posting 执行 K-Groups 归并。
 
 ### BooleanEngine
 
@@ -155,13 +163,13 @@ type BooleanEngine struct {
 func NewBooleanEngine(
     fieldsData map[core.BEField]*core.FieldMeta, 
     segments []*segment.SegmentReader,
-) *BooleanEngine
+) (*BooleanEngine, error)
 
 // 指定 LiveDocs 以支持动态删除/禁用文档
 func (ms *BooleanEngine) SetLiveDocs(ld *core.LiveDocs)
 
 // 基础 Retrieve 方法
-func (ms *BooleanEngine) Retrieve(queries core.Assignments, opts ...core.IndexOpt) (core.DocIDList, error)
+func (ms *BooleanEngine) Retrieve(queries core.Assignments, opts ...core.IndexOpt) (*core.BitmapDocSet, error)
 
 // 带自定义结果收集器的 Retrieve
 func (ms *BooleanEngine) RetrieveWithCollector(queries core.Assignments, collector core.ResultCollector, opts ...core.IndexOpt) error
@@ -170,7 +178,7 @@ func (ms *BooleanEngine) RetrieveWithCollector(queries core.Assignments, collect
 **检索示例：**
 ```go
 // 1. 初始化引擎
-searcher := engine.NewBooleanEngine(fieldsMeta, []*segment.SegmentReader{segReader})
+searcher, err := engine.NewBooleanEngine(fieldsMeta, []*segment.SegmentReader{segReader})
 
 // 2. 构造查询特征
 assigns := core.Assignments{
@@ -186,3 +194,33 @@ if err != nil {
 
 fmt.Printf("Matched Docs: %v\n", docIDs)
 ```
+
+## 快照加载与校验
+
+```go
+type Options struct {
+    SchemaHash  string
+    SegmentLoad SegmentLoadMode
+}
+```
+
+| 加载方式 | 默认完整性校验 |
+|---|---|
+| `SegmentLoadHeapVerify` | 读取到 Go heap，校验 Manifest 文件尺寸和整文件 SHA-256 |
+| `SegmentLoadMmapVerify` | 使用同一文件句柄校验尺寸和整文件 SHA-256，再建立 mmap |
+| `SegmentLoadMmapTrustPublished` | 使用同一文件句柄校验尺寸后建立 mmap；仍校验 Segment 结构、边界和 checksum 元数据格式 |
+
+快照加载遵循资源所有权事务：只有 Full、全部 Delta 和 sidecar 都成功时才返回新快照；中途失败会关闭此前已经创建的 Engine 和 mmap。`Holder.Reload` 失败时旧快照继续服务。
+
+```mermaid
+flowchart LR
+    A[加载 Full] --> B[加载 Delta 0..N]
+    B --> C{全部成功?}
+    C -->|是| D[发布新快照]
+    C -->|否| E[关闭已加载 Engine 和 mmap]
+    E --> F[保留旧快照]
+```
+
+## 性能语义
+
+mmap zero-copy 表示 posting 和 wildcard 的大型数据块无需复制到 Go heap。完整 `Retrieve` 可以为查询编码、游标组合和独立结果所有权产生受控临时分配；性能判断应以功能正确性、吞吐、P99 和内存峰值为准，而不是以“所有代码零分配”为单一目标。

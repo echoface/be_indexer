@@ -33,11 +33,11 @@ func main() {
     fieldsMeta := map[core.BEField]*core.FieldMeta{
         "age": {
             Field: "age", ID: 1,
-            FieldOption: core.FieldOption{Container: core.IndexNameDefault, Tokenizer: "number"},
+            FieldOption: core.FieldOption{IndexType: core.IndexNameDefault, Encoder: "number"},
         },
         "city": {
             Field: "city", ID: 2,
-            FieldOption: core.FieldOption{Container: core.IndexNameDefault, Tokenizer: "default"},
+            FieldOption: core.FieldOption{IndexType: core.IndexNameDefault, Encoder: "default"},
         },
     }
 
@@ -54,7 +54,7 @@ func main() {
 
     // 3. 构建物理段
     file, _ := os.Create("base.seg")
-    wildcards, err := builder.BuildSegmentFromDocs(file, fieldsMeta, docs)
+    err := builder.BuildSegmentFromDocs(file, fieldsMeta, docs, builder.BuildSegmentFromDocsOptions{})
     if err != nil {
         panic(err)
     }
@@ -68,7 +68,10 @@ func main() {
     }
 
     // 5. 初始化查询引擎
-    searcher := engine.NewBooleanEngine(fieldsMeta, wildcards, []*segment.SegmentReader{segReader})
+    searcher, err := engine.NewBooleanEngine(fieldsMeta, []*segment.SegmentReader{segReader})
+    if err != nil {
+        panic(err)
+    }
 
     // 6. 执行检索
     assigns := core.Assignments{
@@ -105,9 +108,9 @@ import (
 
 func main() {
     fieldsMeta := map[core.BEField]*core.FieldMeta{
-        "age":    {Field: "age", ID: 1, FieldOption: core.FieldOption{Container: core.IndexNameDefault, Tokenizer: "number"}},
-        "city":   {Field: "city", ID: 2, FieldOption: core.FieldOption{Container: core.IndexNameDefault, Tokenizer: "default"}},
-        "is_vip": {Field: "is_vip", ID: 3, FieldOption: core.FieldOption{Container: core.IndexNameDefault, Tokenizer: "default"}},
+        "age":    {Field: "age", ID: 1, FieldOption: core.FieldOption{IndexType: core.IndexNameDefault, Encoder: "number"}},
+        "city":   {Field: "city", ID: 2, FieldOption: core.FieldOption{IndexType: core.IndexNameDefault, Encoder: "default"}},
+        "is_vip": {Field: "is_vip", ID: 3, FieldOption: core.FieldOption{IndexType: core.IndexNameDefault, Encoder: "default"}},
     }
 
     // 定义广告定向规则
@@ -129,11 +132,14 @@ func main() {
 
     // 编译到内存 Buffer 中模拟落盘
     var segBuf bytes.Buffer
-    wildcards, _ := builder.BuildSegmentFromDocs(&segBuf, fieldsMeta, adRules)
+    _ = builder.BuildSegmentFromDocs(&segBuf, fieldsMeta, adRules, builder.BuildSegmentFromDocsOptions{})
 
     // 加载引擎
     segReader, _ := segment.NewSegmentReader(segBuf.Bytes())
-    searcher := engine.NewBooleanEngine(fieldsMeta, wildcards, []*segment.SegmentReader{segReader})
+    searcher, err := engine.NewBooleanEngine(fieldsMeta, []*segment.SegmentReader{segReader})
+    if err != nil {
+        panic(err)
+    }
 
     // 模拟用户画像请求
     userProfiles := []core.Assignments{
@@ -178,7 +184,8 @@ func main() {
             Field: "content", 
             ID: 1, 
             FieldOption: core.FieldOption{
-                Container: core.IndexNameACMatcher,
+                IndexType: core.IndexNameACMatcher,
+                Encoder:   core.IndexNameACMatcher,
             },
         },
     }
@@ -198,10 +205,13 @@ func main() {
     }
 
     var segBuf bytes.Buffer
-    wildcards, _ := builder.BuildSegmentFromDocs(&segBuf, fieldsMeta, rules)
+    _ = builder.BuildSegmentFromDocs(&segBuf, fieldsMeta, rules, builder.BuildSegmentFromDocsOptions{})
 
     segReader, _ := segment.NewSegmentReader(segBuf.Bytes())
-    searcher := engine.NewBooleanEngine(fieldsMeta, wildcards, []*segment.SegmentReader{segReader})
+    searcher, err := engine.NewBooleanEngine(fieldsMeta, []*segment.SegmentReader{segReader})
+    if err != nil {
+        panic(err)
+    }
 
     // 测试长文本匹配
     texts := []string{
@@ -241,7 +251,7 @@ import (
 
 func main() {
     fieldsMeta := map[core.BEField]*core.FieldMeta{
-        "device": {Field: "device", ID: 1, FieldOption: core.FieldOption{Container: core.IndexNameDefault, Tokenizer: "default"}},
+        "device": {Field: "device", ID: 1, FieldOption: core.FieldOption{IndexType: core.IndexNameDefault, Encoder: "default"}},
     }
 
     rules := []*core.Document{
@@ -254,10 +264,13 @@ func main() {
 
     var segBuf bytes.Buffer
     // Wildcards 将会捕获这个纯 Exclude 规则
-    wildcards, _ := builder.BuildSegmentFromDocs(&segBuf, fieldsMeta, rules)
+    _ = builder.BuildSegmentFromDocs(&segBuf, fieldsMeta, rules, builder.BuildSegmentFromDocsOptions{})
 
     segReader, _ := segment.NewSegmentReader(segBuf.Bytes())
-    searcher := engine.NewBooleanEngine(fieldsMeta, wildcards, []*segment.SegmentReader{segReader})
+    searcher, err := engine.NewBooleanEngine(fieldsMeta, []*segment.SegmentReader{segReader})
+    if err != nil {
+        panic(err)
+    }
 
     // 测试不同设备的命中情况
     queryAndroid := core.Assignments{"device": []string{"android"}}
@@ -269,6 +282,7 @@ func main() {
     fmt.Println("Android 命中:", res1) // 输出: [9001]
     fmt.Println("iOS 命中:", res2)     // 输出: []
 }
+```
 
 ---
 
@@ -282,25 +296,28 @@ package main
 import (
     "context"
     "fmt"
-    "os"
+    "net/http"
     "time"
 
     "github.com/echoface/be_indexer"
 )
 
 var fields = map[be_indexer.BEField]*be_indexer.FieldMeta{
-    "age":  {ID: 1, Field: "age",  FieldOption: be_indexer.FieldOption{Tokenizer: "number"}},
-    "city": {ID: 2, Field: "city", FieldOption: be_indexer.FieldOption{Tokenizer: "default"}},
+    "age":  {ID: 1, Field: "age",  FieldOption: be_indexer.FieldOption{Encoder: "number"}},
+    "city": {ID: 2, Field: "city", FieldOption: be_indexer.FieldOption{Encoder: "default"}},
 }
 
 func main() {
     root := "/data/index"
 
     // ──── 离线：全量构建 ────
-    full := be_indexer.NewFullIndexBuilder(be_indexer.FullIndexBuildOption{
+    full, err := be_indexer.NewFullIndexBuilder(be_indexer.FullIndexBuildOption{
         Root:       root,
         Generation: 20240701,
         Fields:     fields,
+        Options: be_indexer.BuildDirectoryOptions{
+            SegmentSchemaHash: "sha256:your-schema-hash",
+        },
     })
     for _, doc := range allDocs() {
         full.AddDocument(doc)
@@ -308,32 +325,39 @@ func main() {
     fullDesc, _ := full.Build()
 
     // ──── 离线：增量构建 ────
-    delta := be_indexer.NewDeltaIndexBuilder(be_indexer.DeltaIndexBuildOption{
+    delta, err := be_indexer.NewDeltaIndexBuilder(be_indexer.DeltaIndexBuildOption{
         Root:                   root,
         Generation:             202407010001,
         FromWatermarkExclusive: 0,
         ToWatermarkInclusive:   1 << 60,
         Fields:                 fields,
+        Options: be_indexer.BuildDirectoryOptions{
+            SegmentSchemaHash: "sha256:your-schema-hash",
+        },
     })
     for _, m := range latestMutations() {
-        delta.Add(m)  // Mutation{Op: Upsert/Delete, DocID, Doc}
+        delta.AddMutation(m)
     }
     deltaDesc, _ := delta.Build()
 
     // ──── 离线：发布 Manifest ────
     manifest, _ := be_indexer.NewSnapshotManifest(be_indexer.SnapshotManifestRequest{
-        Full:   fullDesc,
-        Deltas: []be_indexer.DeltaIndexDescriptor{deltaDesc},
+        IndexName:  "targeting",
+        Generation: 202407010001,
+        SchemaHash: "sha256:your-schema-hash",
+        Full:       fullDesc,
+        Deltas:     []be_indexer.DeltaIndexDescriptor{deltaDesc},
     })
     be_indexer.PublishManifest(root, "manifest-1.json", manifest)
 
     // ──── 在线：加载并服务 ────
     engine, err := be_indexer.OpenIndex(root, fields,
-        be_indexer.LoaderOptions{UseMmap: true},
+        be_indexer.LoaderOptions{SegmentLoad: be_indexer.SegmentLoadMmapVerify},
     )
     if err != nil {
         panic(err)
     }
+    defer engine.Close()
 
     results, _ := engine.Retrieve(be_indexer.Assignments{
         "age":  []int{25},
@@ -342,9 +366,13 @@ func main() {
     fmt.Println("matched:", results.Cardinality(), "docs")
 
     // ──── 在线：自动热重载 ────
-    holder := be_indexer.NewIndexHolder(root, fields,
-        be_indexer.LoaderOptions{UseMmap: true},
+    holder, err := be_indexer.NewIndexHolder(root, fields,
+        be_indexer.LoaderOptions{SegmentLoad: be_indexer.SegmentLoadMmapVerify},
     )
+    if err != nil {
+        panic(err)
+    }
+    defer holder.Close()
 
     ctx, cancel := context.WithCancel(context.Background())
     defer cancel()
@@ -364,7 +392,7 @@ func main() {
 
     // 所有查询始终获取最新快照
     http.HandleFunc("/target", func(w http.ResponseWriter, r *http.Request) {
-        result, _ := holder.Engine().Retrieve(assignments(r))
+        result, _ := holder.Retrieve(assignments(r))
         fmt.Fprintln(w, result.Cardinality())
     })
 }
@@ -372,7 +400,6 @@ func main() {
 func allDocs() []*be_indexer.Document          { return nil }
 func latestMutations() []be_indexer.Mutation   { return nil }
 func assignments(r *http.Request) be_indexer.Assignments { return nil }
-```
 
 ### 查询语义
 

@@ -9,9 +9,7 @@ import (
 const (
 	// FormatVersionSegmentV4 identifies snapshots whose segments use the v4
 	// physical format (Z-list embedded in-segment, schema hash, and per-block
-	// checksums). This keeps the manifest format_version aligned with the
-	// SegmentVersionV4 used by the segment footer instead of the historical
-	// "segment-v2" label.
+	// checksums). It is aligned with SegmentVersionV4 in the segment footer.
 	FormatVersionSegmentV4 = "segment-v4"
 )
 

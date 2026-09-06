@@ -10,17 +10,17 @@
 //
 //	// Build
 //	buf := new(bytes.Buffer)
-//	wildcards, err := be_indexer.BuildSegment(buf, fields, docs)
+//	err := be_indexer.BuildSegment(buf, fields, docs, be_indexer.BuildSegmentOptions{})
 //	if err != nil { ... }
 //
 //	// Query
 //	reader, _ := be_indexer.NewSegmentReader(buf.Bytes())
-//	engine := be_indexer.NewEngine(fields, wildcards, reader)
+//	engine, err := be_indexer.NewEngine(fields, []*be_indexer.SegmentReader{reader})
 //	results, _ := engine.Retrieve(be_indexer.Assignments{"age": 25})
 //
 // For multi-segment builds (large document sets):
 //
-//	wildcards, _, err := be_indexer.BuildSegments(writerFn, fields, docs, be_indexer.BuildOptions{MaxDocsPerSegment: 100000})
+//	count, err := be_indexer.BuildSegments(writerFn, fields, docs, be_indexer.BuildOptions{MaxDocsPerSegment: 100000})
 package be_indexer
 
 import (
@@ -68,7 +68,6 @@ type (
 	RetrieveObserver = core.RetrieveObserver
 
 	Term            = core.Term
-	TermIterator    = core.TermIterator
 	PostingIterator = core.PostingIterator
 
 	BEIndexLogger = core.BEIndexLogger
@@ -95,8 +94,9 @@ type (
 	FullIndexDescriptor  = manifest.FullIndexDescriptor
 	DeltaIndexDescriptor = manifest.DeltaIndexDescriptor
 
-	LoaderOptions = loader.Options
-	IndexHolder   = loader.Holder
+	LoaderOptions   = loader.Options
+	IndexHolder     = loader.Holder
+	SegmentLoadMode = loader.SegmentLoadMode
 
 	CompactDecision           = compact.Decision
 	CompactStats              = compact.Stats
@@ -114,7 +114,10 @@ const (
 	IndexNameExtendRange = core.IndexNameExtendRange
 	SegmentVersionV4     = segment.SegmentVersionV4
 
-	FormatVersionSegmentV4 = manifest.FormatVersionSegmentV4
+	FormatVersionSegmentV4        = manifest.FormatVersionSegmentV4
+	SegmentLoadHeapVerify         = loader.SegmentLoadHeapVerify
+	SegmentLoadMmapVerify         = loader.SegmentLoadMmapVerify
+	SegmentLoadMmapTrustPublished = loader.SegmentLoadMmapTrustPublished
 
 	CompactDecisionNone  = compact.DecisionNone
 	CompactDecisionMinor = compact.DecisionMinor
@@ -147,7 +150,7 @@ var (
 // Engine Re-exports
 // --------------------------------------------------------------------------------
 
-// NewEngine creates a BooleanEngine from fields, wildcard entries, and segments.
+// NewEngine creates a BooleanEngine from fields and immutable segments.
 var NewEngine = engine.NewBooleanEngine
 
 // NewCompositeEngine creates a full+delta CompositeEngine from an immutable snapshot.
@@ -183,9 +186,6 @@ var PublishManifest = manifest.PublishManifest
 // PublishCurrent atomically switches CURRENT to a manifest reference.
 var PublishCurrent = manifest.PublishCurrent
 
-// WriteEntriesSidecar writes wildcard/Z-list entries and returns checksum metadata.
-var WriteEntriesSidecar = manifest.WriteEntriesSidecar
-
 // WriteDocIDsSidecar writes DocID sidecars and returns checksum metadata.
 var WriteDocIDsSidecar = manifest.WriteDocIDsSidecar
 
@@ -211,16 +211,21 @@ type Engine = engine.BooleanEngine
 // BuildOptions controls segment splitting during build.
 type BuildOptions = builder.BuildSegmentsFromDocsOptions
 
-// BuildSegment builds a single segment from documents.
-// Returns wildcard EntryIDs that must be passed to NewEngine.
-func BuildSegment(w io.Writer, fields map[BEField]*FieldMeta, docs []*Document) (Entries, error) {
-	return builder.BuildSegmentFromDocs(w, fields, docs)
+// BuildSegments builds one or more v4 segments and validates DocID uniqueness
+// across the complete input corpus before creating any segment writer.
+func BuildSegments(
+	newWriter func(segIdx int) (io.Writer, error),
+	fields map[BEField]*FieldMeta,
+	docs []*Document,
+	opt BuildOptions,
+) (int, error) {
+	return builder.BuildSegmentsFromDocs(newWriter, fields, docs, opt)
 }
 
-// BuildSegmentWithOptions builds a single segment with optional physical format
-// features such as segment v2 embedded Z-list, schema hash and block checksums.
-func BuildSegmentWithOptions(w io.Writer, fields map[BEField]*FieldMeta, docs []*Document, opts BuildSegmentOptions) (Entries, error) {
-	return builder.BuildSegmentFromDocsWithOptions(w, fields, docs, opts)
+// BuildSegment builds a single Segment v4. Wildcard EntryIDs and block
+// checksums are embedded in the segment.
+func BuildSegment(w io.Writer, fields map[BEField]*FieldMeta, docs []*Document, opts BuildSegmentOptions) error {
+	return builder.BuildSegmentFromDocs(w, fields, docs, opts)
 }
 
 // --------------------------------------------------------------------------------
@@ -238,13 +243,6 @@ var OpenSegmentFile = segment.OpenSegmentFile
 type SegmentReader = segment.SegmentReader
 
 // --------------------------------------------------------------------------------
-// Convenience Types
-// --------------------------------------------------------------------------------
-
-// Entries is a slice of EntryIDs (used for wildcard entries).
-type Entries = core.Entries
-
-// --------------------------------------------------------------------------------
 // Observability
 // --------------------------------------------------------------------------------
 
@@ -258,8 +256,7 @@ func WithObserver(obs RetrieveObserver) IndexOpt {
 // WithStrictQuery returns an IndexOpt that enables strict query error handling.
 // In strict mode the first per-field query error (encoder or container lookup
 // failure) aborts retrieval and is returned to the caller instead of being
-// silently treated as a no-match. The default remains lenient for backward
-// compatibility.
+// treated as a no-match. The default is lenient.
 func WithStrictQuery() IndexOpt {
 	return func(ctx *RetrieveContext) {
 		ctx.StrictQuery = true

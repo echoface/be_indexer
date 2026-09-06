@@ -26,8 +26,8 @@ func TestBuilderReader(t *testing.T) {
 	}
 	writer.AddField(metaAge)
 
-	writer.AddPosting(1, "age", "18", []core.EntryID{makeE(1, 10), makeE(1, 20), makeE(1, 30)})
-	writer.AddPosting(1, "age", "25", []core.EntryID{makeE(1, 15), makeE(1, 25)})
+	writer.AddRecord("age", "18", []core.EntryID{makeE(1, 10), makeE(1, 20), makeE(1, 30)})
+	writer.AddRecord("age", "25", []core.EntryID{makeE(1, 15), makeE(1, 25)})
 
 	if err := writer.Write(); err != nil {
 		t.Fatal(err)
@@ -155,7 +155,7 @@ func TestBuilderRangeRoundTrip(t *testing.T) {
 	}
 }
 
-func TestBuilderReaderSegmentV2MetadataWildcardsAndChecksum(t *testing.T) {
+func TestBuilderReaderV4MetadataWildcardsAndChecksum(t *testing.T) {
 	buf := new(bytes.Buffer)
 	wildcards := core.Entries{core.EntryID(30), core.EntryID(10)}
 	writer := NewInMemorySegmentBuilderWithOptions(buf, InMemorySegmentBuilderOptions{
@@ -164,7 +164,7 @@ func TestBuilderReaderSegmentV2MetadataWildcardsAndChecksum(t *testing.T) {
 	})
 	writer.SetDocCount(1)
 	writer.AddField(core.FieldMeta{ID: 1, Field: "age"})
-	if err := writer.AddPosting(1, "age", "18", []core.EntryID{makeE(1, 20)}); err != nil {
+	if err := writer.AddRecord("age", "18", []core.EntryID{makeE(1, 20)}); err != nil {
 		t.Fatal(err)
 	}
 	if err := writer.Write(); err != nil {
@@ -194,12 +194,12 @@ func TestBuilderReaderSegmentV2MetadataWildcardsAndChecksum(t *testing.T) {
 	}
 }
 
-func TestNewSegmentReaderRejectsSegmentV2BlockChecksumMismatch(t *testing.T) {
+func TestNewSegmentReaderRejectsV4BlockChecksumMismatch(t *testing.T) {
 	buf := new(bytes.Buffer)
 	writer := NewInMemorySegmentBuilderWithOptions(buf, InMemorySegmentBuilderOptions{Wildcards: core.Entries{10}})
 	writer.SetDocCount(1)
 	writer.AddField(core.FieldMeta{ID: 1, Field: "age"})
-	if err := writer.AddPosting(1, "age", "18", []core.EntryID{makeE(1, 20)}); err != nil {
+	if err := writer.AddRecord("age", "18", []core.EntryID{makeE(1, 20)}); err != nil {
 		t.Fatal(err)
 	}
 	if err := writer.Write(); err != nil {
@@ -228,7 +228,7 @@ func TestNewSegmentReaderRejectsUnsupportedSegmentVersion(t *testing.T) {
 	writer := NewInMemorySegmentBuilder(buf)
 	writer.SetDocCount(1)
 	writer.AddField(core.FieldMeta{ID: 1, Field: "age"})
-	if err := writer.AddPosting(1, "age", "18", []core.EntryID{makeE(1, 20)}); err != nil {
+	if err := writer.AddRecord("age", "18", []core.EntryID{makeE(1, 20)}); err != nil {
 		t.Fatal(err)
 	}
 	if err := writer.Write(); err != nil {
@@ -255,7 +255,7 @@ func TestNewSegmentReaderRejectsUnsupportedSegmentVersion(t *testing.T) {
 	}
 }
 
-func TestNewSegmentReaderRejectsSegmentV2ACChecksumMismatch(t *testing.T) {
+func TestNewSegmentReaderRejectsV4ACChecksumMismatch(t *testing.T) {
 	buf := new(bytes.Buffer)
 	writer := NewInMemorySegmentBuilder(buf)
 	writer.SetDocCount(1)
@@ -314,6 +314,20 @@ func TestNewSegmentReaderRejectsCorruptBlockBounds(t *testing.T) {
 				t.Fatalf("expected error containing %q, got %v", tt.wantErr, err)
 			}
 		})
+	}
+}
+
+func TestNewSegmentReaderDisabledChecksumModeStillValidatesMetadata(t *testing.T) {
+	bad := corruptSegmentWithBlock(BlockDef{
+		Field:    "age",
+		Kind:     BlockKindDict,
+		Checksum: "sha256:not-hex",
+		Offset:   0,
+		Size:     uint64(len(MagicNumber)),
+	})
+	_, err := NewSegmentReaderWithOptions(bad, ReaderOptions{BlockChecksumMode: BlockChecksumDisabled})
+	if err == nil || !strings.Contains(err.Error(), "checksum must use sha256 format") {
+		t.Fatalf("expected malformed checksum metadata error, got %v", err)
 	}
 }
 

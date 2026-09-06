@@ -1,40 +1,46 @@
 // Purpose: Compare SliceIterator (binary search on []EntryID) vs
-// RoaringEntryIter (roaring64.IntPeekable64.AdvanceIfNeeded) as TermIterator
+// RoaringEntryIter (roaring64.IntPeekable64.AdvanceIfNeeded) as PostingIterator
 // backends for wildcard (Z-list) EntryIDs.
 //
 // The comparison covers three dimensions:
-//   1. Storage — raw []EntryID vs roaring64 heap vs roaring64 serialized
-//   2. Build (load-time) — slice copy vs roaring_from_slice vs roaring_unmarshal
-//   3. Query (hot-path SkipTo) — seq / stride / jump / random-monotone patterns
+//  1. Storage — raw []EntryID vs roaring64 heap vs roaring64 serialized
+//  2. Build (load-time) — slice copy vs roaring_from_slice vs roaring_unmarshal
+//  3. Query (hot-path SkipTo) — seq / stride / jump / random-monotone patterns
 //
 // --- Key findings (Intel i7-9750H, darwin/amd64) ---
 //
 // Storage (N=100K wildcards):
-//   dense (consecutive DocIDs)   slice=800KB  roaring_heap=200KB (~25%)  roaring_ser=200KB (~25%)
-//   sparse (DocID stride=1000)   slice=800KB  roaring_heap=249KB (~31%)  roaring_ser=395KB (~49%)
-//   multi_idx8                   slice=800KB  roaring_heap=200KB (~25%)  roaring_ser=202KB (~25%)
-//   multi_idx64                  slice=800KB  roaring_heap=204KB (~25%)  roaring_ser=214KB (~27%)
+//
+//	dense (consecutive DocIDs)   slice=800KB  roaring_heap=200KB (~25%)  roaring_ser=200KB (~25%)
+//	sparse (DocID stride=1000)   slice=800KB  roaring_heap=249KB (~31%)  roaring_ser=395KB (~49%)
+//	multi_idx8                   slice=800KB  roaring_heap=200KB (~25%)  roaring_ser=202KB (~25%)
+//	multi_idx64                  slice=800KB  roaring_heap=204KB (~25%)  roaring_ser=214KB (~27%)
 //
 // Build / load (N=100K):
-//   slice_copy         76 μs, 800KB alloc,   1 alloc   (baseline copy of EntryID data)
-//   roaring_from_slice 958 μs, 1.8MB alloc, 368 allocs  (12.6x slower; don't do this on load path)
-//   roaring_unmarshal  38 μs, 202KB alloc,  66 allocs  (2.0x faster than slice_copy; 4x less memory)
+//
+//	slice_copy         76 μs, 800KB alloc,   1 alloc   (baseline copy of EntryID data)
+//	roaring_from_slice 958 μs, 1.8MB alloc, 368 allocs  (12.6x slower; don't do this on load path)
+//	roaring_unmarshal  38 μs, 202KB alloc,  66 allocs  (2.0x faster than slice_copy; 4x less memory)
 //
 // Build / load (N=1M):
-//   slice_copy         1.1 ms,  8MB alloc,    1 alloc
-//   roaring_unmarshal  0.5 ms,  2MB alloc,  507 allocs  (2.2x faster, 4x less memory)
+//
+//	slice_copy         1.1 ms,  8MB alloc,    1 alloc
+//	roaring_unmarshal  0.5 ms,  2MB alloc,  507 allocs  (2.2x faster, 4x less memory)
 //
 // Query SkipTo (N=100K dense, seq full-scan = mergeCursors dominant pattern):
-//   Slice     ~3.9 ms, 0 allocs
-//   Roaring   ~2.1 ms, 928B alloc, 28 allocs   (1.86x faster)
+//
+//	Slice     ~3.9 ms, 0 allocs
+//	Roaring   ~2.1 ms, 928B alloc, 28 allocs   (1.86x faster)
 //
 // Query SkipTo (N=1M dense, seq):
-//   Slice     ~49 ms,  0 allocs
-//   Roaring   ~19 ms,  8KB alloc, 248 allocs   (2.6x faster)
+//
+//	Slice     ~49 ms,  0 allocs
+//	Roaring   ~19 ms,  8KB alloc, 248 allocs   (2.6x faster)
 //
 // Query SkipTo (N=100K, jump64 = sparse random across key space):
-//   Slice     ~2.2 μs, 0 allocs                 (2x faster — binary search wins for few calls)
-//   Roaring   ~4.5 μs, 928B alloc, 28 allocs
+//
+//	Slice     ~2.2 μs, 0 allocs                 (2x faster — binary search wins for few calls)
+//	Roaring   ~4.5 μs, 928B alloc, 28 allocs
 //
 // Design implications:
 //   - Roaring unmarshal is the clear winner for load-side cold start:
@@ -48,7 +54,6 @@
 //   - Neither iterator directly solves the cross-segment wildcard merge problem.
 //     The FieldCursor internal heap already does lazy K-way merge at query time,
 //     eliminating the need for load-time merge entirely.
-//
 package core
 
 import (

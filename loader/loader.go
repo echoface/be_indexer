@@ -13,22 +13,28 @@ import (
 	"github.com/echoface/be_indexer/segment"
 )
 
-// Options controls OpenIndex validation.
+// SegmentLoadMode selects both segment storage and integrity verification.
+// Combining them in one enum prevents meaningless option combinations.
+type SegmentLoadMode uint8
+
+const (
+	// SegmentLoadHeapVerify reads segments into the Go heap and verifies the
+	// manifest size and whole-file checksum. It is the zero-value mode.
+	SegmentLoadHeapVerify SegmentLoadMode = iota
+	// SegmentLoadMmapVerify verifies the manifest size and whole-file checksum,
+	// then maps the file read-only.
+	SegmentLoadMmapVerify
+	// SegmentLoadMmapTrustPublished maps the file without hashing its payload.
+	// Use it only for immutable artifacts verified by a trusted publisher.
+	SegmentLoadMmapTrustPublished
+)
+
+// Options controls OpenIndex storage and validation behavior.
 type Options struct {
 	// SchemaHash, when non-empty, must match Manifest.SchemaHash.
 	SchemaHash string
-	// VerifySegmentBlockChecksums controls whether every segment block checksum is
-	// re-hashed while opening readers. The loader already verifies the whole file
-	// through the manifest checksum, so false avoids a second O(segment_size) scan
-	// on serving cold start while still validating checksum metadata shape.
-	VerifySegmentBlockChecksums bool
-	// UseMmap memory-maps segment files instead of reading them fully into the
-	// heap. This shares the OS page cache and keeps RSS proportional to touched
-	// pages, which is the recommended serving mode. Mmap intentionally skips the
-	// whole-file manifest checksum (it would fault in every page); integrity then
-	// relies on block checksum metadata, optionally strengthened by
-	// VerifySegmentBlockChecksums.
-	UseMmap bool
+	// SegmentLoad selects heap vs mmap loading and its verification contract.
+	SegmentLoad SegmentLoadMode
 }
 
 // OpenIndex loads index_root/CURRENT and returns a CompositeEngine snapshot.
@@ -42,6 +48,9 @@ func OpenIndex(root string, fields map[core.BEField]*core.FieldMeta, opts Option
 
 // LoadSnapshot loads a manifest generation and all referenced segments/sidecars.
 func LoadSnapshot(root string, fields map[core.BEField]*core.FieldMeta, opts Options) (*engine.IndexSnapshot, error) {
+	if opts.SegmentLoad > SegmentLoadMmapTrustPublished {
+		return nil, fmt.Errorf("unknown segment load mode %d", opts.SegmentLoad)
+	}
 	m, err := ReadCurrentManifest(root)
 	if err != nil {
 		return nil, err
@@ -57,19 +66,27 @@ func LoadSnapshot(root string, fields map[core.BEField]*core.FieldMeta, opts Opt
 	if err != nil {
 		return nil, fmt.Errorf("load full: %w", err)
 	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = fullEngine.Close()
+		}
+	}()
 
 	deltaEngines, changedDocs, deletedDocs, err := loadDeltas(root, fields, m.SchemaHash, m.Deltas, opts)
 	if err != nil {
 		return nil, fmt.Errorf("load deltas: %w", err)
 	}
 
-	return &engine.IndexSnapshot{
+	snapshot := &engine.IndexSnapshot{
 		Generation:   m.Generation,
 		FullEngine:   fullEngine,
 		DeltaEngines: deltaEngines,
 		ChangedDocs:  changedDocs,
 		DeletedDocs:  deletedDocs,
-	}, nil
+	}
+	committed = true
+	return snapshot, nil
 }
 
 // ReadCurrentManifest reads CURRENT and the referenced manifest JSON.
@@ -106,13 +123,25 @@ func loadFullEngine(root string, fields map[core.BEField]*core.FieldMeta, schema
 	if err != nil {
 		return nil, err
 	}
-	return engine.NewBooleanEngine(fields, nil, segments)
+	fullEngine, err := engine.NewBooleanEngine(fields, segments)
+	if err != nil {
+		closeSegments(segments)
+		return nil, err
+	}
+	return fullEngine, nil
 }
 
 func loadDeltas(root string, fields map[core.BEField]*core.FieldMeta, schemaHash string, deltas []manifest.DeltaIndexDescriptor, opts Options) ([]*engine.BooleanEngine, *core.BitmapDocSet, *core.BitmapDocSet, error) {
 	changedDocs := core.NewBitmapDocSet()
 	deletedDocs := core.NewBitmapDocSet()
 	deltaEngines := make([]*engine.BooleanEngine, 0, len(deltas))
+	changedByDelta := make([][]core.DocID, len(deltas))
+	committed := false
+	defer func() {
+		if !committed {
+			closeEngines(deltaEngines)
+		}
+	}()
 	laterChangedDocs := core.NewBitmapDocSet()
 	for i := len(deltas) - 1; i >= 0; i-- {
 		delta := deltas[i]
@@ -120,13 +149,15 @@ func loadDeltas(root string, fields map[core.BEField]*core.FieldMeta, schemaHash
 		if err != nil {
 			return nil, nil, nil, err
 		}
+		changedByDelta[i] = changed
 		segments, err := loadSegments(root, delta.Path, delta.Segments, schemaHash, opts)
 		if err != nil {
 			return nil, nil, nil, err
 		}
 		if len(segments) > 0 {
-			deltaEngine, err := engine.NewBooleanEngine(fields, nil, segments)
+			deltaEngine, err := engine.NewBooleanEngine(fields, segments)
 			if err != nil {
+				closeSegments(segments)
 				return nil, nil, nil, err
 			}
 			if laterChangedDocs.Cardinality() > 0 {
@@ -134,18 +165,20 @@ func loadDeltas(root string, fields map[core.BEField]*core.FieldMeta, schemaHash
 				laterChangedDocs.ForEach(func(id core.DocID) { ld.MarkDeleted(id) })
 				deltaEngine.SetLiveDocs(ld)
 			}
-			deltaEngines = append([]*engine.BooleanEngine{deltaEngine}, deltaEngines...)
+			deltaEngines = append(deltaEngines, deltaEngine)
 		}
 		for _, id := range changed {
 			laterChangedDocs.Add(id)
 		}
 	}
+	// The loop above loads newest to oldest so laterChangedDocs can mask stale
+	// versions. Restore chronological engine order without repeated slice prepends.
+	for left, right := 0, len(deltaEngines)-1; left < right; left, right = left+1, right-1 {
+		deltaEngines[left], deltaEngines[right] = deltaEngines[right], deltaEngines[left]
+	}
 
-	for _, delta := range deltas {
-		changed, err := loadDocIDSidecar(root, delta.Path, delta.ChangedDocsFile, delta.ChangedDocsChecksum)
-		if err != nil {
-			return nil, nil, nil, err
-		}
+	for i, delta := range deltas {
+		changed := changedByDelta[i]
 		for _, id := range changed {
 			changedDocs.Add(id)
 			deletedDocs.Remove(id)
@@ -158,19 +191,15 @@ func loadDeltas(root string, fields map[core.BEField]*core.FieldMeta, schemaHash
 			deletedDocs.Add(id)
 		}
 	}
+	committed = true
 	return deltaEngines, changedDocs, deletedDocs, nil
 }
 
 func loadSegments(root, base string, descs []manifest.SegmentDescriptor, schemaHash string, opts Options) ([]*segment.SegmentReader, error) {
 	segments := make([]*segment.SegmentReader, 0, len(descs))
-	blockChecksumMode := segment.BlockChecksumDisabled
-	if opts.VerifySegmentBlockChecksums {
-		blockChecksumMode = segment.BlockChecksumOnOpen
-	}
-	readerOpts := segment.ReaderOptions{BlockChecksumMode: blockChecksumMode}
 	for _, desc := range descs {
 		path := filepath.Join(root, base, desc.File)
-		reader, err := openSegmentReader(path, desc, readerOpts, opts.UseMmap)
+		reader, err := openSegmentReader(path, desc, opts)
 		if err != nil {
 			closeSegments(segments)
 			return nil, err
@@ -192,9 +221,15 @@ func loadSegments(root, base string, descs []manifest.SegmentDescriptor, schemaH
 
 // openSegmentReader opens one segment either by memory-mapping the file (serving
 // default) or by reading + whole-file checksum verifying it into the heap.
-func openSegmentReader(path string, desc manifest.SegmentDescriptor, readerOpts segment.ReaderOptions, useMmap bool) (*segment.SegmentReader, error) {
-	if useMmap {
-		return segment.OpenSegmentFile(path, readerOpts)
+func openSegmentReader(path string, desc manifest.SegmentDescriptor, opts Options) (*segment.SegmentReader, error) {
+	readerOpts := segment.ReaderOptions{BlockChecksumMode: segment.BlockChecksumDisabled}
+	if opts.SegmentLoad != SegmentLoadHeapVerify {
+		return segment.OpenSegmentFile(path, segment.OpenFileOptions{
+			ReaderOptions:    readerOpts,
+			ExpectedSize:     desc.Size,
+			ExpectedChecksum: desc.Checksum,
+			VerifyFile:       opts.SegmentLoad == SegmentLoadMmapVerify,
+		})
 	}
 	data, err := manifest.ReadAndVerify(path, desc.Size, desc.Checksum)
 	if err != nil {
@@ -206,6 +241,12 @@ func openSegmentReader(path string, desc manifest.SegmentDescriptor, readerOpts 
 func closeSegments(segments []*segment.SegmentReader) {
 	for _, s := range segments {
 		_ = s.Close()
+	}
+}
+
+func closeEngines(engines []*engine.BooleanEngine) {
+	for _, e := range engines {
+		_ = e.Close()
 	}
 }
 

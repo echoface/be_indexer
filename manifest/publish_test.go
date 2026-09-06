@@ -53,20 +53,4 @@ func TestWriteSidecarsAreSortedAndLoadable(t *testing.T) {
 			t.Fatalf("ids not sorted: got=%v want=%v", ids, want)
 		}
 	}
-
-	entryFile, entryChecksum, err := manifest.WriteEntriesSidecar(dir, "wildcards.bin", core.Entries{9, 1, 5})
-	if err != nil {
-		t.Fatal(err)
-	}
-	entryData, err := manifest.ReadAndVerify(filepath.Join(dir, entryFile), 0, entryChecksum)
-	if err != nil {
-		t.Fatal(err)
-	}
-	entries, err := manifest.DecodeEntries(entryData)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if entries[0] != 1 || entries[1] != 5 || entries[2] != 9 {
-		t.Fatalf("entries not sorted: %v", entries)
-	}
 }

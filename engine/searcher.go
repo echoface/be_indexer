@@ -12,19 +12,17 @@ import (
 // BooleanEngine is a read-only index engine backed by mmap'd segments.
 // It is safe for concurrent use across goroutines.
 type BooleanEngine struct {
-	schemaCodec     *parser.SchemaCodec
-	wildcardEntries core.Entries
-	segments        []*segment.SegmentReader
-	liveDocs        *core.LiveDocs
+	schemaCodec *parser.SchemaCodec
+	segments    []*segment.SegmentReader
+	liveDocs    *core.LiveDocs
 }
 
-// NewBooleanEngine compiles the schema and creates an engine from pre-built
-// segments and wildcard entries. It fails fast on invalid field metadata
+// NewBooleanEngine compiles the schema and creates an engine from pre-built v4
+// segments. It fails fast on invalid field metadata
 // (unknown container, duplicate field id, missing tokenizer) so a misconfigured
 // schema is rejected at construction time rather than on the first query.
 func NewBooleanEngine(
 	fieldsData map[core.BEField]*core.FieldMeta,
-	wildcardEntries core.Entries,
 	segments []*segment.SegmentReader,
 ) (*BooleanEngine, error) {
 	codec, err := parser.NewSchemaCodec(fieldsData)
@@ -44,9 +42,8 @@ func NewBooleanEngine(
 		return nil, err
 	}
 	return &BooleanEngine{
-		schemaCodec:     codec,
-		wildcardEntries: wildcardEntries,
-		segments:        segments,
+		schemaCodec: codec,
+		segments:    segments,
 	}, nil
 }
 

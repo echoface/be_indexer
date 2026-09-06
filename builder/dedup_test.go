@@ -1,6 +1,8 @@
 package builder_test
 
 import (
+	"bytes"
+	"io"
 	"testing"
 
 	"github.com/echoface/be_indexer/builder"
@@ -40,6 +42,32 @@ func TestFullIndexBuilder_DuplicateDocIDFailFast(t *testing.T) {
 	// Builder is poisoned now.
 	if _, err := b.Build(); err == nil {
 		t.Fatal("poisoned builder must reject Build")
+	}
+}
+
+// DocID uniqueness applies to the complete corpus. A duplicate split across
+// two physical segments must be rejected before any segment writer is created.
+func TestBuildSegmentsFromDocs_DuplicateDocIDAcrossSegments(t *testing.T) {
+	docs := []*core.Document{
+		core.NewDocument(5).AddConjunction(core.NewConjunction().In("a", 1)),
+		core.NewDocument(6).AddConjunction(core.NewConjunction().In("a", 1)),
+		core.NewDocument(5).AddConjunction(core.NewConjunction().In("a", 2)),
+	}
+	writersCreated := 0
+	_, err := builder.BuildSegmentsFromDocs(
+		func(int) (io.Writer, error) {
+			writersCreated++
+			return new(bytes.Buffer), nil
+		},
+		dedupFields(),
+		docs,
+		builder.BuildSegmentsFromDocsOptions{MaxDocsPerSegment: 1},
+	)
+	if err == nil {
+		t.Fatal("expected duplicate DocID across segments to be rejected")
+	}
+	if writersCreated != 0 {
+		t.Fatalf("validation must finish before creating segment writers, got %d writers", writersCreated)
 	}
 }
 

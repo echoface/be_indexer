@@ -160,8 +160,8 @@ func runGallopingSeq(data Entries, targets []EntryID) (sink int) {
 func BenchmarkSkipToComparison(b *testing.B) {
 	sizes := []int{1_000, 10_000, 100_000, 1_000_000}
 	patterns := []struct {
-		name  string
-		make  func(e Entries) []EntryID
+		name string
+		make func(e Entries) []EntryID
 	}{
 		{"seq", func(e Entries) []EntryID { return e }},
 		{"stride16", func(e Entries) []EntryID { return strideTargets(e, 16) }},

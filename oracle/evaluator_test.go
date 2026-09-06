@@ -22,7 +22,7 @@ func oracleFields() map[core.BEField]*core.FieldMeta {
 func buildOracleEngine(t *testing.T, docs []*core.Document) *engine.BooleanEngine {
 	t.Helper()
 	buf := new(bytes.Buffer)
-	wildcards, err := builder.BuildSegmentFromDocs(buf, oracleFields(), docs)
+	err := builder.BuildSegmentFromDocs(buf, oracleFields(), docs, builder.BuildSegmentFromDocsOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -30,7 +30,7 @@ func buildOracleEngine(t *testing.T, docs []*core.Document) *engine.BooleanEngin
 	if err != nil {
 		t.Fatal(err)
 	}
-	eng, err := engine.NewBooleanEngine(oracleFields(), wildcards, []*segment.SegmentReader{reader})
+	eng, err := engine.NewBooleanEngine(oracleFields(), []*segment.SegmentReader{reader})
 	if err != nil {
 		t.Fatalf("NewBooleanEngine failed: %v", err)
 	}

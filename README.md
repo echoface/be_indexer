@@ -1,8 +1,10 @@
 # be_indexer
 
-High-performance Boolean Expression Indexing SDK based on the VLDB 09 paper *"Indexing Boolean Expressions"*, with production-ready read/write separation, zero-copy mmap storage, and incremental full+delta snapshot model.
+基于 VLDB 09 论文 *Indexing Boolean Expressions* 的高性能布尔表达式索引 SDK，提供读写分离、mmap 友好的 Segment v4，以及 full + delta 增量快照。
 
-**Target scenarios**: Ad targeting, recommendation rule engines, complex rule matching.
+项目首先保证布尔规则语义、数据完整性和线上可用性，再通过 mmap zero-copy、游标归并、外排和对象复用降低延迟与内存开销。低分配是性能手段，不是削弱功能的约束。
+
+**适用场景**：广告定向、推荐规则过滤、复杂规则引擎。
 
 ## Architecture
 
@@ -75,13 +77,13 @@ import "github.com/echoface/be_indexer"
 
 // 1. Define fields
 fields := map[be_indexer.BEField]*be_indexer.FieldMeta{
-    "age":  {ID: 1, Field: "age",  FieldOption: be_indexer.FieldOption{IndexType: "default", Encoder: "number"}},
+    "age":  {ID: 1, Field: "age",  FieldOption: be_indexer.FieldOption{IndexType: "ext_range", Encoder: "ext_range"}},
     "city": {ID: 2, Field: "city", FieldOption: be_indexer.FieldOption{IndexType: "default"}},
 }
 
 // 2. Build documents
 doc1 := be_indexer.NewDocument(1).AddConjunction(
-    be_indexer.NewConjunction().In("age", be_indexer.NewIntValues(18, 25)).
+    be_indexer.NewConjunction().Between("age", 18, 25).
                                 In("city", be_indexer.NewStrValues("beijing")),
 )
 doc2 := be_indexer.NewDocument(2).AddConjunction(
@@ -90,11 +92,11 @@ doc2 := be_indexer.NewDocument(2).AddConjunction(
 
 // 3. Build segment
 buf := new(bytes.Buffer)
-wildcards, _ := be_indexer.BuildSegment(buf, fields, []*be_indexer.Document{doc1, doc2})
+_ = be_indexer.BuildSegment(buf, fields, []*be_indexer.Document{doc1, doc2}, be_indexer.BuildSegmentOptions{})
 
 // 4. Load and query
 reader, _ := be_indexer.NewSegmentReader(buf.Bytes())
-engine := be_indexer.NewEngine(fields, wildcards, []*be_indexer.SegmentReader{reader})
+engine, _ := be_indexer.NewEngine(fields, []*be_indexer.SegmentReader{reader})
 
 results, _ := engine.Retrieve(be_indexer.Assignments{
     "age": []int{20}, "city": []string{"beijing"},
@@ -116,8 +118,11 @@ fullOpt := be_indexer.FullIndexBuildOption{
     Root:       "/data/index",
     Generation: 20240701,
     Fields:     fields,
+    Options: be_indexer.BuildDirectoryOptions{
+        SegmentSchemaHash: "sha256:your-schema-hash",
+    },
 }
-full := be_indexer.NewFullIndexBuilder(fullOpt)
+full, _ := be_indexer.NewFullIndexBuilder(fullOpt)
 for _, doc := range docs {
     full.AddDocument(doc)
 }
@@ -130,16 +135,23 @@ deltaOpt := be_indexer.DeltaIndexBuildOption{
     FromWatermarkExclusive: 0,
     ToWatermarkInclusive:   1 << 60,
     Fields:               fields,
+    Options: be_indexer.BuildDirectoryOptions{
+        SegmentSchemaHash: "sha256:your-schema-hash",
+    },
 }
-delta := be_indexer.NewDeltaIndexBuilder(deltaOpt)
+delta, _ := be_indexer.NewDeltaIndexBuilder(deltaOpt)
 for _, m := range mutations {
-    delta.Add(m)
+    delta.AddMutation(m)
 }
 deltaDesc, _ := delta.Build()
 
 // Publish snapshot
 manifest, _ := be_indexer.NewSnapshotManifest(be_indexer.SnapshotManifestRequest{
-    Full: fullDesc, Deltas: []be_indexer.DeltaIndexDescriptor{deltaDesc},
+    IndexName:  "targeting",
+    Generation: 202407010001,
+    SchemaHash: "sha256:your-schema-hash",
+    Full:       fullDesc,
+    Deltas:     []be_indexer.DeltaIndexDescriptor{deltaDesc},
 })
 be_indexer.PublishManifest("/data/index", "manifest-1.json", manifest)
 ```
@@ -147,14 +159,16 @@ be_indexer.PublishManifest("/data/index", "manifest-1.json", manifest)
 ### Load & Serve
 
 ```go
-engine, _ := be_indexer.OpenIndex("/data/index", fields, be_indexer.LoaderOptions{UseMmap: true})
+engine, _ := be_indexer.OpenIndex("/data/index", fields, be_indexer.LoaderOptions{SegmentLoad: be_indexer.SegmentLoadMmapVerify})
 results, _ := engine.Retrieve(assignments)
 ```
+
+`SegmentLoadMmapVerify` 默认按 Manifest 校验文件尺寸和整文件 SHA-256，再建立 mmap。只有发布链路已完成可信校验且冷启动速度优先时，才应显式设置 `SegmentLoad: SegmentLoadMmapTrustPublished`；快速模式仍保留尺寸、Segment 结构、block 边界和 checksum 元数据格式检查。
 
 ### Live Reload
 
 ```go
-holder, _ := be_indexer.NewIndexHolder("/data/index", fields, be_indexer.LoaderOptions{UseMmap: true})
+holder, _ := be_indexer.NewIndexHolder("/data/index", fields, be_indexer.LoaderOptions{SegmentLoad: be_indexer.SegmentLoadMmapVerify})
 // Reload when manifest changes (call Reload when notified of manifest update)
 _ = holder.Reload()
 results, _ := holder.Retrieve(assignments)
@@ -205,7 +219,7 @@ All cursors (wildcard + per-field postings from all segments) compete in a singl
 | Stride 16 | 167 μs | 58 μs | **2.9×** |
 | Jump 64 | 1.73 μs | 1.66 μs | ≈equal |
 
-Applied to both `SliceIterator` (wildcards) and `flatPostingCursor` (mmap postings). Zero memory overhead, zero allocations.
+该优化同时用于 `SliceIterator`（wildcard）和 `flatPostingCursor`（mmap posting）。`SkipTo` 循环本身不分配；完整查询仍允许为编码、游标组合和结果所有权进行受控分配，以端到端吞吐和延迟为最终指标。
 
 ### Zero-Copy Wildcards
 

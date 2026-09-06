@@ -29,7 +29,7 @@ func TestBuildSegmentsFromDocs_Consistency(t *testing.T) {
 
 	// Build single segment
 	buf := new(bytes.Buffer)
-	wild1, err := BuildSegmentFromDocs(buf, fields, docs)
+	err := BuildSegmentFromDocs(buf, fields, docs, BuildSegmentFromDocsOptions{})
 	if err != nil {
 		t.Fatalf("BuildSegmentFromDocs failed: %v", err)
 	}
@@ -37,14 +37,14 @@ func TestBuildSegmentsFromDocs_Consistency(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewSegmentReader failed: %v", err)
 	}
-	eng1, err := engine.NewBooleanEngine(fields, wild1, []*segment.SegmentReader{seg1})
+	eng1, err := engine.NewBooleanEngine(fields, []*segment.SegmentReader{seg1})
 	if err != nil {
 		t.Fatalf("NewBooleanEngine failed: %v", err)
 	}
 
 	// Build multi segments (chunk=1)
 	var segBuffers []*bytes.Buffer
-	wild2, segCnt, err := BuildSegmentsFromDocs(func(segIdx int) (io.Writer, error) {
+	segCnt, err := BuildSegmentsFromDocs(func(segIdx int) (io.Writer, error) {
 		b := new(bytes.Buffer)
 		segBuffers = append(segBuffers, b)
 		return b, nil
@@ -64,7 +64,7 @@ func TestBuildSegmentsFromDocs_Consistency(t *testing.T) {
 		}
 		segs = append(segs, sr)
 	}
-	eng2, err := engine.NewBooleanEngine(fields, wild2, segs)
+	eng2, err := engine.NewBooleanEngine(fields, segs)
 	if err != nil {
 		t.Fatalf("NewBooleanEngine failed: %v", err)
 	}
@@ -102,8 +102,7 @@ func TestBuildSegmentsFromDocs_Consistency(t *testing.T) {
 
 // TestBuildSegmentsFromDocs_EmbedsPerSegmentWildcards ensures the multi-segment
 // helper writes a non-empty __wildcards block into each segment that has K=0
-// conjunctions. Loader recovery reads seg.Wildcards() only; it must not depend
-// on the returned union entries alone.
+// conjunctions. Loader and engine read seg.Wildcards() directly.
 func TestBuildSegmentsFromDocs_EmbedsPerSegmentWildcards(t *testing.T) {
 	fields := map[core.BEField]*core.FieldMeta{
 		"age":  {ID: 1, Field: "age", FieldOption: core.FieldOption{IndexType: core.IndexNameDefault, Encoder: "number"}},
@@ -117,7 +116,7 @@ func TestBuildSegmentsFromDocs_EmbedsPerSegmentWildcards(t *testing.T) {
 	}
 
 	var segBuffers []*bytes.Buffer
-	returnedWildcards, segCnt, err := BuildSegmentsFromDocs(func(segIdx int) (io.Writer, error) {
+	segCnt, err := BuildSegmentsFromDocs(func(segIdx int) (io.Writer, error) {
 		b := new(bytes.Buffer)
 		segBuffers = append(segBuffers, b)
 		return b, nil
@@ -145,14 +144,6 @@ func TestBuildSegmentsFromDocs_EmbedsPerSegmentWildcards(t *testing.T) {
 	if len(embedded) == 0 {
 		t.Fatal("embedded per-segment wildcards is empty; multi-segment path forgot SetWildcards")
 	}
-	if len(embedded) != len(returnedWildcards) {
-		t.Fatalf("embedded wildcards len=%d, returned union len=%d", len(embedded), len(returnedWildcards))
-	}
-	for i := range embedded {
-		if embedded[i] != returnedWildcards[i] {
-			t.Fatalf("embedded wildcards mismatch returned union at %d: %v vs %v", i, embedded, returnedWildcards)
-		}
-	}
 	// Only doc2 (segment index 1) is K=0.
 	if got := segs[1].Wildcards(); len(got) != 1 {
 		t.Fatalf("segment[1] (K=0 doc) wildcards want 1, got %v", got)
@@ -165,7 +156,7 @@ func TestBuildSegmentsFromDocs_EmbedsPerSegmentWildcards(t *testing.T) {
 	}
 
 	// Engine built only from embedded wildcards must still hit the K=0 doc.
-	eng, err := engine.NewBooleanEngine(fields, embedded, segs)
+	eng, err := engine.NewBooleanEngine(fields, segs)
 	if err != nil {
 		t.Fatalf("NewBooleanEngine failed: %v", err)
 	}

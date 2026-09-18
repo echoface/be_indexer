@@ -131,7 +131,7 @@ func writeSegmentFromDocsWithCodec(w io.Writer, codec *parser.SchemaCodec, docs 
 	if err := validateCodecContainers(codec); err != nil {
 		return err
 	}
-	sw := segment.NewInMemorySegmentBuilderWithOptions(w, segment.InMemorySegmentBuilderOptions{})
+	sw := segment.NewInMemorySegmentBuilder(w)
 	sw.SetDocCount(len(docs))
 
 	// Config fields from the compiled schema (single source of truth).
@@ -154,7 +154,7 @@ func writeSegmentFromDocsWithCodec(w io.Writer, codec *parser.SchemaCodec, docs 
 	return sw.Write()
 }
 
-func exportDocsToSegment(sw *segment.InMemorySegmentBuilder, codec *parser.SchemaCodec, docs []*core.Document, normOpt NormalizeOptions) (core.Entries, error) {
+func exportDocsToSegment(sw postingSink, codec *parser.SchemaCodec, docs []*core.Document, normOpt NormalizeOptions) (core.Entries, error) {
 	var wildcardEIDs core.Entries
 
 	// Iterate over all documents

@@ -169,10 +169,10 @@ Converts `[]*core.Document` into binary segments.
 
 | Path | Builder | When |
 |:-----|:--------|:-----|
-| Pull (in-memory) | `BuildSegmentFromDocs` → `InMemorySegmentBuilder` | Tests, small docs, single segment |
+| Pull (in-memory) | `BuildSegmentFromDocs` → `SegmentBuilder` (spill disabled) | Tests, small docs, single segment |
 | Pull (multi-seg) | `BuildSegmentsFromDocs` → splits by `MaxDocsPerSegment` | Medium workloads |
-| Push (streaming) | `FullIndexBuilder` → `ExternalBuilder` | Full index, external sort, spill to disk |
-| Push (delta) | `DeltaIndexBuilder` → `InMemorySegmentBuilder` | Delta index, in-memory compact |
+| Push (streaming) | `FullIndexBuilder` → `SegmentBuilder` (spill enabled) | Full index, external sort, spill to disk |
+| Push (delta) | `DeltaIndexBuilder` → `SegmentBuilder` (in-memory profile) | Delta index, in-memory compact |
 
 #### Document Export Flow
 
@@ -441,11 +441,12 @@ func init() {
 
 ### 4.3 Extended Segment Building
 
-For very large workloads (> 10M docs), use `ExternalBuilder` directly with external sort:
+For very large workloads (> 10M docs), use `SegmentBuilder` directly with external sort:
 
 ```go
-builder := segment.NewExternalBuilder(writer, runDir, segment.ExternalBuilderOptions{
+builder, err := segment.NewSegmentBuilder(writer, segment.SegmentBuilderOptions{
     MaxPostingsInMemory: 5_000_000,
+    TmpDir:              runDir,
 })
 // Add docs via exportDocToSink pattern
 ```

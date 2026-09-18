@@ -126,8 +126,7 @@
           <div class="arch-layer-title">Segment Layer — Mmap 存储与容器框架</div>
           <div class="arch-grid arch-grid-3">
             <div class="arch-box highlight">SegmentReader<br><small>零拷贝 mmap/heap</small></div>
-            <div class="arch-box">ExternalBuilder<br><small>外排溢写 + 归并</small></div>
-            <div class="arch-box">InMemoryBuilder<br><small>小数据全内存构建</small></div>
+            <div class="arch-box">SegmentBuilder<br><small>全内存 / 外排溢写（同一实现）</small></div>
           </div>
           <div class="arch-subgroup">
             <div class="arch-subgroup-box">
@@ -153,7 +152,7 @@
         <div class="arch-layer data">
           <div class="arch-layer-title">Builder Layer — 离线构建（全量 + 增量）</div>
           <div class="arch-grid arch-grid-2">
-            <div class="arch-box highlight">FullIndexBuilder<br><small>流式 Push → ExternalBuilder</small></div>
+            <div class="arch-box highlight">FullIndexBuilder<br><small>流式 Push → SegmentBuilder（溢写）</small></div>
             <div class="arch-box">DeltaIndexBuilder<br><small>内存累积 → BuildDeltaPlan</small></div>
           </div>
           <div class="arch-subgroup">

@@ -49,10 +49,12 @@ K 被移动到 `EntryID` 的最高 8 位。因此，直接按 `EntryID` 排序�
 
 #### 2.1.2 索引构建
 
-构建分为两条路径：
+构建只有一条实现：`SegmentBuilder`。它由 `SegmentBuilderOptions` 参数化：
 
-- 小规模构建使用 `InMemorySegmentBuilder`。
-- full build 使用 `ExternalBuilder`、分段和临时 run。
+- `MaxPostingsInMemory <= 0`：全内存构建（不溢写）。
+- `MaxPostingsInMemory > 0` + `TmpDir`：按 distinct key 溢写 sorted run 的外部排序。
+
+两种配置产出的 Segment 字节完全一致，因此 full build 只是额外启用了溢写与分段。
 
 每个 Field 由独立的 `IndexBuilder` 负责。框架只处理：
 
@@ -406,7 +408,7 @@ age > 18 AND age < 60
 
 ## 4.2 P1：构建与存储
 
-### 4.2.1 ExternalBuilder 还不是严格内存有界
+### 4.2.1 SegmentBuilder 的溢写路径还不是严格内存有界
 
 `MaxPostingsInMemory` 当前实际限制的是 distinct key 数，不是真实 posting 数。
 
@@ -444,19 +446,15 @@ merged records
 5. Dictionary/FST/MPH 仅保留必要的 key→offset 信息。
 6. BlockWriter 支持流式写入、checksum 和 header 回填。
 
-### 4.2.2 Wildcard sidecar 最终仍被 `io.ReadAll`
+### 4.2.2 Wildcard sidecar 已改为流式写入（已修复）
 
-ExternalBuilder 写 Segment 时会把 wildcard sidecar 完整读回内存。
+历史上 SegmentBuilder 的溢写路径写 Segment 时会把 wildcard sidecar 完整
+`io.ReadAll` 回内存，削弱了 wildcard spill 的意义。
 
-这削弱了 wildcard spill 的意义。
-
-建议允许：
-
-```go
-WriteBlockFromReader(kind string, size uint64, reader io.Reader)
-```
-
-从文件直接复制到 Segment，并在复制过程中计算 checksum。
+现已改为在复制过程中以 64 KiB 分块流式写入 Segment 并同步计算 checksum
+（`SegmentBuilder.copyFromFile`，由 `SetWildcardsBlockFile` 触发），sidecar
+不再整体驻留内存。`TestSegmentBuilderWildcardStreamingMatchesBuffered` 锁定
+流式路径与内存路径产出字节一致。
 
 ### 4.2.3 部分 Reader 并非完全零拷贝
 
@@ -936,7 +934,7 @@ RetrieveInto(workspace, collector, ...)
 7. 修正文档中的过强表述：
    - “Retrieve 零分配”；
    - “SegmentReader 完整零拷贝”；
-   - “ExternalBuilder 严格 bounded memory”。
+   - “SegmentBuilder 溢写路径严格 bounded memory”。
 
 ---
 

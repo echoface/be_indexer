@@ -50,7 +50,7 @@ go vet ./...
 ### 2. Architecture & Design
 该项目采用了强类型的读写分离架构，依赖关系单向向下，严禁反向依赖：
 - **`builder`**: 包含 `BuildSegmentFromDocs`，负责将 `Document` 打平解析并推入 Segment 构建器。
-- **`segment`**: 包含 `InMemorySegmentBuilder`/`ExternalBuilder` (用于二进制对齐序列化) 和 `SegmentReader` (零拷贝反序列化)。通过 `FlatDict` 和 `FlatPostingList` 实现高密集度存储。通过 `IndexReader`/`IndexBuilder` 接口 + `RegisterIndex` 注册表支持可插拔索引容器（内置 `ac_matcher`、`ext_range`）。
+- **`segment`**: 包含 `SegmentBuilder`（统一构建器：按 `SegmentBuilderOptions` 选择全内存或溢写外部排序，两种配置输出字节一致）和 `SegmentReader` (零拷贝反序列化)。通过 `FlatDict` 和 `FlatPostingList` 实现高密集度存储。通过 `IndexReader`/`IndexBuilder` 接口 + `RegisterIndex` 注册表支持可插拔索引容器（内置 `ac_matcher`、`ext_range`）。
 - **`engine`**: 包含 `BooleanEngine` 和底层的 `mergeCursors` 算法，在不触碰任何物理布局的情况下基于 `FieldCursor` 完成求交运算。通过 `EncodedQuery` 的 default 分支路由到 `SegmentReader.IndexQuery`，支持自定义容器类型。
 - **`core`**: 处于依赖最底层，定义基础类型、常数与 ID 位元结构。
 
@@ -80,8 +80,7 @@ go vet ./...
 │   ├── geo/                # proximitygeo: proximityhash 覆盖 cell → 纯 term 索引（无自定义容器）
 │   └── example/            # 自定义 container/encoder 扩展模板（含端到端测试）
 ├── segment/                # Mmap 存储结构管理
-│   ├── segment_builder_mem.go    # InMemorySegmentBuilder
-│   ├── segment_builder_external.go # ExternalBuilder (external sort)
+│   ├── segment_builder.go  # SegmentBuilder (全内存 / 溢写外部排序)
 │   ├── segment_reader.go   # SegmentReader (mmap/heap backing)
 │   ├── field_index.go      # IndexReader/IndexBuilder 接口 + RegisterIndex 注册表
 │   ├── flatmap.go          # FlatDict

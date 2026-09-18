@@ -162,12 +162,12 @@ type FullIndexBuilder struct {
 	seenDocs *roaring64.Bitmap
 }
 
-// segmentBuild holds the per-segment external builder + wildcard accumulator.
+// segmentBuild holds the per-segment segment builder + wildcard accumulator.
 // Each segment owns an independent wildcard sidecar lifecycle.
 type segmentBuild struct {
 	tmpFile  *os.File
 	tmpName  string
-	esb      *segment.ExternalBuilder
+	sb       *segment.SegmentBuilder
 	wildAcc  *entryRunAccumulator
 	docCount int
 	minDoc   core.DocID
@@ -258,7 +258,7 @@ func (b *FullIndexBuilder) AddDocument(doc *core.Document) error {
 
 	// Committing the pre-encoded records to the sink is builder-level: the
 	// document already validated, so a failure means the sink/spill IO failed.
-	if err := commitEncodedDoc(b.curSeg.esb, encoded); err != nil {
+	if err := commitEncodedDoc(b.curSeg.sb, encoded); err != nil {
 		return b.fatal(err) // builder-level
 	}
 	if err := b.curSeg.wildAcc.Add(encoded.wildcards); err != nil {
@@ -389,12 +389,25 @@ func (b *FullIndexBuilder) startNewSegment() error {
 		filepath.Join(b.tmpDir, ".wildcard-runs", fmt.Sprintf("segment-%06d", b.segIdx)),
 		b.opt.Options.MaxWildcardEntriesInMemory,
 	)
-	esb := segment.NewExternalBuilder(tmp, filepath.Join(b.tmpDir, ".runs", fmt.Sprintf("segment-%06d", b.segIdx)), segment.ExternalBuilderOptions{
-		MaxPostingsInMemory: b.opt.Options.MaxPostingsInMemory,
+	// MaxPostingsInMemory <= 0 means "disable spill" to the segment builder, so
+	// a streaming full build resolves the bounded-memory default explicitly.
+	maxRecs := b.opt.Options.MaxPostingsInMemory
+	if maxRecs <= 0 {
+		maxRecs = segment.DefaultMaxPostingsInMemory
+	}
+	sb, err := segment.NewSegmentBuilder(tmp, segment.SegmentBuilderOptions{
+		MaxPostingsInMemory: maxRecs,
+		TmpDir:              filepath.Join(b.tmpDir, ".runs", fmt.Sprintf("segment-%06d", b.segIdx)),
 	})
+	if err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmp.Name())
+		wildAcc.Cleanup()
+		return err
+	}
 	for _, fc := range b.codec.Fields() {
-		if err := esb.AddField(fc.Field, fc.Option); err != nil {
-			seg := &segmentBuild{tmpFile: tmp, tmpName: tmp.Name(), esb: esb, wildAcc: wildAcc}
+		if err := sb.AddField(fc.Field, fc.Option); err != nil {
+			seg := &segmentBuild{tmpFile: tmp, tmpName: tmp.Name(), sb: sb, wildAcc: wildAcc}
 			seg.abort()
 			return err
 		}
@@ -402,7 +415,7 @@ func (b *FullIndexBuilder) startNewSegment() error {
 	b.curSeg = &segmentBuild{
 		tmpFile: tmp,
 		tmpName: tmp.Name(),
-		esb:     esb,
+		sb:      sb,
 		wildAcc: wildAcc,
 	}
 	return nil
@@ -428,16 +441,16 @@ func (b *FullIndexBuilder) finishCurrentSegment() error {
 	file := fmt.Sprintf("segment-%06d.bei", b.segIdx)
 	path := filepath.Join(b.tmpDir, file)
 
-	seg.esb.SetDocCount(seg.docCount)
+	seg.sb.SetDocCount(seg.docCount)
 	wildFile, _, err := seg.wildAcc.WriteSidecar(b.tmpDir, fmt.Sprintf(".segment-%06d-wildcards.bin", b.segIdx))
 	if err != nil {
 		seg.abort()
 		return err
 	}
 	wildPath := filepath.Join(b.tmpDir, wildFile)
-	seg.esb.SetWildcardsBlockFile(wildPath)
+	seg.sb.SetWildcardsBlockFile(wildPath)
 
-	if err := seg.esb.Write(); err != nil {
+	if err := seg.sb.Write(); err != nil {
 		_ = os.Remove(wildPath)
 		seg.abort()
 		return err

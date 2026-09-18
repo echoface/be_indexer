@@ -69,7 +69,7 @@ func TestBuilderReader(t *testing.T) {
 }
 
 // TestBuilderRangeRoundTrip verifies ext_range blocks survive write/read and
-// that Builder and ExternalBuilder produce byte-identical segments.
+// that the in-memory and spill profiles produce byte-identical segments.
 func TestBuilderRangeRoundTrip(t *testing.T) {
 	field := core.FieldOption{IndexType: core.IndexNameExtendRange, Encoder: core.IndexNameExtendRange}
 	type rng struct {
@@ -82,7 +82,7 @@ func TestBuilderRangeRoundTrip(t *testing.T) {
 		{18, 25, makeE(1, 300)},
 		{30, 30, makeE(1, 400)},
 	}
-	build := func(external bool) []byte {
+	build := func(spill bool) []byte {
 		buf := new(bytes.Buffer)
 		var sink interface {
 			SetDocCount(int)
@@ -90,8 +90,8 @@ func TestBuilderRangeRoundTrip(t *testing.T) {
 			AddRecord(field string, record any, entries []core.EntryID) error
 			Write() error
 		}
-		if external {
-			sink = NewExternalBuilder(buf, t.TempDir(), ExternalBuilderOptions{})
+		if spill {
+			sink = mustSegmentBuilder(t, buf, SegmentBuilderOptions{MaxPostingsInMemory: 1, TmpDir: t.TempDir()})
 		} else {
 			sink = NewInMemorySegmentBuilder(buf)
 		}
@@ -111,7 +111,7 @@ func TestBuilderRangeRoundTrip(t *testing.T) {
 	want := build(false)
 	got := build(true)
 	if !bytes.Equal(want, got) {
-		t.Fatalf("Builder and ExternalBuilder range bytes mismatch (%d vs %d)", len(want), len(got))
+		t.Fatalf("in-memory and spill range bytes mismatch (%d vs %d)", len(want), len(got))
 	}
 
 	reader, err := NewSegmentReader(got)
@@ -154,7 +154,7 @@ func TestBuilderRangeRoundTrip(t *testing.T) {
 func TestBuilderReaderV5MetadataWildcardsAndChecksum(t *testing.T) {
 	buf := new(bytes.Buffer)
 	wildcards := core.Entries{core.EntryID(30), core.EntryID(10)}
-	writer := NewInMemorySegmentBuilderWithOptions(buf, InMemorySegmentBuilderOptions{
+	writer := mustSegmentBuilder(t, buf, SegmentBuilderOptions{
 		Wildcards: wildcards,
 	})
 	writer.SetDocCount(1)
@@ -229,7 +229,7 @@ func TestNewSegmentReaderRejectsTamperedSchemaMetadata(t *testing.T) {
 
 func TestNewSegmentReaderRejectsV5BlockChecksumMismatch(t *testing.T) {
 	buf := new(bytes.Buffer)
-	writer := NewInMemorySegmentBuilderWithOptions(buf, InMemorySegmentBuilderOptions{Wildcards: core.Entries{10}})
+	writer := mustSegmentBuilder(t, buf, SegmentBuilderOptions{Wildcards: core.Entries{10}})
 	writer.SetDocCount(1)
 	writer.AddField("age", core.FieldOption{})
 	if err := writer.AddRecord("age", "18", []core.EntryID{makeE(1, 20)}); err != nil {

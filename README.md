@@ -382,6 +382,7 @@ go vet ./...
 
 ## Documentation
 
+- **[Best Practices](static/docs/BEST_PRACTICES.md)** — 使用方指南：规则建模、容器选型、full+delta 生产链路、热更新与反模式
 - [Quick Start](static/docs/QUICK_START.md) — end-to-end build & query walkthrough
 - [Architecture](static/docs/ARCHITECTURE.md) — layered design, ID encoding, retrieval
 - [API Reference](static/docs/API_REFERENCE.md) — package-level API

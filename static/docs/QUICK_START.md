@@ -225,3 +225,11 @@ case be_indexer.CompactDecisionNone:
 | wildcard | 内嵌于 Segment v5，由引擎直接读取 |
 
 当前 API 不再暴露独立 wildcard sidecar 或额外 wildcard 参数，避免同一份数据出现两个来源。
+
+---
+
+## 延伸阅读
+
+- [BEST_PRACTICES.md](BEST_PRACTICES.md) — 生产接入指南：规则建模语义、容器选型、full+delta 链路、热更新与反模式。
+- [ARCHITECTURE.md](ARCHITECTURE.md) — 分层设计与检索算法。
+- [indexes/README.md](indexes/README.md) — 各索引容器选型参考。

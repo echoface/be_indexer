@@ -247,9 +247,11 @@ func (e *BooleanEngine) mergeCursors(ctx *core.RetrieveContext, fieldCursors *co
 
 			if eid.IsInclude() {
 				if e.liveDocs == nil || e.liveDocs.IsAlive(conjID.DocID()) {
-					ctx.Collector.Add(conjID.DocID())
 					if obs != nil {
 						obs.OnMatch(conjID.DocID(), conjID)
+					}
+					if ctx.Collector.Add(conjID.DocID()) == core.CollectStop {
+						return
 					}
 				}
 			} else {

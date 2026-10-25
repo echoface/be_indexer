@@ -58,10 +58,25 @@ type RangeRecord struct {
 // Result Collection
 // --------------------------------------------------------------------------------
 
+// CollectResult tells the engine how to proceed after a collector receives a
+// matched document.
+type CollectResult uint8
+
+const (
+	// CollectContinue means the collector is not saturated and the engine
+	// should keep traversing.
+	CollectContinue CollectResult = iota
+	// CollectStop means the collector is saturated (e.g. a TopK collector has
+	// gathered k unique documents); the engine should terminate immediately
+	// and the already-collected results are final.
+	CollectStop
+)
+
 // ResultCollector receives final matched document IDs. Conjunction details are
 // diagnostic data and are reported separately through RetrieveObserver.OnMatch.
 type ResultCollector interface {
-	Add(id DocID)
+	// Add feeds one matched DocID and reports whether retrieval should stop.
+	Add(id DocID) CollectResult
 }
 
 // RetrieveObserver is an optional observer for retrieval instrumentation.

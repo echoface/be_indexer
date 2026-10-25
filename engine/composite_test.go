@@ -57,7 +57,10 @@ type compositeCollector struct {
 	ids []core.DocID
 }
 
-func (c *compositeCollector) Add(id core.DocID) { c.ids = append(c.ids, id) }
+func (c *compositeCollector) Add(id core.DocID) core.CollectResult {
+	c.ids = append(c.ids, id)
+	return core.CollectContinue
+}
 
 func collectComposite(t *testing.T, ce *engine.CompositeEngine, query core.Assignments) core.DocIDList {
 	t.Helper()
@@ -95,6 +98,34 @@ func TestCompositeEngine_UpdateStillMatchesUsesDelta(t *testing.T) {
 	}
 	ids = bitmapToSlice(b)
 	assertIDs(t, ids)
+}
+
+func TestCompositeEngine_RetrieveTopK(t *testing.T) {
+	full := buildCompositeTestEngine(t, []*core.Document{
+		core.NewDocument(1).AddConjunction(core.NewConjunction().In("a", 1)),
+		core.NewDocument(2).AddConjunction(core.NewConjunction().In("a", 1)),
+		core.NewDocument(3).AddConjunction(core.NewConjunction().In("a", 1)),
+	})
+	delta := buildCompositeTestEngine(t, []*core.Document{
+		core.NewDocument(4).AddConjunction(core.NewConjunction().In("a", 1)),
+	})
+	ce := engine.NewCompositeEngine(&engine.IndexSnapshot{
+		Generation:   2,
+		FullEngine:   full,
+		DeltaEngines: []*engine.BooleanEngine{delta},
+		ChangedDocs:  core.NewBitmapDocSet(2),
+		DeletedDocs:  core.NewBitmapDocSet(4),
+	})
+
+	// Doc 2 is superseded by delta (changed, full-side filtered); doc 4 is
+	// deleted (delta-side filtered). Remaining candidates: 1, 3.
+	got, err := ce.RetrieveTopK(core.Assignments{"a": 1}, 2, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[0].DocID != 1 || got[1].DocID != 3 {
+		t.Fatalf("want [1 3], got %v", got)
+	}
 }
 
 func TestCompositeEngine_UpdateNoLongerMatchesRemovesFull(t *testing.T) {

@@ -1095,8 +1095,9 @@ type testResultCollector struct {
 	ids []DocID
 }
 
-func (c *testResultCollector) Add(id DocID) {
+func (c *testResultCollector) Add(id DocID) CollectResult {
 	c.ids = append(c.ids, id)
+	return CollectContinue
 }
 
 func bitmapToSlice(b *BitmapDocSet) DocIDList {

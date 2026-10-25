@@ -117,8 +117,90 @@ func (e *CompositeEngine) RetrieveWithCollector(
 	if result == nil {
 		return nil
 	}
-	result.ForEach(collector.Add)
+	result.ForEach(func(id core.DocID) { _ = collector.Add(id) })
 	return nil
+}
+
+// filteredCollector wraps a downstream collector with a DocID deny set:
+// members are silently dropped without consuming TopK quota. It implements
+// the full-side (ChangedDocs) and delta-side (DeletedDocs) filters needed by
+// RetrieveTopK.
+type filteredCollector struct {
+	next core.ResultCollector
+	deny *core.BitmapDocSet
+}
+
+func (c filteredCollector) Add(id core.DocID) core.CollectResult {
+	if c.deny != nil && c.deny.Contains(id) {
+		return core.CollectContinue
+	}
+	return c.next.Add(id)
+}
+
+// RetrieveTopK returns at most k documents ranked by descending score (ties:
+// ascending DocID). The full engine and every delta engine are queried with
+// their own TopK collector, then the per-engine top-k lists are merged into
+// the global top-k. Filtering by ChangedDocs/DeletedDocs happens before an
+// Add reaches the collector, so stale documents never consume k-quota.
+//
+// TopK(F' ∪ D') = merge(TopK(F'), TopK(D')) holds for all engines, which is
+// what makes the per-engine early termination safe.
+func (e *CompositeEngine) RetrieveTopK(
+	queries core.Assignments, k int, scores core.ScoreSource, opts ...core.IndexOpt,
+) ([]core.ScoredDoc, error) {
+	if e == nil || e.snapshot == nil {
+		return nil, nil
+	}
+	s := e.snapshot
+
+	var fullTop []core.ScoredDoc
+	if s.FullEngine != nil {
+		c := core.NewTopKCollector(k, scores)
+		wrapped := filteredCollector{next: c, deny: s.ChangedDocs}
+		if err := s.FullEngine.RetrieveWithCollector(queries, wrapped, opts...); err != nil {
+			return nil, err
+		}
+		fullTop = c.Scored()
+	}
+
+	var deltaTop []core.ScoredDoc
+	for _, deltaEngine := range s.DeltaEngines {
+		c := core.NewTopKCollector(k, scores)
+		wrapped := filteredCollector{next: c, deny: s.DeletedDocs}
+		if err := deltaEngine.RetrieveWithCollector(queries, wrapped, opts...); err != nil {
+			return nil, err
+		}
+		deltaTop = mergeScoredDesc(deltaTop, c.Scored())
+	}
+
+	return mergeScoredDescLimit(fullTop, deltaTop, k), nil
+}
+
+func mergeScoredDesc(a, b []core.ScoredDoc) []core.ScoredDoc {
+	return mergeScoredDescLimit(a, b, len(a)+len(b))
+}
+
+func mergeScoredDescLimit(a, b []core.ScoredDoc, limit int) []core.ScoredDoc {
+	out := make([]core.ScoredDoc, 0, min(limit, len(a)+len(b)))
+	i, j := 0, 0
+	for len(out) < limit && (i < len(a) || j < len(b)) {
+		switch {
+		case j >= len(b) || (i < len(a) && scoredDescLess(a[i], b[j])):
+			out = append(out, a[i])
+			i++
+		default:
+			out = append(out, b[j])
+			j++
+		}
+	}
+	return out
+}
+
+func scoredDescLess(a, b core.ScoredDoc) bool {
+	if a.Score != b.Score {
+		return a.Score > b.Score
+	}
+	return a.DocID < b.DocID
 }
 
 // Close releases all engines (and their segment readers) owned by this snapshot.

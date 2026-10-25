@@ -108,7 +108,10 @@ type testResultCollector struct {
 	ids []core.DocID
 }
 
-func (c *testResultCollector) Add(id core.DocID) { c.ids = append(c.ids, id) }
+func (c *testResultCollector) Add(id core.DocID) core.CollectResult {
+	c.ids = append(c.ids, id)
+	return core.CollectContinue
+}
 
 func bitmapToSlice(b *core.BitmapDocSet) core.DocIDList {
 	if b == nil {
@@ -468,6 +471,28 @@ func TestEngine_MultiKLevels(t *testing.T) {
 	check(core.Assignments{"a": 1, "b": 2}, []core.DocID{2, 3, 4})            // K=2+1+0 (doc 1 has K=3, needs 3 fields)
 	check(core.Assignments{"a": 1}, []core.DocID{3, 4})                       // K=1+0 (doc 1 needs 3, doc 2 needs 2)
 	check(core.Assignments{"a": 99}, nil)                                     // doc 4 NotIn(a,99) excludes
+}
+
+func TestEngine_TopKEarlyStop(t *testing.T) {
+	docs := make([]*core.Document, 0, 50)
+	for i := 1; i <= 50; i++ {
+		docs = append(docs, core.NewDocument(core.DocID(i)).AddConjunction(core.NewConjunction().In("a", 1)))
+	}
+	eng := buildSingleEngine(t, simpleFields(), docs)
+
+	const k = 5
+	c := core.NewTopKCollector(k, nil)
+	matchObs := &testObserver{}
+	err := eng.RetrieveWithCollector(core.Assignments{"a": 1}, c, withObserver(matchObs))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := c.DocIDs(); len(got) != k {
+		t.Fatalf("want %d docs, got %v", k, got)
+	}
+	if matchObs.matchCount != k {
+		t.Fatalf("early stop failed: OnMatch fired %d times, want %d", matchObs.matchCount, k)
+	}
 }
 
 // ==========================================================================

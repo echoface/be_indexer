@@ -61,9 +61,17 @@ type (
 	LiveDocs       = core.LiveDocs
 	DocIDCollector = core.DocIDCollector
 
-	ResultCollector = core.ResultCollector
-	RetrieveContext = core.RetrieveContext
-	IndexOpt        = core.IndexOpt
+	ResultCollector   = core.ResultCollector
+	CollectResult     = core.CollectResult
+	RetrieveContext   = core.RetrieveContext
+	IndexOpt          = core.IndexOpt
+	TopKCollector     = core.TopKCollector
+	ScoreSource       = core.ScoreSource
+	ScoredDoc         = core.ScoredDoc
+	AtomicScoreSource = core.AtomicScoreSource
+	DenseScoreTable   = core.DenseScoreTable
+	RoaringScoreTable = core.RoaringScoreTable
+	MissingScoreMode  = core.MissingScoreMode
 
 	RetrieveObserver = core.RetrieveObserver
 
@@ -122,6 +130,11 @@ const (
 	CompactDecisionNone  = compact.DecisionNone
 	CompactDecisionMinor = compact.DecisionMinor
 	CompactDecisionMajor = compact.DecisionMajor
+
+	CollectContinue  = core.CollectContinue
+	CollectStop      = core.CollectStop
+	MissingScoreZero = core.MissingScoreZero
+	MissingScoreSkip = core.MissingScoreSkip
 )
 
 var (
@@ -135,12 +148,15 @@ var (
 
 // Factory functions from core.
 var (
-	NewDocument       = core.NewDocument
-	NewConjunction    = core.NewConjunction
-	NewLiveDocs       = core.NewLiveDocs
-	NewDocIDCollector = core.NewDocIDCollector
-	PickCollector     = core.PickCollector
-	PutCollector      = core.PutCollector
+	NewDocument          = core.NewDocument
+	NewConjunction       = core.NewConjunction
+	NewLiveDocs          = core.NewLiveDocs
+	NewDocIDCollector    = core.NewDocIDCollector
+	NewTopKCollector     = core.NewTopKCollector
+	NewDenseScoreTable   = core.NewDenseScoreTable
+	NewRoaringScoreTable = core.NewRoaringScoreTable
+	PickCollector        = core.PickCollector
+	PutCollector         = core.PutCollector
 
 	NewIntValues   = core.NewIntValues
 	NewInt32Values = core.NewInt32Values

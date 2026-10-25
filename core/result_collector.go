@@ -32,11 +32,13 @@ func (c *DocIDCollector) SetLiveDocs(ld *LiveDocs) {
 }
 
 // Add implements ResultCollector. Skips deleted docs if LiveDocs is set.
-func (c *DocIDCollector) Add(docID DocID) {
+// DocIDCollector never saturates and always asks the engine to continue.
+func (c *DocIDCollector) Add(docID DocID) CollectResult {
 	if c.liveDocs != nil && !c.liveDocs.IsAlive(docID) {
-		return
+		return CollectContinue
 	}
 	c.docBits.Add(uint64(docID))
+	return CollectContinue
 }
 
 // DocCount returns the number of unique documents collected.

@@ -44,15 +44,15 @@ func init() {
 }
 
 // DictBuilder implements IndexBuilder for the default term-posting
-// path. It accumulates term → EntryID mappings via a KeyedPostingCollector
+// path. It accumulates term → EntryID mappings via a SortedPostingMerger
 // and writes FlatDict + FlatPostingList blocks at Build time.
 type DictBuilder struct {
-	collector *KeyedPostingCollector
+	merger *SortedPostingMerger
 }
 
 func NewDictBuilder(env BuilderEnv) IndexBuilder {
 	return &DictBuilder{
-		collector: NewKeyedPostingCollector(env.MaxPostingsInMemory, env.TmpDir),
+		merger: NewSortedPostingMerger(env.MaxPostingsInMemory, env.TmpDir),
 	}
 }
 
@@ -61,12 +61,12 @@ func (b *DictBuilder) AddRecord(record any, entries []core.EntryID) error {
 	if !ok {
 		return fmt.Errorf("DictBuilder: expected string record, got %T", record)
 	}
-	return b.collector.Add([]byte(term), entries)
+	return b.merger.Add([]byte(term), entries)
 }
 
 func (b *DictBuilder) Build(bw BlockWriter) error {
 	dict := map[string]PostingRef{}
-	n, err := b.collector.WritePostings(bw, func(key []byte, ref PostingRef) error {
+	n, err := b.merger.WritePostings(bw, func(key []byte, ref PostingRef) error {
 		dict[string(key)] = ref
 		return nil
 	})

@@ -11,20 +11,20 @@ import (
 // block at Build time.
 //
 // Like the dict/mph/ac builders, it funnels every (interval, EntryID) pair
-// through a KeyedPostingCollector so that accumulation past
+// through a SortedPostingMerger so that accumulation past
 // BuilderEnv.MaxPostingsInMemory spills sorted runs to disk instead of holding
 // the whole field in RAM. This keeps peak build memory bounded even for numeric
 // fields with tens of millions of documents. The interval [lo, hi] is used as
-// the collector key, so the collector's k-way merge naturally groups every
+// the merger key, so the merger's k-way merge naturally groups every
 // EntryID sharing the same interval — replacing the former in-memory dedup map.
 type RangeBuilder struct {
-	collector *KeyedPostingCollector
+	merger *SortedPostingMerger
 }
 
 // NewRangeBuilder creates a fresh RangeBuilder honoring the spill environment.
 func NewRangeBuilder(env BuilderEnv) IndexBuilder {
 	return &RangeBuilder{
-		collector: NewKeyedPostingCollector(env.MaxPostingsInMemory, env.TmpDir),
+		merger: NewSortedPostingMerger(env.MaxPostingsInMemory, env.TmpDir),
 	}
 }
 
@@ -38,7 +38,7 @@ func (b *RangeBuilder) AddRecord(record any, entries []core.EntryID) error {
 		return fmt.Errorf("ext_range: invalid interval [%d,%d]", rr.Lo, rr.Hi)
 	}
 	key := encodeIntervalKey(rr.Lo, rr.Hi)
-	return b.collector.Add(key, entries)
+	return b.merger.Add(key, entries)
 }
 
 // Build merges accumulated intervals (from memory and any spilled runs) and
@@ -46,7 +46,7 @@ func (b *RangeBuilder) AddRecord(record any, entries []core.EntryID) error {
 // MergeIter so the full EntryID set is not duplicated; the []Interval and the
 // range index built from it remain O(E) by nature of the interval structure.
 func (b *RangeBuilder) Build(bw BlockWriter) error {
-	it, err := b.collector.MergeIter()
+	it, err := b.merger.MergeIter()
 	if err != nil {
 		return err
 	}
@@ -75,10 +75,10 @@ func (b *RangeBuilder) Build(bw BlockWriter) error {
 	return bw.WriteBlock(core.IndexNameExtendRange, data)
 }
 
-// encodeIntervalKey packs [lo, hi] into a fixed 16-byte collector key. Each
+// encodeIntervalKey packs [lo, hi] into a fixed 16-byte merger key. Each
 // int64 is stored big-endian with its sign bit flipped so that bytewise
 // comparison matches signed-integer ordering; this keeps spilled runs sorted in
-// a stable, meaningful order and lets the collector group identical intervals.
+// a stable, meaningful order and lets the merger group identical intervals.
 func encodeIntervalKey(lo, hi int64) []byte {
 	var buf [16]byte
 	binary.BigEndian.PutUint64(buf[0:8], uint64(lo)^(1<<63))

@@ -20,15 +20,15 @@ func newBuilderFactory(env segment.BuilderEnv) segment.IndexBuilder {
 // offset of its posting list within that block.
 //
 // Like the dict/mph/ac builders, every (term, entries) pair is funneled through
-// a KeyedPostingCollector so accumulation past BuilderEnv.MaxPostingsInMemory
+// a SortedPostingMerger so accumulation past BuilderEnv.MaxPostingsInMemory
 // spills sorted runs to disk instead of holding the whole field in RAM. The
-// collector's k-way merge also yields records in strict lexicographic key order,
+// merger's k-way merge also yields records in strict lexicographic key order,
 // which is exactly the order vellum.Builder.Insert requires.
 type FSTBuilder struct {
-	collector *segment.KeyedPostingCollector
+	merger *segment.SortedPostingMerger
 	// terms is the advanced/test path: callers may push (term, offset) pairs
 	// directly against a pre-written posting block instead of going through the
-	// collector. Kept sorted-on-Build like the mph builder's equivalent path.
+	// merger. Kept sorted-on-Build like the mph builder's equivalent path.
 	terms []termOffset
 }
 
@@ -40,11 +40,11 @@ type termOffset struct {
 // NewFSTBuilder creates a fresh FSTBuilder honoring the spill environment.
 func NewFSTBuilder(env segment.BuilderEnv) *FSTBuilder {
 	return &FSTBuilder{
-		collector: segment.NewKeyedPostingCollector(env.MaxPostingsInMemory, env.TmpDir),
+		merger: segment.NewSortedPostingMerger(env.MaxPostingsInMemory, env.TmpDir),
 	}
 }
 
-// AddRecord accumulates a term → entries mapping via the collector. The record
+// AddRecord accumulates a term → entries mapping via the merger. The record
 // must be a string or []byte term (produced by the default ExactTermEncoder).
 func (b *FSTBuilder) AddRecord(record any, entries []core.EntryID) error {
 	term, ok := record.(string)
@@ -53,14 +53,14 @@ func (b *FSTBuilder) AddRecord(record any, entries []core.EntryID) error {
 		if !ok2 {
 			return fmt.Errorf("FSTBuilder: expected string or []byte record, got %T", record)
 		}
-		return b.collector.Add(termBytes, entries)
+		return b.merger.Add(termBytes, entries)
 	}
-	return b.collector.Add([]byte(term), entries)
+	return b.merger.Add([]byte(term), entries)
 }
 
 // AddPosting registers a term whose posting list already lives at the given
 // block-relative offset. This is the direct path used by tests and advanced
-// callers that write the posting block themselves; it bypasses the collector.
+// callers that write the posting block themselves; it bypasses the merger.
 func (b *FSTBuilder) AddPosting(term string, ref segment.PostingRef) {
 	b.terms = append(b.terms, termOffset{term: term, offset: ref.Offset})
 }
@@ -70,8 +70,8 @@ func (b *FSTBuilder) AddPosting(term string, ref segment.PostingRef) {
 // the posting count is recovered by the reader from the FlatPostingList header,
 // so the FST value is a single uint64 offset with no PostingRef payload.
 func (b *FSTBuilder) Build(bw segment.BlockWriter) error {
-	if b.collector != nil {
-		_, err := b.collector.WritePostings(bw, func(key []byte, ref segment.PostingRef) error {
+	if b.merger != nil {
+		_, err := b.merger.WritePostings(bw, func(key []byte, ref segment.PostingRef) error {
 			b.terms = append(b.terms, termOffset{term: string(key), offset: ref.Offset})
 			return nil
 		})
@@ -83,7 +83,7 @@ func (b *FSTBuilder) Build(bw segment.BlockWriter) error {
 		return nil
 	}
 
-	// vellum.Insert requires strictly ascending keys. Collector output is already
+	// vellum.Insert requires strictly ascending keys. Merger output is already
 	// sorted, but the direct AddPosting path may not be, so sort defensively.
 	sort.Slice(b.terms, func(i, j int) bool { return b.terms[i].term < b.terms[j].term })
 

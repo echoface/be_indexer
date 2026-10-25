@@ -28,7 +28,7 @@ type ACBuilder struct {
 	symOf map[rune]uint32
 	syms  []rune
 
-	collector *KeyedPostingCollector
+	merger *SortedPostingMerger
 }
 
 type flatNode struct {
@@ -40,11 +40,11 @@ type flatNode struct {
 
 func NewACBuilder(env BuilderEnv) *ACBuilder {
 	builder := &ACBuilder{
-		nodes:     make([]flatNode, 1, 1024),
-		outputs:   make([][]uint32, 1, 1024),
-		symOf:     make(map[rune]uint32),
-		syms:      []rune{0},
-		collector: NewKeyedPostingCollector(env.MaxPostingsInMemory, env.TmpDir),
+		nodes:   make([]flatNode, 1, 1024),
+		outputs: make([][]uint32, 1, 1024),
+		symOf:   make(map[rune]uint32),
+		syms:    []rune{0},
+		merger:  NewSortedPostingMerger(env.MaxPostingsInMemory, env.TmpDir),
 	}
 	return builder
 }
@@ -60,7 +60,7 @@ func (b *ACBuilder) internSymbol(ch rune) uint32 {
 	return id
 }
 
-// AddRecord accumulates term → entry mappings via the collector.
+// AddRecord accumulates term → entry mappings via the merger.
 func (b *ACBuilder) AddRecord(record any, entries []core.EntryID) error {
 	term, ok := record.(string)
 	if !ok {
@@ -68,9 +68,9 @@ func (b *ACBuilder) AddRecord(record any, entries []core.EntryID) error {
 		if !ok2 {
 			return fmt.Errorf("ACBuilder: expected string or []byte record, got %T", record)
 		}
-		return b.collector.Add(termBytes, entries)
+		return b.merger.Add(termBytes, entries)
 	}
-	return b.collector.Add([]byte(term), entries)
+	return b.merger.Add([]byte(term), entries)
 }
 
 func (b *ACBuilder) AddPosting(term string, ref PostingRef) error {
@@ -395,7 +395,7 @@ func (b *ACBuilder) Compile() ([]byte, error) {
 // as a container block. Each term's PostingRef is folded into the automaton in
 // the same single pass that streams its posting list out (via WritePostings).
 func (b *ACBuilder) Build(bw BlockWriter) error {
-	n, err := b.collector.WritePostings(bw, func(key []byte, ref PostingRef) error {
+	n, err := b.merger.WritePostings(bw, func(key []byte, ref PostingRef) error {
 		return b.AddPosting(string(key), ref)
 	})
 	if err != nil {

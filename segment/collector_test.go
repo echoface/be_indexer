@@ -12,20 +12,20 @@ import (
 )
 
 // drainIter collects a MergeIter into a slice for comparison. Entries within
-// each record are sorted: the collector guarantees ascending key order and the
+// each record are sorted: the merger guarantees ascending key order and the
 // full entry multiset per key, but NOT intra-key entry order (memory mode keeps
 // insertion order; spill mode yields heap-pop order). Every real consumer sorts
 // entries before use, so normalizing here compares the actual contract.
-func drainIter(t *testing.T, it *MergeIter) []KeyedRecord {
+func drainIter(t *testing.T, it *MergeIter) []PostingGroup {
 	t.Helper()
-	var out []KeyedRecord
+	var out []PostingGroup
 	for it.Next() {
 		rec := it.Record()
 		// Copy because Record() is only valid until the next Next().
 		k := append([]byte(nil), rec.Key...)
 		e := append([]core.EntryID(nil), rec.Entries...)
 		sort.Slice(e, func(i, j int) bool { return e[i] < e[j] })
-		out = append(out, KeyedRecord{Key: k, Entries: e})
+		out = append(out, PostingGroup{Key: k, Entries: e})
 	}
 	if err := it.Err(); err != nil {
 		t.Fatalf("iter err: %v", err)
@@ -37,9 +37,9 @@ func drainIter(t *testing.T, it *MergeIter) []KeyedRecord {
 }
 
 // feed adds a fixed, intentionally out-of-order, duplicate-key dataset. The same
-// input drives both the in-memory and the forced-spill collector so their merged
+// input drives both the in-memory and the forced-spill merger so their merged
 // output must be byte-identical.
-func feed(c *KeyedPostingCollector) error {
+func feed(c *SortedPostingMerger) error {
 	adds := []struct {
 		key     string
 		entries []core.EntryID
@@ -62,7 +62,7 @@ func feed(c *KeyedPostingCollector) error {
 
 func TestMergeIter_MemoryVsSpillEquivalence(t *testing.T) {
 	// In-memory: never spills (huge maxRecs).
-	mem := NewKeyedPostingCollector(1<<20, "")
+	mem := NewSortedPostingMerger(1<<20, "")
 	if err := feed(mem); err != nil {
 		t.Fatal(err)
 	}
@@ -77,7 +77,7 @@ func TestMergeIter_MemoryVsSpillEquivalence(t *testing.T) {
 
 	// Forced spill: maxRecs=1 flushes a run on nearly every distinct key, so
 	// Merge must reconstruct order and dedup purely from the k-way merge.
-	spill := NewKeyedPostingCollector(1, t.TempDir())
+	spill := NewSortedPostingMerger(1, t.TempDir())
 	if err := feed(spill); err != nil {
 		t.Fatal(err)
 	}
@@ -96,7 +96,7 @@ func TestMergeIter_MemoryVsSpillEquivalence(t *testing.T) {
 
 	// Verify the expected content explicitly: keys ascending, entries merged
 	// (sorted by drainIter, since intra-key order is unspecified).
-	want := []KeyedRecord{
+	want := []PostingGroup{
 		{Key: []byte("apple"), Entries: []core.EntryID{3, 7, 9}},
 		{Key: []byte("banana"), Entries: []core.EntryID{1, 5, 6}},
 		{Key: []byte("cherry"), Entries: []core.EntryID{1, 2, 4, 8}},
@@ -111,7 +111,7 @@ func TestMergeIter_MemoryVsSpillEquivalence(t *testing.T) {
 // the recursive batch pre-merge path (MergeIter's >maxKeyedOpenRuns loop) runs.
 func TestMergeIter_ManyRunsFanIn(t *testing.T) {
 	const n = maxKeyedOpenRuns*3 + 5
-	spill := NewKeyedPostingCollector(1, t.TempDir())
+	spill := NewSortedPostingMerger(1, t.TempDir())
 	for i := 0; i < n; i++ {
 		// keys chosen so ordering after merge is well-defined and unique.
 		key := []byte{byte('A' + i/26), byte('a' + i%26)}
@@ -151,7 +151,7 @@ func TestMerge_WrapperMatchesIter(t *testing.T) {
 			if tc.tmp {
 				tmpDir = t.TempDir()
 			}
-			cIter := NewKeyedPostingCollector(tc.maxRecs, tmpDir)
+			cIter := NewSortedPostingMerger(tc.maxRecs, tmpDir)
 			if err := feed(cIter); err != nil {
 				t.Fatal(err)
 			}
@@ -161,7 +161,7 @@ func TestMerge_WrapperMatchesIter(t *testing.T) {
 			}
 			viaIter := drainIter(t, it)
 
-			cMerge := NewKeyedPostingCollector(tc.maxRecs, tmpDir)
+			cMerge := NewSortedPostingMerger(tc.maxRecs, tmpDir)
 			if err := feed(cMerge); err != nil {
 				t.Fatal(err)
 			}
@@ -180,11 +180,11 @@ func TestMerge_WrapperMatchesIter(t *testing.T) {
 	}
 }
 
-// spillTwoRuns creates a collector forced to spill exactly two sorted runs and
-// returns the collector plus its two run file paths.
-func spillTwoRuns(t *testing.T) (*KeyedPostingCollector, []string) {
+// spillTwoRuns creates a merger forced to spill exactly two sorted runs and
+// returns the merger plus its two run file paths.
+func spillTwoRuns(t *testing.T) (*SortedPostingMerger, []string) {
 	t.Helper()
-	c := NewKeyedPostingCollector(1, t.TempDir())
+	c := NewSortedPostingMerger(1, t.TempDir())
 	for _, kv := range []struct {
 		key string
 		eid core.EntryID
@@ -272,7 +272,7 @@ func TestMergeIter_PrefanInTruncationPropagates(t *testing.T) {
 	// Force more than maxKeyedOpenRuns so MergeIter first collapses runs via
 	// writeMergedRun; corrupt one input and assert the pre-merge fails.
 	const n = maxKeyedOpenRuns + 2
-	c := NewKeyedPostingCollector(1, t.TempDir())
+	c := NewSortedPostingMerger(1, t.TempDir())
 	for i := 0; i < n; i++ {
 		key := []byte{byte('a' + i)}
 		if err := c.Add(key, []core.EntryID{core.EntryID(i)}); err != nil {

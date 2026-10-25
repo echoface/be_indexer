@@ -14,25 +14,29 @@ import (
 	"github.com/echoface/be_indexer/core"
 )
 
-// KeyedRecord is a sorted-output unit produced by KeyedPostingCollector.
-type KeyedRecord struct {
+// PostingGroup is a sorted-output unit produced by SortedPostingMerger: one
+// opaque key plus every EntryID accumulated under it.
+type PostingGroup struct {
 	Key     []byte
 	Entries []core.EntryID
 }
 
-// KeyedPostingCollector accumulates key → []EntryID mappings with optional
-// spill to disk when the distinct-key count exceeds maxRecs. Merge() returns
-// all records in sorted-key order via k-way merge.
-type KeyedPostingCollector struct {
+// SortedPostingMerger groups EntryIDs by an opaque byte key, then emits the
+// groups in ascending key order via a k-way merge. When the distinct-key count
+// exceeds maxRecs it spills sorted runs to tmpDir, bounding peak memory. The
+// key's semantics (term, encoded interval, ...) belong to the caller.
+type SortedPostingMerger struct {
 	pending  map[string]int
-	records  []KeyedRecord
+	groups   []PostingGroup
 	maxRecs  int
 	tmpDir   string
 	runFiles []string
 }
 
-func NewKeyedPostingCollector(maxRecs int, tmpDir string) *KeyedPostingCollector {
-	c := &KeyedPostingCollector{
+// NewSortedPostingMerger creates a merger that spills to tmpDir after maxRecs
+// distinct keys; maxRecs <= 0 means effectively unbounded (memory-only).
+func NewSortedPostingMerger(maxRecs int, tmpDir string) *SortedPostingMerger {
+	c := &SortedPostingMerger{
 		pending: make(map[string]int),
 		maxRecs: maxRecs,
 		tmpDir:  tmpDir,
@@ -43,30 +47,30 @@ func NewKeyedPostingCollector(maxRecs int, tmpDir string) *KeyedPostingCollector
 	return c
 }
 
-func (c *KeyedPostingCollector) Add(key []byte, entries []core.EntryID) error {
+func (c *SortedPostingMerger) Add(key []byte, entries []core.EntryID) error {
 	ks := string(key)
 	idx, ok := c.pending[ks]
 	if ok {
-		c.records[idx].Entries = append(c.records[idx].Entries, entries...)
+		c.groups[idx].Entries = append(c.groups[idx].Entries, entries...)
 	} else {
-		rec := KeyedRecord{Key: make([]byte, len(key)), Entries: make([]core.EntryID, len(entries))}
+		rec := PostingGroup{Key: make([]byte, len(key)), Entries: make([]core.EntryID, len(entries))}
 		copy(rec.Key, key)
 		copy(rec.Entries, entries)
-		c.pending[ks] = len(c.records)
-		c.records = append(c.records, rec)
+		c.pending[ks] = len(c.groups)
+		c.groups = append(c.groups, rec)
 	}
-	if len(c.records) >= c.maxRecs {
+	if len(c.groups) >= c.maxRecs {
 		return c.flushRun()
 	}
 	return nil
 }
 
-func (c *KeyedPostingCollector) flushRun() error {
-	if len(c.records) == 0 {
+func (c *SortedPostingMerger) flushRun() error {
+	if len(c.groups) == 0 {
 		return nil
 	}
-	sort.Slice(c.records, func(i, j int) bool {
-		return bytes.Compare(c.records[i].Key, c.records[j].Key) < 0
+	sort.Slice(c.groups, func(i, j int) bool {
+		return bytes.Compare(c.groups[i].Key, c.groups[j].Key) < 0
 	})
 	if c.tmpDir == "" {
 		return nil
@@ -79,7 +83,7 @@ func (c *KeyedPostingCollector) flushRun() error {
 		return err
 	}
 	name := f.Name()
-	for _, rec := range c.records {
+	for _, rec := range c.groups {
 		if err := writeKeyedRunRecord(f, rec); err != nil {
 			f.Close()
 			os.Remove(name)
@@ -97,13 +101,13 @@ func (c *KeyedPostingCollector) flushRun() error {
 	}
 	c.runFiles = append(c.runFiles, name)
 	c.pending = make(map[string]int)
-	c.records = c.records[:0]
+	c.groups = c.groups[:0]
 	return nil
 }
 
 const maxKeyedOpenRuns = 64
 
-// MergeIter is a pull-based cursor over the collector's sorted, key-merged
+// MergeIter is a pull-based cursor over the merger's sorted, key-merged
 // output. It yields each distinct key exactly once, with all its EntryIDs
 // concatenated, in ascending key order — the same sequence Merge() produces,
 // but one record at a time so callers never hold the whole result in memory.
@@ -115,7 +119,7 @@ const maxKeyedOpenRuns = 64
 type MergeIter struct {
 	// memMode iterates pre-sorted, already-deduped records in place (no spill).
 	memMode bool
-	records []KeyedRecord
+	groups  []PostingGroup
 	pos     int
 
 	// spill mode: k-way merge across open run readers.
@@ -123,15 +127,15 @@ type MergeIter struct {
 	h        *keyedRecordHeap
 	runFiles []string
 
-	cur KeyedRecord
+	cur PostingGroup
 	err error
 }
 
 // MergeIter finalizes accumulation (flushing any pending run and collapsing the
 // fan-in below maxKeyedOpenRuns) and returns a streaming cursor over the merged
-// records. Ownership of the collector's spill files transfers to the iterator,
+// records. Ownership of the merger's spill files transfers to the iterator,
 // which removes them on Close.
-func (c *KeyedPostingCollector) MergeIter() (*MergeIter, error) {
+func (c *SortedPostingMerger) MergeIter() (*MergeIter, error) {
 	if err := c.flushRun(); err != nil {
 		return nil, err
 	}
@@ -155,9 +159,9 @@ func (c *KeyedPostingCollector) MergeIter() (*MergeIter, error) {
 	}
 
 	if len(c.runFiles) == 0 {
-		// In-memory mode: c.records is already sorted (flushRun) and unique (Add
+		// In-memory mode: c.groups is already sorted (flushRun) and unique (Add
 		// dedups via the pending map), so we walk it directly with zero extra copy.
-		return &MergeIter{memMode: true, records: c.records}, nil
+		return &MergeIter{memMode: true, groups: c.groups}, nil
 	}
 
 	it := &MergeIter{runFiles: c.runFiles}
@@ -191,10 +195,10 @@ func (it *MergeIter) Next() bool {
 		return false
 	}
 	if it.memMode {
-		if it.pos >= len(it.records) {
+		if it.pos >= len(it.groups) {
 			return false
 		}
-		it.cur = it.records[it.pos]
+		it.cur = it.groups[it.pos]
 		it.pos++
 		return true
 	}
@@ -236,7 +240,7 @@ func (it *MergeIter) Next() bool {
 }
 
 // Record returns the current merged record. Valid only until the next Next.
-func (it *MergeIter) Record() KeyedRecord { return it.cur }
+func (it *MergeIter) Record() PostingGroup { return it.cur }
 
 // Err returns any error encountered during iteration.
 func (it *MergeIter) Err() error { return it.err }
@@ -258,24 +262,24 @@ func (it *MergeIter) Close() error {
 }
 
 // Merge drains MergeIter into a single slice. In memory mode it returns
-// c.records without an extra copy; use MergeIter for bounded streaming output.
-func (c *KeyedPostingCollector) Merge() ([]KeyedRecord, error) {
+// c.groups without an extra copy; use MergeIter for bounded streaming output.
+func (c *SortedPostingMerger) Merge() ([]PostingGroup, error) {
 	it, err := c.MergeIter()
 	if err != nil {
 		return nil, err
 	}
 	defer it.Close()
 	if it.memMode {
-		return it.records, nil
+		return it.groups, nil
 	}
-	var result []KeyedRecord
+	var result []PostingGroup
 	for it.Next() {
 		result = append(result, it.Record())
 	}
 	return result, it.Err()
 }
 
-func (c *KeyedPostingCollector) mergeRunBatch(files []string) (string, error) {
+func (c *SortedPostingMerger) mergeRunBatch(files []string) (string, error) {
 	readers := make([]*keyedRunReader, 0, len(files))
 	defer func() {
 		for _, r := range readers {
@@ -311,7 +315,7 @@ func (c *KeyedPostingCollector) mergeRunBatch(files []string) (string, error) {
 	return outName, nil
 }
 
-func (c *KeyedPostingCollector) writeMergedRun(w io.Writer, readers []*keyedRunReader) error {
+func (c *SortedPostingMerger) writeMergedRun(w io.Writer, readers []*keyedRunReader) error {
 	h := &keyedRecordHeap{}
 	heap.Init(h)
 	for i, r := range readers {
@@ -340,7 +344,7 @@ func (c *KeyedPostingCollector) writeMergedRun(w io.Writer, readers []*keyedRunR
 
 // writeKeyedRunRecord writes one keyed record to a spill file.
 // Format: [keyLen uint32] [entryCount uint32] [entryID uint64 × entryCount] [key bytes]
-func writeKeyedRunRecord(w io.Writer, rec KeyedRecord) error {
+func writeKeyedRunRecord(w io.Writer, rec PostingGroup) error {
 	keyLen, err := checkedU32(len(rec.Key), "spill key length")
 	if err != nil {
 		return err
@@ -369,7 +373,7 @@ func writeKeyedRunRecord(w io.Writer, rec KeyedRecord) error {
 type keyedRunReader struct {
 	f       *os.File
 	hasNext bool
-	rec     KeyedRecord
+	rec     PostingGroup
 	err     error
 	path    string
 	offset  int64
@@ -469,7 +473,7 @@ func (r *keyedRunReader) Err() error { return r.err }
 func (r *keyedRunReader) Close() error { return r.f.Close() }
 
 type keyedHeapItem struct {
-	rec    KeyedRecord
+	rec    PostingGroup
 	reader int
 }
 

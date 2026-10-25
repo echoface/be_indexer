@@ -386,7 +386,7 @@ func (w *captureBlockWriter) WriteBlock(kind string, data []byte) error {
 // TestRangeBuilderSpillParity verifies that the RangeBuilder produces
 // query-identical output whether it holds everything in memory or spills sorted
 // runs to disk (MaxPostingsInMemory small enough to force multiple flushes).
-// This guards the KeyedPostingCollector routing added for large-field builds.
+// This guards the SortedPostingMerger routing added for large-field builds.
 func TestRangeBuilderSpillParity(t *testing.T) {
 	rng := rand.New(rand.NewSource(7))
 	intervals := pointHeavyIntervals(rng, 5000)

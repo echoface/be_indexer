@@ -93,8 +93,8 @@ func (Encoder) Query(value interface{}) ([]parser.EncodedQuery, error) {
 
 // PrefixBuilder accumulates entries via AddRecord (full pipeline) or AddPosting (direct PostingRef).
 type PrefixBuilder struct {
-	collector *segment.KeyedPostingCollector
-	terms     []termRef // direct PostingRef references (test/advanced path)
+	merger *segment.SortedPostingMerger
+	terms  []termRef // direct PostingRef references (test/advanced path)
 }
 
 type termRef struct {
@@ -104,7 +104,7 @@ type termRef struct {
 
 func NewPrefixBuilder(env segment.BuilderEnv) *PrefixBuilder {
 	return &PrefixBuilder{
-		collector: segment.NewKeyedPostingCollector(env.MaxPostingsInMemory, env.TmpDir),
+		merger: segment.NewSortedPostingMerger(env.MaxPostingsInMemory, env.TmpDir),
 	}
 }
 
@@ -115,9 +115,9 @@ func (b *PrefixBuilder) AddRecord(record any, entries []core.EntryID) error {
 		if !ok2 {
 			return fmt.Errorf("PrefixBuilder: expected string or []byte record, got %T", record)
 		}
-		return b.collector.Add(termBytes, entries)
+		return b.merger.Add(termBytes, entries)
 	}
-	return b.collector.Add([]byte(term), entries)
+	return b.merger.Add([]byte(term), entries)
 }
 
 func (b *PrefixBuilder) AddPosting(term string, ref segment.PostingRef) {
@@ -125,8 +125,8 @@ func (b *PrefixBuilder) AddPosting(term string, ref segment.PostingRef) {
 }
 
 func (b *PrefixBuilder) Build(bw segment.BlockWriter) error {
-	if b.collector != nil {
-		_, err := b.collector.WritePostings(bw, func(key []byte, ref segment.PostingRef) error {
+	if b.merger != nil {
+		_, err := b.merger.WritePostings(bw, func(key []byte, ref segment.PostingRef) error {
 			b.terms = append(b.terms, termRef{term: string(key), ref: ref})
 			return nil
 		})

@@ -18,7 +18,7 @@ func (w bufferedOnlyWriter) WriteBlock(kind string, data []byte) error {
 	return w.inner.WriteBlock(kind, data)
 }
 
-func feedPostings(c *KeyedPostingCollector) error {
+func feedPostings(c *SortedPostingMerger) error {
 	adds := []struct {
 		key     string
 		entries []core.EntryID
@@ -56,7 +56,7 @@ func runWritePostings(t *testing.T, bw BlockWriter, wrap func(BlockWriter) Block
 		target = wrap(sbw)
 	}
 
-	c := NewKeyedPostingCollector(1<<20, "")
+	c := NewSortedPostingMerger(1<<20, "")
 	if err := feedPostings(c); err != nil {
 		t.Fatal(err)
 	}
@@ -143,7 +143,7 @@ func TestWritePostings_EmptyWritesNothing(t *testing.T) {
 	checksums := map[string]string{}
 	sbw := newSegmentBlockWriter("f", buf, &off, blockIndex, checksums)
 
-	c := NewKeyedPostingCollector(1<<20, "")
+	c := NewSortedPostingMerger(1<<20, "")
 	n, err := c.WritePostings(sbw, func(key []byte, ref PostingRef) error {
 		t.Fatalf("onRef should not be called for empty collector")
 		return nil

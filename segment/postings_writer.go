@@ -6,11 +6,11 @@ import (
 	"github.com/echoface/be_indexer/core"
 )
 
-// WritePostings drains the collector and writes a single FlatPostingList
+// WritePostings drains the merger and writes a single FlatPostingList
 // (BlockKindPostings) block, invoking onRef once per distinct term with the
 // term's block-relative PostingRef. It returns the number of terms written.
 //
-// It is a method on *KeyedPostingCollector because the collector is the sole
+// It is a method on *SortedPostingMerger because the merger is the sole
 // owner of the work: bw is a pure output sink and onRef a per-term callback.
 //
 // Memory: postings are streamed straight into the segment when bw implements
@@ -22,9 +22,9 @@ import (
 //
 // onRef receives the term key (valid only for the duration of the call — copy
 // it if retained) in ascending key order, matching MergeIter's ordering. No
-// block is opened when the collector is empty, so no zero-length postings block
+// block is opened when the merger is empty, so no zero-length postings block
 // is ever written (which the reader would reject).
-func (c *KeyedPostingCollector) WritePostings(bw BlockWriter, onRef func(key []byte, ref PostingRef) error) (int, error) {
+func (c *SortedPostingMerger) WritePostings(bw BlockWriter, onRef func(key []byte, ref PostingRef) error) (int, error) {
 	it, err := c.MergeIter()
 	if err != nil {
 		return 0, err

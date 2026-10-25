@@ -15,11 +15,15 @@ const (
 	// MaxBlockSize bounds a single block's payload. Block-relative offsets are
 	// stored as uint32 (e.g. FlatDict term offsets, the range posting region),
 	// so no single block may exceed 4 GiB - 1.
-	MaxBlockSize = math.MaxUint32
+	//
+	// The min() clamp keeps the constant representable as int on 32-bit
+	// platforms; there it tightens the ceiling to MaxInt32, which is still the
+	// correct "cannot address more" bound.
+	MaxBlockSize = min(math.MaxUint32, math.MaxInt)
 
 	// MaxPostingCount bounds the number of EntryIDs in one posting list; the
 	// count header is a uint32.
-	MaxPostingCount = math.MaxUint32
+	MaxPostingCount = min(math.MaxUint32, math.MaxInt)
 
 	// MaxACOutputPerState bounds how many pattern outputs a single AC automaton
 	// state may carry; the per-state count is a uint16.

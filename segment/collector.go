@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"container/heap"
 	"encoding/binary"
+	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -174,6 +176,10 @@ func (c *KeyedPostingCollector) MergeIter() (*MergeIter, error) {
 		if r.hasNext {
 			heap.Push(h, keyedHeapItem{rec: r.rec, reader: i})
 		}
+		if err := r.Err(); err != nil {
+			_ = it.Close()
+			return nil, err
+		}
 	}
 	it.h = h
 	return it, nil
@@ -201,8 +207,13 @@ func (it *MergeIter) Next() bool {
 	// stay valid while we append onto them.
 	first := heap.Pop(h).(keyedHeapItem)
 	merged := first.rec
-	if it.readers[first.reader].Next() {
-		heap.Push(h, keyedHeapItem{rec: it.readers[first.reader].rec, reader: first.reader})
+	nextReader := it.readers[first.reader]
+	if nextReader.Next() {
+		heap.Push(h, keyedHeapItem{rec: nextReader.rec, reader: first.reader})
+	}
+	if err := nextReader.Err(); err != nil {
+		it.err = err
+		return false
 	}
 	for h.Len() > 0 {
 		next := (*h)[0]
@@ -211,8 +222,13 @@ func (it *MergeIter) Next() bool {
 		}
 		item := heap.Pop(h).(keyedHeapItem)
 		merged.Entries = append(merged.Entries, item.rec.Entries...)
-		if it.readers[item.reader].Next() {
-			heap.Push(h, keyedHeapItem{rec: it.readers[item.reader].rec, reader: item.reader})
+		nextReader = it.readers[item.reader]
+		if nextReader.Next() {
+			heap.Push(h, keyedHeapItem{rec: nextReader.rec, reader: item.reader})
+		}
+		if err := nextReader.Err(); err != nil {
+			it.err = err
+			return false
 		}
 	}
 	it.cur = merged
@@ -302,14 +318,21 @@ func (c *KeyedPostingCollector) writeMergedRun(w io.Writer, readers []*keyedRunR
 		if r.hasNext {
 			heap.Push(h, keyedHeapItem{rec: r.rec, reader: i})
 		}
+		if err := r.Err(); err != nil {
+			return err
+		}
 	}
 	for h.Len() > 0 {
 		item := heap.Pop(h).(keyedHeapItem)
 		if err := writeKeyedRunRecord(w, item.rec); err != nil {
 			return err
 		}
-		if readers[item.reader].Next() {
-			heap.Push(h, keyedHeapItem{rec: readers[item.reader].rec, reader: item.reader})
+		nextReader := readers[item.reader]
+		if nextReader.Next() {
+			heap.Push(h, keyedHeapItem{rec: nextReader.rec, reader: item.reader})
+		}
+		if err := nextReader.Err(); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -318,27 +341,38 @@ func (c *KeyedPostingCollector) writeMergedRun(w io.Writer, readers []*keyedRunR
 // writeKeyedRunRecord writes one keyed record to a spill file.
 // Format: [keyLen uint32] [entryCount uint32] [entryID uint64 × entryCount] [key bytes]
 func writeKeyedRunRecord(w io.Writer, rec KeyedRecord) error {
-	header := make([]byte, 8)
-	binary.LittleEndian.PutUint32(header[0:4], uint32(len(rec.Key)))
-	binary.LittleEndian.PutUint32(header[4:8], uint32(len(rec.Entries)))
-	if _, err := w.Write(header); err != nil {
+	keyLen, err := checkedU32(len(rec.Key), "spill key length")
+	if err != nil {
 		return err
 	}
-	buf := make([]byte, len(rec.Entries)*8)
+	entryCount, err := checkedU32(len(rec.Entries), "spill entry count")
+	if err != nil {
+		return err
+	}
+	var header [8]byte
+	binary.LittleEndian.PutUint32(header[0:4], keyLen)
+	binary.LittleEndian.PutUint32(header[4:8], entryCount)
+	if _, err := w.Write(header[:]); err != nil {
+		return err
+	}
+	buf := make([]byte, entryCount*8)
 	for i, e := range rec.Entries {
 		binary.LittleEndian.PutUint64(buf[i*8:], uint64(e))
 	}
 	if _, err := w.Write(buf); err != nil {
 		return err
 	}
-	_, err := w.Write(rec.Key)
-	return err
+	_, werr := w.Write(rec.Key)
+	return werr
 }
 
 type keyedRunReader struct {
 	f       *os.File
 	hasNext bool
 	rec     KeyedRecord
+	err     error
+	path    string
+	offset  int64
 }
 
 func openKeyedRunReader(path string) (*keyedRunReader, error) {
@@ -347,35 +381,90 @@ func openKeyedRunReader(path string) (*keyedRunReader, error) {
 		return nil, err
 	}
 	r := &keyedRunReader{f: f}
-	r.hasNext = r.readNext()
+	r.path = path
+	r.advance()
+	if r.err != nil {
+		_ = f.Close()
+		return nil, r.err
+	}
 	return r, nil
 }
 
-func (r *keyedRunReader) readNext() bool {
-	header := make([]byte, 8)
-	if _, err := io.ReadFull(r.f, header); err != nil {
-		return false
+// advance reads the next record. A clean end-of-file yields hasNext=false with
+// a nil error; a partial record (ErrUnexpectedEOF) or an IO failure sets err.
+// err is sticky: once set, advance is a no-op.
+func (r *keyedRunReader) advance() {
+	if r.err != nil {
+		r.hasNext = false
+		return
+	}
+	var header [8]byte
+	n, err := io.ReadFull(r.f, header[:])
+	r.offset += int64(n)
+	if err != nil {
+		if errors.Is(err, io.EOF) {
+			if r.offset == 0 {
+				r.setErr(errors.New("empty spill run"))
+			}
+			r.hasNext = false
+			return // clean EOF: no partial record pending
+		}
+		r.setErr(err)
+		return
 	}
 	keyLen := binary.LittleEndian.Uint32(header[0:4])
 	entryCount := binary.LittleEndian.Uint32(header[4:8])
-	entryBytes := make([]byte, entryCount*8)
-	if _, err := io.ReadFull(r.f, entryBytes); err != nil {
-		return false
+
+	// Validate the header against the remaining file size before allocating.
+	// A corrupt count must surface as a build error, not an OOM panic.
+	need := int64(uint64(entryCount))*8 + int64(keyLen)
+	if info, statErr := r.f.Stat(); statErr != nil {
+		r.setErr(statErr)
+		return
+	} else if remain := info.Size() - r.offset; need > remain {
+		r.setErr(fmt.Errorf(
+			"corrupt run record header at offset %d: needs %d bytes, only %d remain in %s",
+			r.offset-8, need, remain, r.path,
+		))
+		return
 	}
-	r.rec.Entries = make([]core.EntryID, entryCount)
-	for i := range r.rec.Entries {
-		r.rec.Entries[i] = core.EntryID(binary.LittleEndian.Uint64(entryBytes[i*8:]))
+
+	entryBytes := make([]byte, int64(entryCount)*8)
+	n, err = io.ReadFull(r.f, entryBytes)
+	r.offset += int64(n)
+	if err != nil {
+		r.setErr(err)
+		return
 	}
-	r.rec.Key = make([]byte, keyLen)
-	if _, err := io.ReadFull(r.f, r.rec.Key); err != nil {
-		return false
+	entries := make([]core.EntryID, entryCount)
+	for i := range entries {
+		entries[i] = core.EntryID(binary.LittleEndian.Uint64(entryBytes[i*8:]))
 	}
-	return true
+
+	key := make([]byte, keyLen)
+	n, err = io.ReadFull(r.f, key)
+	r.offset += int64(n)
+	if err != nil {
+		r.setErr(err)
+		return
+	}
+
+	r.rec.Key = key
+	r.rec.Entries = entries
+	r.hasNext = true
+}
+
+func (r *keyedRunReader) setErr(err error) {
+	r.err = fmt.Errorf("read spill run %s at offset %d: %w", r.path, r.offset, err)
+	r.hasNext = false
 }
 
 func (r *keyedRunReader) Next() bool {
-	return r.readNext()
+	r.advance()
+	return r.hasNext
 }
+
+func (r *keyedRunReader) Err() error { return r.err }
 
 func (r *keyedRunReader) Close() error { return r.f.Close() }
 

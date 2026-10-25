@@ -1,6 +1,9 @@
 package segment
 
 import (
+	"encoding/binary"
+	"os"
+	"path/filepath"
 	"reflect"
 	"sort"
 	"testing"
@@ -174,5 +177,126 @@ func TestMerge_WrapperMatchesIter(t *testing.T) {
 				t.Fatalf("Merge() vs MergeIter mismatch:\n iter=%v\n merge=%v", viaIter, viaMerge)
 			}
 		})
+	}
+}
+
+// spillTwoRuns creates a collector forced to spill exactly two sorted runs and
+// returns the collector plus its two run file paths.
+func spillTwoRuns(t *testing.T) (*KeyedPostingCollector, []string) {
+	t.Helper()
+	c := NewKeyedPostingCollector(1, t.TempDir())
+	for _, kv := range []struct {
+		key string
+		eid core.EntryID
+	}{
+		{"apple", 1}, {"banana", 2}, // two distinct keys -> two runs
+	} {
+		if err := c.Add([]byte(kv.key), []core.EntryID{kv.eid}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return c, c.runFiles
+}
+
+func TestMergeIter_TruncatedRunReturnsError(t *testing.T) {
+	for _, cut := range []struct {
+		name string
+		n    int64
+	}{
+		{"mid_header", 4},
+		{"mid_entries", 12},
+		{"mid_key", 17},
+	} {
+		t.Run(cut.name, func(t *testing.T) {
+			c, runs := spillTwoRuns(t)
+			if len(runs) != 2 {
+				t.Fatalf("expected 2 runs, got %d", len(runs))
+			}
+			full, err := os.Stat(runs[0])
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Truncate(runs[0], full.Size()-cut.n); err != nil {
+				t.Fatal(err)
+			}
+
+			it, err := c.MergeIter()
+			if err == nil {
+				for it.Next() {
+				}
+				err = it.Err()
+				_ = it.Close()
+			}
+			if err == nil {
+				t.Fatal("expected truncated run to surface an error")
+			}
+		})
+	}
+}
+
+func TestMergeIter_CorruptHugeEntryCountReturnsErrorNotOOM(t *testing.T) {
+	c, runs := spillTwoRuns(t)
+	if len(runs) == 0 {
+		t.Fatal("expected at least one run")
+	}
+	// entryCount lives at bytes 4..8 of the first record header.
+	f, err := os.OpenFile(runs[0], os.O_RDWR, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var huge [4]byte
+	binary.LittleEndian.PutUint32(huge[:], 0xFFFFFFFF)
+	if _, err := f.WriteAt(huge[:], 4); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := c.MergeIter(); err == nil {
+		t.Fatal("expected corrupt entry count to fail fast, not attempt a 32GB allocation")
+	}
+}
+
+func TestMergeIter_EmptyRunFileIsRejected(t *testing.T) {
+	c, runs := spillTwoRuns(t)
+	if err := os.Truncate(runs[0], 0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.MergeIter(); err == nil {
+		t.Fatal("expected empty run file to be rejected")
+	}
+}
+
+func TestMergeIter_PrefanInTruncationPropagates(t *testing.T) {
+	// Force more than maxKeyedOpenRuns so MergeIter first collapses runs via
+	// writeMergedRun; corrupt one input and assert the pre-merge fails.
+	const n = maxKeyedOpenRuns + 2
+	c := NewKeyedPostingCollector(1, t.TempDir())
+	for i := 0; i < n; i++ {
+		key := []byte{byte('a' + i)}
+		if err := c.Add(key, []core.EntryID{core.EntryID(i)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runs := c.runFiles
+	if len(runs) != n {
+		t.Fatalf("expected %d runs, got %d", n, len(runs))
+	}
+	// Corrupt the middle input of the first fan-in batch.
+	victim := filepath.Join(t.TempDir(), "victim")
+	data, err := os.ReadFile(runs[len(runs)/2])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(victim, data[:len(data)-2], 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(victim, runs[len(runs)/2]); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := c.MergeIter(); err == nil {
+		t.Fatal("expected fan-in pre-merge to propagate the truncated run error")
 	}
 }

@@ -363,11 +363,17 @@ func (b *ACBuilder) Compile() ([]byte, error) {
 	symCount := uint32(len(b.syms) - 1) // exclude reserved 0
 
 	headerSize := 12 // stateCount(4) + symCount(4) + reserved(4)
-	symSize := int(symCount) * 4
-	arraySize := int(stateCount) * 4
-	totalSize := headerSize + symSize + arraySize*4 + len(outputData)
+	symSize := uint64(symCount) * 4
+	arraySize := uint64(stateCount) * 4
+	totalSize := uint64(headerSize) + symSize + arraySize*4 + uint64(len(outputData))
+	maxInt := int(^uint(0) >> 1)
+	// Keep size arithmetic in uint64; on 32-bit platforms int multiplication
+	// could wrap negative and allocate a truncated buffer.
+	if totalSize > uint64(maxInt) {
+		return nil, fmt.Errorf("AC automaton too large: %d bytes", totalSize)
+	}
 
-	buf := make([]byte, totalSize)
+	buf := make([]byte, int(totalSize))
 	binary.LittleEndian.PutUint32(buf[0:4], stateCount)
 	binary.LittleEndian.PutUint32(buf[4:8], symCount)
 	binary.LittleEndian.PutUint32(buf[8:12], 0)
@@ -379,14 +385,15 @@ func (b *ACBuilder) Compile() ([]byte, error) {
 	}
 
 	arrBase := off
+	arrBytes := int(arraySize)
 	for i := 0; i < int(stateCount); i++ {
 		binary.LittleEndian.PutUint32(buf[arrBase+i*4:], base[i])
-		binary.LittleEndian.PutUint32(buf[arrBase+arraySize+i*4:], check[i])
-		binary.LittleEndian.PutUint32(buf[arrBase+arraySize*2+i*4:], fail[i])
-		binary.LittleEndian.PutUint32(buf[arrBase+arraySize*3+i*4:], outputPtrs[i])
+		binary.LittleEndian.PutUint32(buf[arrBase+arrBytes+i*4:], check[i])
+		binary.LittleEndian.PutUint32(buf[arrBase+arrBytes*2+i*4:], fail[i])
+		binary.LittleEndian.PutUint32(buf[arrBase+arrBytes*3+i*4:], outputPtrs[i])
 	}
 
-	copy(buf[arrBase+arraySize*4:], outputData)
+	copy(buf[arrBase+arrBytes*4:], outputData)
 
 	return buf, nil
 }

@@ -3,6 +3,7 @@ package segment
 import (
 	"encoding/binary"
 	"fmt"
+	"unicode/utf8"
 	"unsafe"
 
 	"github.com/echoface/be_indexer/core"
@@ -20,21 +21,26 @@ type ACIndex struct {
 }
 
 func NewACReader(b []byte) (*ACIndex, error) {
-	if len(b) < 12 {
+	const headerSize = 12 // stateCount, symCount, reserved
+	if len(b) < headerSize {
 		return nil, fmt.Errorf("truncated AC mmap block")
 	}
 
 	stateCount := binary.LittleEndian.Uint32(b[0:4])
 	symCount := binary.LittleEndian.Uint32(b[4:8])
+	if reserved := binary.LittleEndian.Uint32(b[8:12]); reserved != 0 {
+		return nil, fmt.Errorf("invalid AC reserved header: %d", reserved)
+	}
 	if stateCount == 0 {
 		return &ACIndex{}, nil
 	}
 
-	headerSize := 12
-	symSize := int(symCount) * 4
-	arrayBytes := int(stateCount) * 4
-	expectedMin := headerSize + symSize + arrayBytes*4
-	if len(b) < expectedMin {
+	// Use uint64 intermediates: on 32-bit platforms int(symCount)*4 can
+	// overflow, wrap negative, and bypass this bound check.
+	symBytes := uint64(symCount) * 4
+	arrayBytes := uint64(stateCount) * 4
+	expectedMin := headerSize + symBytes + arrayBytes*4
+	if uint64(len(b)) < expectedMin {
 		return nil, fmt.Errorf("truncated AC arrays")
 	}
 
@@ -43,26 +49,115 @@ func NewACReader(b []byte) (*ACIndex, error) {
 	off := headerSize
 	for id := uint32(1); id <= symCount; id++ {
 		r := rune(int32(binary.LittleEndian.Uint32(b[off : off+4])))
+		if !utf8.ValidRune(r) {
+			return nil, fmt.Errorf("invalid AC symbol rune: %#U", r)
+		}
+		if _, dup := symOf[r]; dup {
+			return nil, fmt.Errorf("duplicate AC symbol rune: %#U", r)
+		}
 		symOf[r] = id
 		off += 4
 	}
 
 	arrBase := off
-	basePtr := unsafe.Pointer(&b[arrBase])
-	checkPtr := unsafe.Pointer(&b[arrBase+arrayBytes])
-	failPtr := unsafe.Pointer(&b[arrBase+arrayBytes*2])
-	outputPtrsPtr := unsafe.Pointer(&b[arrBase+arrayBytes*3])
+	arrBytes := int(arrayBytes) // safe: expectedMin above proved it fits in int
+	base := mapUint32s(b[arrBase:arrBase+arrBytes], stateCount)
+	check := mapUint32s(b[arrBase+arrBytes:arrBase+arrBytes*2], stateCount)
+	fail := mapUint32s(b[arrBase+arrBytes*2:arrBase+arrBytes*3], stateCount)
+	outputPtrs := mapUint32s(b[arrBase+arrBytes*3:arrBase+arrBytes*4], stateCount)
+	outputData := b[arrBase+arrBytes*4:]
 
-	return &ACIndex{
+	ac := &ACIndex{
 		b:          b,
 		stateCount: stateCount,
-		base:       unsafe.Slice((*uint32)(basePtr), stateCount),
-		check:      unsafe.Slice((*uint32)(checkPtr), stateCount),
-		fail:       unsafe.Slice((*uint32)(failPtr), stateCount),
-		outputPtrs: unsafe.Slice((*uint32)(outputPtrsPtr), stateCount),
-		outputData: b[arrBase+arrayBytes*4:],
+		base:       base,
+		check:      check,
+		fail:       fail,
+		outputPtrs: outputPtrs,
+		outputData: outputData,
 		symOf:      symOf,
-	}, nil
+	}
+	if err := ac.validateInvariants(); err != nil {
+		return nil, err
+	}
+	return ac, nil
+}
+
+// mapUint32s returns a []uint32 view over raw. It uses a zero-copy unsafe
+// mapping when the backing memory is 4-byte aligned and falls back to a decoded
+// copy otherwise, so callers never construct a misaligned uint32 slice.
+func mapUint32s(raw []byte, count uint32) []uint32 {
+	ptr := unsafe.Pointer(&raw[0])
+	if uintptr(ptr)&3 == 0 {
+		return unsafe.Slice((*uint32)(ptr), count)
+	}
+	vals := make([]uint32, count)
+	for i := uint32(0); i < count; i++ {
+		vals[i] = binary.LittleEndian.Uint32(raw[int(i)*4 : int(i)*4+4])
+	}
+	return vals
+}
+
+// validateInvariants checks every array reference the query path will ever
+// touch. The automaton is memory-mapped data, so a corrupted block must fail
+// segment open once here instead of panicking (or spinning forever on a fail
+// cycle) inside Retrieve.
+func (ac *ACIndex) validateInvariants() error {
+	if ac.fail[0] != 0 {
+		return fmt.Errorf("invalid AC root fail link: %d", ac.fail[0])
+	}
+	for i := uint32(1); i < ac.stateCount; i++ {
+		if ac.fail[i] >= ac.stateCount {
+			return fmt.Errorf("AC fail link out of range: state=%d fail=%d", i, ac.fail[i])
+		}
+	}
+	if err := ac.validateFailTrees(); err != nil {
+		return err
+	}
+
+	for i := uint32(0); i < ac.stateCount; i++ {
+		ptr := ac.outputPtrs[i]
+		if ptr == 0 {
+			continue
+		}
+		off := uint64(ptr - 1)
+		if off+2 > uint64(len(ac.outputData)) {
+			return fmt.Errorf("AC output offset out of range: state=%d offset=%d data=%d", i, ptr-1, len(ac.outputData))
+		}
+		count := int(binary.LittleEndian.Uint16(ac.outputData[off : off+2]))
+		if off+2+uint64(count)*12 > uint64(len(ac.outputData)) {
+			return fmt.Errorf("truncated AC output payload: state=%d offset=%d count=%d", i, ptr-1, count)
+		}
+	}
+	return nil
+}
+
+// validateFailTrees proves every fail chain reaches the root. Marks: 0 unseen,
+// 1 on the current walk, 2 verified. Meeting a 1 means a cycle; ending at 0 or
+// a verified state proves the chain terminates.
+func (ac *ACIndex) validateFailTrees() error {
+	marks := make([]byte, ac.stateCount)
+	var path []uint32
+	for i := uint32(1); i < ac.stateCount; i++ {
+		if marks[i] != 0 {
+			continue
+		}
+		path = path[:0]
+		for s := i; s != 0; s = ac.fail[s] {
+			if marks[s] == 1 {
+				return fmt.Errorf("AC fail cycle at state=%d", s)
+			}
+			if marks[s] == 2 {
+				break
+			}
+			marks[s] = 1
+			path = append(path, s)
+		}
+		for _, s := range path {
+			marks[s] = 2
+		}
+	}
+	return nil
 }
 
 // transition returns the next state from `state` on symbol `sym` (a dense id),
@@ -173,7 +268,7 @@ func (ac *ACIndex) MatchQuery(ctx BlockContext, field core.BEField, query interf
 	for _, ref := range refs {
 		pl, err := NewPostingListAt(ctx.Pl, ref)
 		if err != nil {
-			continue
+			return nil, fmt.Errorf("field %s: %w", field, err)
 		}
 		iters = append(iters, pl.NewPostingCursor(core.NewTerm(field, text)))
 	}

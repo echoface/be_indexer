@@ -53,12 +53,14 @@ func NewPostingListAt(block []byte, ref PostingRef) (*FlatPostingList, error) {
 	if ref.Count == 0 {
 		return &FlatPostingList{count: 0}, nil
 	}
-	start := ref.Offset + postingHeaderSize
-	end := start + uint64(ref.Count)*8
-	if end > uint64(len(block)) {
+	// Compare via subtraction so Offset near MaxUint64 cannot wrap past the
+	// bound check through Offset+header overflow.
+	blockLen := uint64(len(block))
+	if ref.Offset > blockLen || blockLen-ref.Offset < postingHeaderSize+uint64(ref.Count)*8 {
 		return nil, fmt.Errorf("posting ref out of range: offset=%d count=%d block=%d", ref.Offset, ref.Count, len(block))
 	}
-	data := mapEntryIDs(block[start:end], ref.Count)
+	start := ref.Offset + postingHeaderSize
+	data := mapEntryIDs(block[start:start+uint64(ref.Count)*8], ref.Count)
 	return &FlatPostingList{count: ref.Count, data: data}, nil
 }
 

@@ -1,6 +1,7 @@
 package segment
 
 import (
+	"encoding/binary"
 	"math/rand"
 	"sort"
 	"testing"
@@ -134,6 +135,31 @@ func TestACClassicFailLinks(t *testing.T) {
 	}
 }
 
+// TestACNestedSuffixOutputs forces multi-level suffix chains; every deeper
+// state must aggregate the outputs of all of its suffix states.
+func TestACNestedSuffixOutputs(t *testing.T) {
+	patterns := []string{"a", "ba", "cba", "dcba", "xyz"}
+	r := buildOurAC(t, patterns)
+	for _, tt := range []struct {
+		text string
+		want []string
+	}{
+		{"a", []string{"a"}},
+		{"ba", []string{"a", "ba"}},
+		{"cba", []string{"a", "ba", "cba"}},
+		{"dcba", []string{"a", "ba", "cba", "dcba"}},
+		{"xdcbax", []string{"a", "ba", "cba", "dcba"}},
+		{"xyz", []string{"xyz"}},
+	} {
+		got := r.matches(tt.text)
+		sort.Strings(got)
+		sort.Strings(tt.want)
+		if !eqStrings(got, tt.want) {
+			t.Fatalf("text=%q got=%v want=%v", tt.text, got, tt.want)
+		}
+	}
+}
+
 func TestACEmptyPattern(t *testing.T) {
 	// Empty pattern must be ignored gracefully (no panic, no spurious match).
 	r := buildOurAC(t, []string{"", "ab"})
@@ -194,6 +220,79 @@ func TestACReaderTruncated(t *testing.T) {
 	}()
 	if _, err := NewACReader(bin[:6]); err == nil {
 		t.Fatal("expected truncated error")
+	}
+}
+
+func corruptAC(t testing.TB, mutate func(bin []byte)) []byte {
+	t.Helper()
+	b := NewACBuilder(BuilderEnv{})
+	if err := b.AddPosting("abc", PostingRef{Offset: 1, Count: 1}); err != nil {
+		t.Fatal(err)
+	}
+	bin, err := b.Compile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	bin = append([]byte(nil), bin...)
+	mutate(bin)
+	return bin
+}
+
+func TestACReaderRejectsCorruption(t *testing.T) {
+	stateCount := func(bin []byte) uint32 {
+		return binary.LittleEndian.Uint32(bin[0:4])
+	}
+	failAt := func(bin []byte, state uint32) int {
+		symBytes := int(binary.LittleEndian.Uint32(bin[4:8])) * 4
+		return 12 + symBytes + int(stateCount(bin))*4*2 + int(state)*4
+	}
+
+	tests := []struct {
+		name   string
+		mutate func(bin []byte)
+	}{
+		{"reserved", func(bin []byte) { binary.LittleEndian.PutUint32(bin[8:12], 1) }},
+		{"symbol duplicate", func(bin []byte) { binary.LittleEndian.PutUint32(bin[12:16], binary.LittleEndian.Uint32(bin[16:20])) }},
+		{"symbol invalid rune", func(bin []byte) { binary.LittleEndian.PutUint32(bin[12:16], 0xd800) }},
+		{"fail out of range", func(bin []byte) {
+			last := stateCount(bin) - 1
+			binary.LittleEndian.PutUint32(bin[failAt(bin, last):failAt(bin, last)+4], stateCount(bin))
+		}},
+		{"fail cycle", func(bin []byte) {
+			binary.LittleEndian.PutUint32(bin[failAt(bin, 1):failAt(bin, 1)+4], 2)
+			binary.LittleEndian.PutUint32(bin[failAt(bin, 2):failAt(bin, 2)+4], 1)
+		}},
+		{"output truncated", func(bin []byte) {
+			last := stateCount(bin) - 1
+			outputAt := failAt(bin, last) + int(stateCount(bin))*4
+			binary.LittleEndian.PutUint32(bin[outputAt:outputAt+4], 0xffffff)
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			bin := corruptAC(t, tt.mutate)
+			if _, err := NewACReader(bin); err == nil {
+				t.Fatal("expected corruption to be rejected")
+			}
+		})
+	}
+}
+
+func TestACMatchQueryPropagatesPostingRefError(t *testing.T) {
+	b := NewACBuilder(BuilderEnv{})
+	if err := b.AddPosting("abc", PostingRef{Offset: 1, Count: 100}); err != nil {
+		t.Fatal(err)
+	}
+	bin, err := b.Compile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := NewACReader(bin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.MatchQuery(BlockContext{Pl: make([]byte, 8)}, "keyword", "abc"); err == nil {
+		t.Fatal("expected out-of-range posting ref error")
 	}
 }
 

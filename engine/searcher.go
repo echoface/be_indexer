@@ -134,14 +134,17 @@ func (e *BooleanEngine) RetrieveWithCollector(
 		}
 	}()
 
+	scratch := pickScratch()
+	defer scratch.release()
+
 	// Encode every assignment once. All K values share the same query encoding;
 	// the segment layer filters by K internally when needed.
-	encoded, err := e.encodeQueries(&ctx, queries)
+	encoded, err := e.encodeQueries(&ctx, queries, scratch)
 	if err != nil {
 		return err
 	}
 
-	fCursors, err := e.initCursors(&ctx, encoded)
+	fCursors, err := e.initCursors(&ctx, encoded, scratch)
 	if err != nil {
 		return err
 	}
@@ -167,8 +170,10 @@ type encodedField struct {
 // (default) the field is skipped and, if the observer implements
 // FieldErrorObserver, surfaced via OnFieldError so it is distinguishable from a
 // genuine no-match.
-func (e *BooleanEngine) encodeQueries(ctx *core.RetrieveContext, queries core.Assignments) ([]encodedField, error) {
-	encoded := make([]encodedField, 0, len(queries))
+func (e *BooleanEngine) encodeQueries(
+	ctx *core.RetrieveContext, queries core.Assignments, scratch *retrieveScratch,
+) ([]encodedField, error) {
+	encoded := scratch.getEncoded(len(queries))
 	for field, values := range queries {
 		runtime, ok := e.fields[field]
 		if !ok {
@@ -185,7 +190,14 @@ func (e *BooleanEngine) encodeQueries(ctx *core.RetrieveContext, queries core.As
 		if len(encodedQueries) == 0 {
 			continue
 		}
-		encoded = append(encoded, encodedField{field: field, runtime: runtime, queries: encodedQueries})
+		// Copy into the scratch-owned backing array so the encoder's per-call
+		// allocation is not retained; geo fields emit >1 query per assignment.
+		if cap(encodedQueries) > 0 {
+			scratch.queries = append(scratch.queries, encodedQueries...)
+			n := len(encodedQueries)
+			view := scratch.queries[len(scratch.queries)-n : len(scratch.queries) : len(scratch.queries)]
+			encoded = append(encoded, encodedField{field: field, runtime: runtime, queries: view})
+		}
 	}
 	return encoded, nil
 }
@@ -265,12 +277,12 @@ func (e *BooleanEngine) mergeCursors(ctx *core.RetrieveContext, fieldCursors *co
 // returns the error; lenient skips the offending (segment, value) lookup and,
 // when the observer implements FieldErrorObserver, surfaces it via OnFieldError.
 func (e *BooleanEngine) initCursors(
-	ctx *core.RetrieveContext, encoded []encodedField,
+	ctx *core.RetrieveContext, encoded []encodedField, scratch *retrieveScratch,
 ) (*core.FieldCursors, error) {
 	obs := ctx.Observer
-	fCursors := core.NewFieldCursors(len(encoded) + 1)
+	fCursors := scratch.getCursors(len(encoded) + 1)
 
-	var wildcardIters []core.PostingIterator
+	wildcardIters := scratch.getWildcards(len(e.segments))
 	for _, seg := range e.segments {
 		wc := seg.Wildcards()
 		if len(wc) > 0 {
@@ -278,7 +290,7 @@ func (e *BooleanEngine) initCursors(
 		}
 	}
 	if len(wildcardIters) > 0 {
-		fCursors.Append(core.NewFieldCursor(wildcardIters...))
+		fCursors.AppendCursor(wildcardIters...)
 	}
 
 	fieldCount := 0
@@ -289,7 +301,7 @@ func (e *BooleanEngine) initCursors(
 		// engine construction, so the hot path does not repeat field map lookups.
 		containerName := ef.runtime.codec.Option.IndexType
 
-		var iterators []core.PostingIterator
+		iterators := scratch.getIters(len(ef.runtime.indexes) * len(ef.queries))
 		for _, index := range ef.runtime.indexes {
 			for _, q := range ef.queries {
 				iters, err := index.MatchQuery(containerName, q.Value)
@@ -307,7 +319,7 @@ func (e *BooleanEngine) initCursors(
 		}
 
 		if len(iterators) > 0 {
-			fCursors.Append(core.NewFieldCursor(iterators...))
+			fCursors.AppendCursor(iterators...)
 			fieldCount++
 		}
 	}

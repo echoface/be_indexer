@@ -93,8 +93,19 @@ func (ac *ACIndex) MatchPostingRefs(text string) []PostingRef {
 	if ac.stateCount == 0 {
 		return nil
 	}
+	return ac.MatchPostingRefsInto(text, nil)
+}
 
-	var results []PostingRef
+// MatchPostingRefsInto is the append-style variant of MatchPostingRefs. Callers
+// that match repeatedly (e.g. IndexReader.MatchQuery on the retrieval path) can
+// reuse dst across calls to avoid one allocation per query; the returned slice
+// aliases dst's storage.
+func (ac *ACIndex) MatchPostingRefsInto(text string, dst []PostingRef) []PostingRef {
+	if ac.stateCount == 0 {
+		return dst
+	}
+
+	results := dst[:0]
 	state := uint32(0)
 	for _, r := range text {
 		state, results = ac.step(state, r, results)
@@ -154,7 +165,7 @@ func (ac *ACIndex) MatchQuery(ctx BlockContext, field core.BEField, query interf
 	if !ok {
 		return nil, fmt.Errorf("ac container expects string query, got %T", query)
 	}
-	refs := ac.MatchPostingRefs(text)
+	refs := ac.MatchPostingRefsInto(text, make([]PostingRef, 0, 16))
 	if len(refs) == 0 {
 		return nil, nil
 	}

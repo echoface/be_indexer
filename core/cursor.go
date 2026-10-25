@@ -2,7 +2,6 @@ package core
 
 import (
 	"container/heap"
-	"sort"
 )
 
 // SliceIterator a wrap for slice EntryID
@@ -87,8 +86,7 @@ func (h *iterHeap) Pop() any {
 }
 
 // FieldCursor maintains a heap-ordered set of PostingIterators. The minimum
-// EntryID is always at the top. SkipTo pops the minimum, advances it past the
-// target id, and pushes it back — O(log n) instead of the previous O(n log n).
+// EntryID is always at the top.
 type FieldCursor struct {
 	Iters iterHeap
 }
@@ -104,6 +102,21 @@ func NewFieldCursor(iters ...PostingIterator) FieldCursor {
 	return fc
 }
 
+// Reset reinitializes the cursor from iters, reusing the existing heap backing
+// array. It is the pooling counterpart of NewFieldCursor.
+func (f *FieldCursor) Reset(iters ...PostingIterator) {
+	if cap(f.Iters) < len(iters) {
+		f.Iters = make(iterHeap, 0, len(iters))
+	}
+	f.Iters = f.Iters[:0]
+	for _, it := range iters {
+		if it != nil && !it.Current().IsNULLEntry() {
+			f.Iters = append(f.Iters, it)
+		}
+	}
+	heap.Init(&f.Iters)
+}
+
 func (f *FieldCursor) GetCurEntryID() EntryID {
 	if len(f.Iters) == 0 {
 		return NULLENTRY
@@ -112,13 +125,18 @@ func (f *FieldCursor) GetCurEntryID() EntryID {
 }
 
 func (f *FieldCursor) SkipTo(id EntryID) EntryID {
-	if len(f.Iters) == 0 {
-		return NULLENTRY
+	for len(f.Iters) > 0 {
+		if f.Iters[0].Current() >= id {
+			return f.Iters[0].Current()
+		}
+		it := heap.Pop(&f.Iters).(PostingIterator)
+		it.SkipTo(id)
+		if it.Current().IsNULLEntry() {
+			continue // exhausted iterator permanently leaves the heap
+		}
+		heap.Push(&f.Iters, it)
 	}
-	it := heap.Pop(&f.Iters).(PostingIterator)
-	it.SkipTo(id)
-	heap.Push(&f.Iters, it)
-	return f.Iters[0].Current()
+	return NULLENTRY
 }
 
 // ReachEnd reports whether all iterators in this cursor have exhausted.
@@ -146,9 +164,11 @@ func (f *FieldCursor) DumpInfo() []string {
 	return res
 }
 
-// FieldCursors is a wrapper over []FieldCursor with sort.Slice ordering.
-// Benchmark shows sort.Slice is faster than heap for outer FieldCursors
-// because Go's sort.Slice is highly optimized for slice sizes < 1000.
+// FieldCursors is a wrapper over []FieldCursor ordered by current EntryID.
+// It uses insertion sort instead of sort.Slice: mergeCursors re-sorts every
+// iteration, and the slice is almost-sorted at that point (only the first k
+// elements changed), while sort.Slice's reflect-based Swapper allocates on
+// every call.
 type FieldCursors struct {
 	items []FieldCursor
 }
@@ -157,16 +177,58 @@ func NewFieldCursors(cap int) *FieldCursors {
 	return &FieldCursors{items: make([]FieldCursor, 0, cap)}
 }
 
+// Reset returns the cursor set to an empty state, preserving and possibly
+// growing the backing array. It lets callers reuse one FieldCursors across
+// queries instead of allocating per query.
+func (fcs *FieldCursors) Reset(capacity int) {
+	if capacity > cap(fcs.items) {
+		fcs.items = make([]FieldCursor, 0, capacity)
+		return
+	}
+	fcs.items = fcs.items[:0]
+}
+
 func (fcs *FieldCursors) Len() int { return len(fcs.items) }
 
 func (fcs *FieldCursors) Append(fc FieldCursor) {
 	fcs.items = append(fcs.items, fc)
 }
 
+// AppendCursor appends a cursor built from iters. When the backing array
+// already holds a retired cursor slot (after Reset), that slot's heap is
+// reused instead of allocating a fresh one.
+func (fcs *FieldCursors) AppendCursor(iters ...PostingIterator) {
+	if len(fcs.items) < cap(fcs.items) {
+		idx := len(fcs.items)
+		fcs.items = fcs.items[:idx+1]
+		fcs.items[idx].Reset(iters...)
+		return
+	}
+	fcs.items = append(fcs.items, NewFieldCursor(iters...))
+}
+
+// ClearRecycled clears every slot up to capacity — not just logical length —
+// so a pooled cursor set never pins iterators from a previous, larger query.
+func (fcs *FieldCursors) ClearRecycled() {
+	full := fcs.items[:cap(fcs.items)]
+	for i := range full {
+		clear(full[i].Iters[:cap(full[i].Iters)])
+		full[i].Iters = full[i].Iters[:0]
+	}
+	fcs.items = fcs.items[:0]
+}
+
 func (fcs *FieldCursors) Sort() {
-	sort.Slice(fcs.items, func(i, j int) bool {
-		return fcs.items[i].GetCurEntryID() < fcs.items[j].GetCurEntryID()
-	})
+	for i := 1; i < len(fcs.items); i++ {
+		item := fcs.items[i]
+		key := item.GetCurEntryID()
+		j := i - 1
+		for j >= 0 && fcs.items[j].GetCurEntryID() > key {
+			fcs.items[j+1] = fcs.items[j]
+			j--
+		}
+		fcs.items[j+1] = item
+	}
 }
 
 // Peek returns the smallest EntryID among all FieldCursors.

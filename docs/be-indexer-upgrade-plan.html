@@ -1,0 +1,459 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="BE Indexer 布尔表达式匹配索引核心库技术升级方案">
+  <title>BE Indexer 技术升级方案</title>
+  <style>
+    :root { --bg:#f5f7fb; --panel:#fff; --text:#172033; --muted:#5b667a; --line:#dfe5ef; --blue:#2563eb; --soft:#eef4ff; --code:#111827; }
+    * { box-sizing:border-box; }
+    html { scroll-behavior:smooth; }
+    body { margin:0; color:var(--text); background:var(--bg); font:16px/1.75 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; }
+    a { color:var(--blue); text-decoration:none; }
+    a:hover { text-decoration:underline; }
+    h1,h2,h3 { line-height:1.35; }
+    h1 { margin:0 0 12px; font-size:clamp(2rem,4vw,3.2rem); }
+    h2 { margin:48px 0 18px; padding-bottom:8px; border-bottom:2px solid var(--line); font-size:1.75rem; }
+    h3 { margin:28px 0 10px; font-size:1.2rem; }
+    p { margin:12px 0; }
+    code,pre { font-family:ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace; }
+    code { padding:2px 5px; border-radius:4px; background:#eef2f7; font-size:.92em; }
+    pre { overflow:auto; margin:16px 0; padding:16px; border-radius:8px; background:var(--code); color:#e5e7eb; font-size:.9rem; line-height:1.55; }
+    .hero { padding:72px 24px 56px; color:#fff; background:linear-gradient(135deg,#172554,#1d4ed8 55%,#0891b2); }
+    .hero-inner,.layout,.footer-inner { width:min(1180px,calc(100% - 32px)); margin:0 auto; }
+    .hero p { max-width:850px; color:#dbeafe; font-size:1.08rem; }
+    .badges { display:flex; flex-wrap:wrap; gap:8px; margin-top:22px; }
+    .badge { padding:4px 11px; border:1px solid #ffffff55; border-radius:999px; color:#eff6ff; background:#ffffff1a; font-size:.88rem; }
+    .layout { display:grid; grid-template-columns:240px minmax(0,1fr); gap:28px; align-items:start; padding:28px 0 48px; }
+    .toc { position:sticky; top:16px; padding:16px; border:1px solid var(--line); border-radius:10px; background:var(--panel); box-shadow:0 8px 28px #18274b12; }
+    .toc strong { display:block; margin-bottom:8px; }
+    .toc a { display:block; padding:3px 0; color:var(--muted); font-size:.92rem; }
+    main { min-width:0; padding:28px clamp(18px,4vw,48px); border:1px solid var(--line); border-radius:12px; background:var(--panel); box-shadow:0 8px 28px #18274b12; }
+    .notice { margin:18px 0; padding:14px 16px; border-left:4px solid var(--blue); border-radius:0 8px 8px 0; background:var(--soft); }
+    .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:14px; margin:18px 0; }
+    .card { padding:16px; border:1px solid var(--line); border-radius:9px; background:#f8fafc; }
+    .card h3 { margin-top:0; }
+    table { width:100%; margin:16px 0 22px; border-collapse:collapse; font-size:.94rem; }
+    th,td { padding:9px 10px; border:1px solid var(--line); text-align:left; vertical-align:top; }
+    th { background:#eef3fa; }
+    .phase { margin:16px 0; padding:16px 18px; border:1px solid var(--line); border-left:5px solid var(--blue); border-radius:8px; background:#f8fafc; }
+    .phase h3 { margin-top:0; }
+    .checklist { list-style:none; padding-left:0; }
+    .checklist li { margin:5px 0; }
+    .checklist li::before { content:"□"; display:inline-block; width:24px; color:var(--blue); font-weight:bold; }
+    .footer-inner { padding:0 0 36px; color:var(--muted); text-align:center; font-size:.9rem; }
+    @media (max-width:850px) { .layout { grid-template-columns:1fr; } .toc { position:static; } }
+    @media print { body { background:#fff; } .hero { padding:20px 0; color:#000; background:#fff; } .hero p,.badge { color:#000; } .layout { display:block; width:100%; } .toc { display:none; } main { border:0; box-shadow:none; } .footer-inner { width:100%; } }
+  </style>
+</head>
+<body>
+  <header class="hero">
+    <div class="hero-inner">
+      <h1>BE Indexer 技术升级方案</h1>
+      <p>面向布尔表达式匹配索引核心库的压缩、查询规划、分段分片、稳定运行、事务化版本管理和生产级性能升级方案。</p>
+      <div class="badges">
+        <span class="badge">项目：github.com/echoface/be_indexer</span>
+        <span class="badge">文档版本：v1.0</span>
+        <span class="badge">扫描范围：已排除 static/</span>
+        <span class="badge">定位：极致检索内核</span>
+      </div>
+    </div>
+  </header>
+
+  <div class="layout">
+    <nav class="toc" aria-label="文档目录">
+      <strong>文档目录</strong>
+      <a href="#summary">1. 摘要与目标</a>
+      <a href="#current">2. 当前实现评估</a>
+      <a href="#principles">3. 设计原则</a>
+      <a href="#architecture">4. 目标架构</a>
+      <a href="#compression">5. 压缩与内存</a>
+      <a href="#planner">6. 查询规划</a>
+      <a href="#segment">7. 分段与分片</a>
+      <a href="#ops">8. 监控与稳定性</a>
+      <a href="#version">9. 事务化与版本化</a>
+      <a href="#performance">10. 生产性能</a>
+      <a href="#debug">11. 线上调试</a>
+      <a href="#boundary">12. 核心库边界</a>
+      <a href="#api">13. API 演进</a>
+      <a href="#roadmap">14. 实施路线</a>
+      <a href="#acceptance">15. 验收标准</a>
+    </nav>
+
+    <main>
+      <section id="summary">
+        <h2>1. 摘要与目标</h2>
+        <p>BE Indexer 是一个 Go 实现的布尔表达式匹配索引核心库，负责根据输入特征快速找出满足 AND、OR、NOT、范围和模式匹配条件的规则或文档。</p>
+        <p>升级目标是将它演进为高性能、低内存、可观测、可版本化、可分段和可分片部署的检索内核，而不是扩展为广告、竞价、计费、排序或其它业务引擎。</p>
+        <div class="notice"><strong>核心路线：</strong>先建立 Snapshot 和 immutable index 基础，再进行压缩存储和查询规划，最后扩展增量 Segment、Compaction 与分片协调。</div>
+        <div class="grid">
+          <div class="card"><h3>更省内存</h3><p>TermID、连续内存布局、自适应 Posting 编码和 immutable Segment。</p></div>
+          <div class="card"><h3>更快查询</h3><p>基数统计、选择性估算、Cursor/Bitmap 自适应和 Segment 短路。</p></div>
+          <div class="card"><h3>稳定发布</h3><p>Build、Validate、Publish、Rollback 和 Manifest 原子切换。</p></div>
+          <div class="card"><h3>生产可运营</h3><p>Metrics、Tracing、Explain、Inspector、限流和故障恢复。</p></div>
+        </div>
+      </section>
+
+      <section id="current">
+        <h2>2. 当前实现评估</h2>
+        <h3>2.1 已有能力</h3>
+        <ul>
+          <li>基于论文的 K-Groups / Boolean Expression Index 实现。</li>
+          <li><code>roaringidx/</code> 位图索引实现。</li>
+          <li>默认倒排表、数值范围索引和 Aho-Corasick 容器。</li>
+          <li><code>CompactBEIndex</code> 紧凑索引实现。</li>
+          <li>文档级增量构建缓存和 Schema Hash。</li>
+          <li>Result Collector、Posting Cursor 和基础 Dump 能力。</li>
+        </ul>
+        <h3>2.2 主要不足</h3>
+        <table>
+          <thead><tr><th>领域</th><th>当前状态</th><th>升级方向</th></tr></thead>
+          <tbody>
+            <tr><td>存储</td><td>大量使用 Go Map、字符串和可变 Slice。</td><td>Dictionary、TermID 和连续 Posting 存储。</td></tr>
+            <tr><td>查询</td><td>主要依赖游标初始化、排序和固定扫描流程。</td><td>统计信息、代价模型和 Query Plan。</td></tr>
+            <tr><td>生命周期</td><td>偏向一次构建后查询。</td><td>immutable Segment 和 Snapshot Reader。</td></tr>
+            <tr><td>事务版本</td><td>已有构建过程测试，不是完整持久化事务。</td><td>Manifest、原子发布、回滚和恢复。</td></tr>
+            <tr><td>观测</td><td>主要依赖日志和 Dump。</td><td>Metrics、Tracing、Explain 和 Inspector。</td></tr>
+          </tbody>
+        </table>
+        <div class="notice"><strong>测试注意：</strong>核心包测试可以通过，但全量 <code>go test ./...</code> 会受到 <code>example/compare_benchmark</code> 中外部私有依赖的影响。建议后续通过 build tag 或独立模块隔离该示例。</div>
+      </section>
+
+      <section id="principles">
+        <h2>3. 总体设计原则</h2>
+        <ol>
+          <li><strong>查询与构建分离：</strong>查询只读取 immutable index，构建使用独立 Builder。</li>
+          <li><strong>Segment 不可变：</strong>发布后不原地修改，便于并发读、快照、持久化和回收。</li>
+          <li><strong>Manifest 管理版本：</strong>查询读取 Snapshot，不直接依赖可变 Index。</li>
+          <li><strong>统计驱动：</strong>查询计划基于 Posting 基数和选择性，而不是固定规则。</li>
+          <li><strong>可观测但不污染热路径：</strong>监控和 Debug 可关闭、可采样、低开销。</li>
+          <li><strong>职责收敛：</strong>核心库只负责索引和检索，不负责竞价、计费、排序和服务治理。</li>
+          <li><strong>渐进式演进：</strong>先建立基础抽象，再迁移现有实现。</li>
+        </ol>
+      </section>
+
+      <section id="architecture">
+        <h2>4. 目标架构</h2>
+        <pre><code>Document / Boolean Expression
+          |
+          v
+      Index Writer
+          |
+          v
+  Mutable Build Buffer
+          |
+          v
+ Immutable Segment Builder
+          |
+          v
+      Segment Store
+          |
+          v
+    Version Manifest
+          |
+          v
+     Snapshot Reader
+          |
+          v
+     Query Planner
+          |
+          v
+    Query Executor
+          |
+          v
+    Result Collector</code></pre>
+        <p>Metrics、Tracing 和 Debug Inspector 作为横向能力接入 Builder、Reader、Planner 和 Executor。</p>
+        <h3>4.1 推荐模块</h3>
+        <pre><code>api/             Query、Snapshot、Writer、Inspector 接口
+expr/            表达式解析、归一化、校验
+planner/         统计信息、代价模型、Query Plan、Explain
+executor/        Cursor、Bitmap 和 Segment 执行器
+storage/         Dictionary、Posting、Segment、Manifest
+builder/         Mutable Builder、Segment Builder、Compaction
+snapshot/        版本管理、发布、回收、恢复
+shard/           ShardReader、Router、结果合并
+observability/   Metrics、Tracing、Debug Inspector
+parser/
+roaringidx/</code></pre>
+      </section>
+
+      <section id="compression">
+        <h2>5. 压缩与内存效率</h2>
+        <h3>5.1 Dictionary 与 TermID</h3>
+        <p>当前 <code>map[Term]Entries</code> 会带来字符串、Map bucket、Term 复制和 Slice 扩容成本。建议拆成 Field Dictionary、Term Dictionary 和 Posting Store：</p>
+        <pre><code>field -> fieldID
+fieldID + normalized value -> termID
+termID -> compressed posting list</code></pre>
+        <pre><code>type FieldID uint16
+type TermID uint32
+type PostingID uint32
+type DocID uint64</code></pre>
+        <h3>5.2 自适应 Posting 编码</h3>
+        <table>
+          <thead><tr><th>数据特征</th><th>推荐编码</th></tr></thead>
+          <tbody>
+            <tr><td>极短列表</td><td>内联小数组</td></tr>
+            <tr><td>稀疏递增 ID</td><td>Delta + Varint</td></tr>
+            <tr><td>中等密度</td><td>Roaring Array Container</td></tr>
+            <tr><td>高密度</td><td>Roaring Bitmap Container</td></tr>
+            <tr><td>连续区间较多</td><td>Run Container</td></tr>
+          </tbody>
+        </table>
+        <h3>5.3 连续内存布局</h3>
+        <pre><code>FieldMeta[]
+TermMeta[]
+PostingOffset[]
+PostingBytes</code></pre>
+        <p>该布局有利于降低 GC 压力、改善 CPU Cache 局部性、支持 mmap，并统计真实内存占用。</p>
+      </section>
+
+      <section id="planner">
+        <h2>6. 查询规划与执行</h2>
+        <h3>6.1 查询流水线</h3>
+        <pre><code>Parse -> Normalize -> Estimate -> Plan -> Execute -> Collect</code></pre>
+        <pre><code>type QueryPlan struct {
+    Steps         []PlanStep
+    EstimatedCost uint64
+    EstimatedHits uint64
+    Strategy      PlanStrategy
+}</code></pre>
+        <h3>6.2 基于基数的排序</h3>
+        <p>对于 AND 条件，优先执行最稀疏的条件。例如：A 的基数为 10、B 为 1,000,000、C 为 100 时，执行顺序应优先考虑 A、C、B。</p>
+        <p>规划时还应考虑 Posting 类型、否定条件、Segment 数量、查询缓存和历史执行数据。</p>
+        <h3>6.3 操作策略</h3>
+        <table>
+          <thead><tr><th>操作</th><th>策略</th></tr></thead>
+          <tbody>
+            <tr><td>AND</td><td>从最小 Posting List 开始做交集，必要时使用 Bitmap。</td></tr>
+            <tr><td>OR</td><td>优先合并低基数列表，避免过早物化巨大结果。</td></tr>
+            <tr><td>NOT</td><td>有候选集时使用 AndNot；无候选集时使用 live-doc bitmap，并根据选择性延后执行。</td></tr>
+          </tbody>
+        </table>
+        <h3>6.4 Cursor 与 Bitmap 自适应</h3>
+        <ul>
+          <li>低基数、稀疏结果：Sorted Posting / Cursor。</li>
+          <li>中高基数：Roaring Bitmap。</li>
+          <li>多 Segment：Segment-level filtering + Merge。</li>
+          <li>复杂 NOT：Candidate Bitmap + AndNot。</li>
+        </ul>
+        <h3>6.5 Explain</h3>
+        <pre><code>type ExplainResult struct {
+    SnapshotVersion uint64
+    Plan            QueryPlan
+    ActualSteps     []StepStats
+    TotalDuration   time.Duration
+}</code></pre>
+      </section>
+
+      <section id="segment">
+        <h2>7. 分段与分片</h2>
+        <h3>7.1 Segment 生命周期</h3>
+        <pre><code>Building -> Sealed -> Validated -> Published -> Retired -> Deleted</code></pre>
+        <p>Segment 至少包含 Header、Segment ID、Generation、Schema Version、Field Dictionary、Term Dictionary、Posting Index、Posting Data、Live Docs、统计信息和 Checksum。</p>
+        <h3>7.2 Segment 合并</h3>
+        <p>建议先实现只读 Segment 和周期性重建，确认格式和 Snapshot 机制稳定后，再增加增量 Segment 与后台 Compaction。</p>
+        <ul>
+          <li>合并小 Segment。</li>
+          <li>合并相同 Field/Term 的 Posting。</li>
+          <li>合并 Tombstone 并重建统计信息。</li>
+          <li>后台限速，不影响在线查询。</li>
+        </ul>
+        <h3>7.3 分片策略</h3>
+        <table>
+          <thead><tr><th>策略</th><th>优点</th><th>缺点</th></tr></thead>
+          <tbody>
+            <tr><td>DocumentID Hash</td><td>写入均匀，大小容易控制。</td><td>查询通常需要广播和去重。</td></tr>
+            <tr><td>租户、业务线或地域</td><td>路由范围小，隔离性好。</td><td>可能出现热点和大小不均。</td></tr>
+            <tr><td>高选择性维度</td><td>可以减少广播。</td><td>维度变化可能造成迁移。</td></tr>
+          </tbody>
+        </table>
+        <h3>7.4 Shard API</h3>
+        <pre><code>type ShardReader interface {
+    Snapshot() Snapshot
+    Retrieve(ctx context.Context, query Query, collector Collector) error
+}
+
+type ShardRouter interface {
+    Route(query Query) []ShardID
+}</code></pre>
+        <p>核心库可以提供轻量 MultiShardReader，负责并发查询、超时、结果合并、去重和部分失败策略；服务发现、配置中心和副本调度留给上层。</p>
+      </section>
+
+      <section id="ops">
+        <h2>8. 监控与稳定运行</h2>
+        <h3>8.1 可插拔 Metrics</h3>
+        <pre><code>type Metrics interface {
+    Counter(name string, value int64, labels ...Label)
+    Histogram(name string, value float64, labels ...Label)
+    Gauge(name string, value float64, labels ...Label)
+}</code></pre>
+        <h3>8.2 核心指标</h3>
+        <ul>
+          <li>查询：总数、错误、超时、P50/P95/P99、结果数、扫描 Segment 数和扫描 Posting 数。</li>
+          <li>构建：耗时、文档数、失败数、跳过 Conjunction 数、Segment 字节数和压缩比。</li>
+          <li>内存：Index、Dictionary、Posting、Bitmap、Builder 和查询临时内存。</li>
+          <li>版本：当前 Snapshot、发布次数、回滚次数、旧版本读者数和恢复次数。</li>
+        </ul>
+        <h3>8.3 稳定性保护</h3>
+        <ul>
+          <li>查询开始时固定 Snapshot，发布不影响已有查询。</li>
+          <li>构建失败时线上版本不变，临时产物自动清理。</li>
+          <li>支持查询超时、最大返回数、最大扫描量和最大临时内存。</li>
+          <li>Compaction 和构建使用有界并发和限速。</li>
+        </ul>
+      </section>
+
+      <section id="version">
+        <h2>9. 事务化与版本化索引管理</h2>
+        <h3>9.1 版本概念</h3>
+        <table>
+          <thead><tr><th>版本</th><th>含义</th></tr></thead>
+          <tbody>
+            <tr><td>DocumentVersion</td><td>业务文档版本。</td></tr>
+            <tr><td>IndexVersion</td><td>一次完整索引快照版本。</td></tr>
+            <tr><td>SchemaVersion</td><td>字段、解析器、编码和格式版本。</td></tr>
+            <tr><td>SegmentGeneration</td><td>某个 Segment 的生成版本。</td></tr>
+          </tbody>
+        </table>
+        <h3>9.2 Snapshot API</h3>
+        <pre><code>type Snapshot interface {
+    Version() uint64
+    SchemaVersion() uint64
+    Retrieve(query Query, opts ...QueryOption) (Result, error)
+    Close()
+}
+
+type IndexManager interface {
+    Open() error
+    Current() Snapshot
+    BeginBuild(opts BuildOptions) (IndexWriter, error)
+    Publish(build BuildResult) (Snapshot, error)
+    Rollback(version uint64) error
+    ListVersions() ([]VersionInfo, error)
+}</code></pre>
+        <h3>9.3 Build、Validate、Publish</h3>
+        <pre><code>BeginBuild -> Write / Build -> Seal -> Validate -> Commit Manifest -> Publish Snapshot</code></pre>
+        <p>Validate 至少检查 Schema、Checksum、Posting Offset、Dictionary 排序、EntryID 合法性、Conjunction 限制、统计信息和随机查询抽样结果。</p>
+        <h3>9.4 Manifest 原子发布</h3>
+        <pre><code>manifest.tmp -> fsync -> rename(manifest.current) -> fsync directory</code></pre>
+        <p>已有查询继续使用旧 Snapshot，新查询使用新 Snapshot。旧版本应在所有读者退出后再回收。</p>
+      </section>
+
+      <section id="performance">
+        <h2>10. 生产性能要求</h2>
+        <div class="notice"><strong>说明：</strong>“Google / Yahoo 级别”必须转化为真实数据、并发、延迟分位数、内存上限和故障场景下的可测量指标。</div>
+        <h3>10.1 必测范围</h3>
+        <ul>
+          <li>10 万、100 万、1000 万和 1 亿文档或规则。</li>
+          <li>每个文档 1、10、100 个 Conjunction。</li>
+          <li>低基数、高基数、稀疏、多值、范围和 AC 模式字段。</li>
+          <li>单字段、多字段 AND、OR、NOT、空结果、高命中率和低命中率查询。</li>
+        </ul>
+        <h3>10.2 建议初始 SLO</h3>
+        <table>
+          <thead><tr><th>指标</th><th>目标</th></tr></thead>
+          <tbody>
+            <tr><td>P50 查询延迟</td><td>&lt; 100 μs</td></tr>
+            <tr><td>P95 查询延迟</td><td>&lt; 1 ms</td></tr>
+            <tr><td>P99 查询延迟</td><td>&lt; 5 ms</td></tr>
+            <tr><td>查询错误率</td><td>&lt; 0.01%</td></tr>
+            <tr><td>发布切换</td><td>&lt; 100 ms，且查询不失败</td></tr>
+            <tr><td>查询额外分配</td><td>目标 0～3 次</td></tr>
+          </tbody>
+        </table>
+        <h3>10.3 工具链</h3>
+        <pre><code>go test -bench=. -benchmem
+go test -run=^$ -bench=. -cpuprofile=cpu.out -memprofile=mem.out
+go test -race ./...
+benchstat old.txt new.txt</code></pre>
+      </section>
+
+      <section id="debug">
+        <h2>11. 线上调试与内存查看</h2>
+        <h3>11.1 Debug Inspector</h3>
+        <pre><code>type IndexInspector interface {
+    SnapshotInfo(ctx context.Context, version uint64) (SnapshotInfo, error)
+    SegmentInfo(ctx context.Context, version uint64) ([]SegmentInfo, error)
+    FieldStats(ctx context.Context, version uint64, field FieldID) (FieldStats, error)
+    TermStats(ctx context.Context, version uint64, field FieldID, value string) (TermStats, error)
+    Explain(ctx context.Context, version uint64, query Query) (ExplainResult, error)
+    SamplePosting(ctx context.Context, version uint64, term TermID, limit int) ([]DocID, error)
+    MemoryReport(ctx context.Context, version uint64) (MemoryReport, error)
+}</code></pre>
+        <h3>11.2 安全约束</h3>
+        <ul>
+          <li>输出大小限制、超时、取消和采样。</li>
+          <li>基于指定 Snapshot 读取，不读取正在构建的可变数据。</li>
+          <li>不默认导出全部规则或全部文档内容。</li>
+          <li>支持脱敏 Hook，不阻塞正常查询线程。</li>
+        </ul>
+      </section>
+
+      <section id="boundary">
+        <h2>12. 核心库边界</h2>
+        <h3>12.1 核心库负责</h3>
+        <ul>
+          <li>表达式编译、归一化、字段解析和索引编码。</li>
+          <li>Posting / Bitmap 存储、Query Planning 和 Query Execution。</li>
+          <li>Segment、Snapshot、Manifest 和索引校验。</li>
+          <li>Metrics、Tracing 和 Debug Inspector Hook。</li>
+        </ul>
+        <h3>12.2 核心库不负责</h3>
+        <ul>
+          <li>竞价、计费、广告排序、召回策略和用户画像。</li>
+          <li>RPC、服务发现、配置中心、权限系统和任务调度。</li>
+          <li>数据同步、分布式选主、节点治理和副本调度。</li>
+        </ul>
+      </section>
+
+      <section id="api">
+        <h2>13. API 演进建议</h2>
+        <h3>13.1 保持现有 API 兼容</h3>
+        <pre><code>builder := NewIndexerBuilder()
+index := builder.BuildIndex()
+result, err := index.Retrieve(assignments)</code></pre>
+        <h3>13.2 新增 Snapshot / Writer API</h3>
+        <pre><code>manager, err := OpenIndexManager(opts...)
+build, err := manager.BeginBuild(BuildOptions{SchemaVersion: 8})
+if err != nil { return err }
+if err := build.AddDocument(doc); err != nil { return err }
+artifact, err := build.Seal()
+if err != nil { return err }
+if err := artifact.Validate(); err != nil { return err }
+snapshot, err := manager.Publish(artifact)
+result, err := snapshot.Retrieve(ctx, query)</code></pre>
+        <h3>13.3 查询选项</h3>
+        <pre><code>snapshot.Retrieve(ctx, query,
+    WithLimit(100),
+    WithExplain(),
+    WithQueryTimeout(time.Millisecond),
+)</code></pre>
+      </section>
+
+      <section id="roadmap">
+        <h2>14. 分阶段实施计划</h2>
+        <div class="phase"><h3>Phase 0：基线和契约冻结</h3><ul class="checklist"><li>固定查询语义和边界条件。</li><li>建立随机表达式测试及 K-Groups / Roaring 交叉校验。</li><li>建立数据规模、延迟、吞吐和内存基线。</li><li>补充并发读、Race 和错误恢复测试。</li></ul></div>
+        <div class="phase"><h3>Phase 1：读写分离与 Snapshot</h3><ul class="checklist"><li>引入 Snapshot。</li><li>Builder 生成独立索引。</li><li>Publish 原子切换，旧 Snapshot 延迟回收。</li><li>查询禁止访问正在构建的对象。</li></ul></div>
+        <div class="phase"><h3>Phase 2：Immutable Segment 与压缩存储</h3><ul class="checklist"><li>实现 Dictionary、TermID 和连续内存布局。</li><li>实现自适应 Posting 编码。</li><li>定义 Segment 文件格式、Checksum 和 Loader。</li><li>实现 Memory Report 和 Debug Inspector。</li></ul></div>
+        <div class="phase"><h3>Phase 3：Query Planner</h3><ul class="checklist"><li>记录 Posting 基数和 Term 选择性。</li><li>实现 AND / OR / NOT 策略选择。</li><li>实现 Segment 跳过、Query Plan 和 Explain。</li><li>自适应选择 Cursor 或 Bitmap。</li></ul></div>
+        <div class="phase"><h3>Phase 4：增量 Segment、Tombstone 和 Compaction</h3><ul class="checklist"><li>实现 Delta Segment、Delete / Update 和 Tombstone。</li><li>实现后台 Segment Merge、限速和失败恢复。</li></ul></div>
+        <div class="phase"><h3>Phase 5：分片和多节点协调</h3><ul class="checklist"><li>实现 ShardReader、ShardRouter 和 MultiShardReader。</li><li>实现并行查询、超时、取消、结果合并和去重。</li><li>定义分片级版本一致性。</li></ul></div>
+      </section>
+
+      <section id="acceptance">
+        <h2>15. 验收标准</h2>
+        <h3>15.1 正确性</h3>
+        <ul class="checklist"><li>新旧执行器结果一致。</li><li>AND、OR、NOT、范围、多值和重复字段语义有测试。</li><li>随机表达式交叉校验通过。</li><li>发布、回滚和恢复不会产生错误版本结果。</li><li>构建失败不会污染线上版本。</li></ul>
+        <h3>15.2 性能</h3>
+        <ul class="checklist"><li>P50/P95/P99 达到项目 SLO。</li><li>压缩后内存相对基线下降。</li><li>查询热路径分配和 GC 影响有数据证明。</li><li>查询规划能减少 Posting 或 Segment 扫描。</li><li>Compaction 不导致线上延迟突破 SLO。</li></ul>
+        <h3>15.3 运维</h3>
+        <ul class="checklist"><li>Metrics 可查看查询、构建、内存和版本状态。</li><li>Explain 可以定位慢查询。</li><li>Inspector 可以查看指定 Snapshot 的 Segment、Term 和内存信息。</li><li>Debug 操作有大小限制、超时和取消能力。</li><li>崩溃后可以恢复到最近一个合法 Manifest。</li></ul>
+        <div class="notice"><strong>第一阶段优先事项：</strong><code>Snapshot + Manifest + 原子发布 + 只读查询隔离</code>。这是后续压缩、分段、回滚、分片和稳定运行的共同基础。</div>
+      </section>
+    </main>
+  </div>
+
+  <footer class="footer-inner">BE Indexer 技术升级方案 · 本文档不包含竞价、计费或其它业务引擎设计</footer>
+</body>
+</html>

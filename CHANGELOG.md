@@ -2,9 +2,68 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased] - 2026-11-06
+
+### Added
+
+#### segmentindex 增量 Segment、Tombstone 与 Compaction（Phase 4）
+
+在 `segmentindex` 引入 `Store` 编排层：Delta Segment 增量写入、序列号 Tombstone 的 Delete / Update、后台 Segment Merge（Compaction）、限速与失败恢复。
+
+1. **Delta Segment 与 Store**
+   - `Store` 将增量写入积累在 pending buffer 中，`Flush`（或 `StoreOptions.FlushDocs` 阈值）封存为不可变 `Delta`；批量 `AddDocuments` 是原子的，失败批次整体回滚
+   - 每次写入（Add / Delete / Update / Flush / Compact）发布新的不可变视图；`StoreSnapshot` 在创建时固定视图，之后的删除、追加、合并都不会影响进行中的查询（查询开始时固定 Snapshot）
+   - `StoreSnapshot.RetrieveAssignments` / `Retrieve` 为快照读；`Store` 上的同名方法是一次性便捷查询
+
+2. **序列号 Tombstone：Delete / Update**
+   - 每个 Store 维护单调递增 `seq`：文档添加记录 `addSeq`，每次 `Delete(ids...)` 调用取一个 `seq` 并记录 `tombstones[id] = max(seq)`；`id@addSeq` 版本在 `tombSeq > addSeq` 时死亡
+   - 因此 `Update(id, doc)` = Delete + Add 天然成立：新版本 `addSeq` 大于 tombstone 序列号保持存活；删除后重新添加同样有效
+   - 一个 doc 的多个版本（多个 delta）各自携带 addSeq，独立参与 tombstone 判定
+   - Compaction 后可回收失效 tombstone：当 id 不在 pending buffer 且所有剩余版本的 addSeq 均不小于 tombstone 序列号时删除该 tombstone
+
+3. **后台 Segment Merge（Compaction）**
+   - `Compact(ctx)` / `StartBackgroundCompaction()` 将多个 Delta 合并重写：物理剔除 tombstoned 版本（postings 与 liveDocs）、丢弃全灭的 group 与空 term、合并相同 Field/Term postings 并重建统计信息
+   - **Group 合并规则**：仅当两个 group 的 `groupSignature`（每字段 include/exclude 形状 + 全部 range 谓词边界）一致**且 doc id 集合互不相交**时才合并。不相交约束保证：同一 doc 的多个 conjunction 不会被并进同一 group（DNF OR 边界不跨字段误报），同一 doc 的多个版本不会共用一个 addSeq
+   - fallback 语义改由表达式形状（`fieldShape.hasIncl`）决定而非合并后的 postings，保证合并 group 保持源 conjunction 的空 include 集回退行为
+   - 后台 worker 通过 `CompactionOptions.MinDeltas` 触发、`MaxDeltasPerRound` 限制单轮合并规模，失败按 `MaxAttempts`/`RetryBackoff` 线性退避重试，`Close` 统一停止
+
+4. **限速与失败恢复**
+   - 新增 `RateLimiter` 接口与 `TokenBucket` 实现（`CompactionOptions.RateBytesPerSecond/RateBurst`），合并按处理的 doc version 数量计费排队，避免后台合并挤压在线查询；`StoreOptions.Limiter` 可注入自定义实现
+   - 失败恢复：合并全程在 store 锁外构建临时 bucket，仅成功后持锁发布；失败（限速器/ctx/构建错误）时在线版本保持不变、临时产物直接丢弃，`StoreStats` 记录 `CompactionFailures`/`LastCompactionError`
+
+**行为变更：**
+
+- `Index.Retrieve` 不再原地改写调用方的 `planner.Query`（改为私有副本加前缀）；旧实现在同一 query 复用于多个 delta 时会重复加前缀导致漏检
+- `storage.Segment` 新增 `TermKeys()`：按 TermID 顺序返回词典 key，供合并遍历 (field, value, posting)
+
+**文件改动：**
+
+- `segmentindex/store.go`: Store / StoreSnapshot / CompactionOptions / 后台 worker
+- `segmentindex/merge.go`: mergeDeltas、groupSignature 与不相交合并
+- `segmentindex/version.go`: 序列号 tombstoneSet 与回收
+- `segmentindex/delta.go`: 不可变 Delta 批次
+- `segmentindex/ratelimit.go`: RateLimiter / TokenBucket
+- `segmentindex/index.go` / `boolean.go`: groupMeta（shapes/ranges/seqs）、tombstone 过滤、query 副本修复
+- `storage/segment.go`: TermKeys()
+- 测试：`store_test.go`、`merge_test.go`（快照稳定性、tombstone、合并保序、失败恢复、限速、后台合并）
+
+---
+
 ## [Unreleased] - 2026-02-10
 
 ### Added
+
+#### segmentindex 范围谓词支持
+
+`segmentindex` 现已支持数值范围表达式（`GreaterThan` / `LessThan` / `Between` 及自定义 `ValueOptGT/LT/Between` 表达式），不再将 range 视为不支持的表达式：
+
+1. **新增 `parsePredicateRange`**：将范围表达式解析为半开区间 `[left, right)`，语义与 `holder/rangeholder.ParseRange` 完全一致
+   - `GT v` → `[v+1, MaxInt64)`（严格大于）
+   - `LT v` → `[MinInt64, v)`（严格小于）
+   - `Between l,h` → `[l, h)`（右边界不包含；`l == h` 时覆盖 `l` 自身）
+   - 浮点数会被拒绝（不静默截断）；`Between` 额外支持 `[2]int64`、双元素切片和 `"x:y"` 格式
+2. **`RetrieveAssignments` 评估范围谓词**：命中 include range 时放行该组 live docs，命中 exclude range 时将其从结果中剔除；查询字段缺失时跳过该字段约束（与既有精确匹配语义一致）
+3. **`Index.Retrieve`（planner 精确 term 路径）不评估范围**：文档仅含范围约束时该路径可能漏报（不会误报），完整 DNF 语义请使用 `RetrieveAssignments`（已补充注释说明）
 
 #### Parser Interface Refactoring
 

@@ -1,0 +1,172 @@
+package comparebenchmark
+
+import (
+	"fmt"
+	"math/rand"
+	"os"
+	"strings"
+	"testing"
+	"time"
+
+	adindex "git.ushareit.me/lacuna/corekit/adindex.git"
+	"github.com/echoface/be_indexer"
+	_ "github.com/echoface/be_indexer/holder/rangeholder"
+)
+
+var (
+	fields = []struct {
+		name  string
+		start int64
+		end   int64
+	}{
+		{"query_a", 1, 100},
+		{"query_b", 100, 200},
+		{"query_c", 200, 300},
+		{"query_d", 300, 400},
+		{"query_e", 400, 500},
+		{"query_f", 600, 700},
+		{"query_g", 600, 700},
+		{"query_h", 700, 800},
+		{"query_i", 900, 1000},
+		{"query_j", 1000, 1100},
+		{"query_k", 1100, 1200},
+		{"query_l", 1200, 1300},
+		{"query_m", 1300, 1400},
+		{"query_n", 1400, 1500},
+		{"query_o", 1500, 1600},
+		{"query_p", 1600, 1700},
+	}
+	count       = 10000
+	be_index    be_indexer.BEIndex
+	l_adindexer *adindex.IndexSearcher
+)
+
+func Benchmark_BE_INDEX(b *testing.B) {
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		assigns := map[be_indexer.BEField]be_indexer.Values{
+			"query_a": be_indexer.NewIntValues(10),
+			"query_b": be_indexer.NewIntValues(104),
+			"query_c": be_indexer.NewIntValues(210),
+			"query_d": be_indexer.NewIntValues(333),
+			"query_e": be_indexer.NewIntValues(444),
+			"query_f": be_indexer.NewIntValues(555),
+			"query_g": be_indexer.NewIntValues(666),
+			"query_h": be_indexer.NewIntValues(777),
+			"query_i": be_indexer.NewIntValues(888),
+			"query_j": be_indexer.NewIntValues(999),
+			"query_k": be_indexer.NewIntValues(1111),
+			"query_l": be_indexer.NewIntValues(1222),
+			"query_m": be_indexer.NewIntValues(1333),
+			"query_n": be_indexer.NewIntValues(1444),
+			"query_o": be_indexer.NewIntValues(1555),
+			"query_p": be_indexer.NewIntValues(1666),
+		}
+
+		_, _ = be_index.Retrieve(assigns)
+		// be_indexer.WithStepDetail(),
+		// be_indexer.WithDumpEntries())
+	}
+}
+
+func Benchmark_Lacuna_INDEX(b *testing.B) {
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		values := []uint64{10, 104, 210, 333, 444, 555, 666, 777, 888, 999, 1111, 1222, 1333, 1444, 1555, 1666}
+		l_adindexer.SearchAdIds(values)
+	}
+}
+
+func prepareIndex() error {
+	// be_indexer.RegisterEntriesHolder(be_indexer.HolderNameDefault, func() be_indexer.EntriesHolder {
+	// 	holder := be_indexer.NewDefaultEntriesHolder()
+	// 	holder.FieldParser = map[be_indexer.BEField]parser.FieldValueParser{
+	// 		"query_e": parser.NewNumRangeParser(),
+	// 		"query_h": parser.NewNumRangeParser(),
+	// 		"query_o": parser.NewNumRangeParser(),
+	// 	}
+	// 	return holder
+	// })
+	builder := be_indexer.NewIndexerBuilder(
+		be_indexer.WithBadConjBehavior(be_indexer.PanicBadConj),
+	)
+	builder.ConfigField("query_e", be_indexer.FieldOption{
+		Container: be_indexer.HolderNameExtendRange,
+	})
+	builder.ConfigField("query_h", be_indexer.FieldOption{
+		Container: be_indexer.HolderNameExtendRange,
+	})
+	builder.ConfigField("query_o", be_indexer.FieldOption{
+		Container: be_indexer.HolderNameExtendRange,
+	})
+
+	// for adindex
+	helper, err := adindex.NewHelper("normal_avalon.xml")
+	if err != nil {
+		return err
+	}
+	l_builder, err := adindex.NewAdIndexBuilder(adindex.IndexOption{
+		DumpTime:   uint64(time.Now().Unix()),
+		SaveBetree: true,
+	}, helper)
+
+	// 10000 doc add
+	for i := 0; i < count; i++ {
+		docId := i
+		doc := be_indexer.NewDocument(be_indexer.DocID(docId))
+		conj := be_indexer.NewConjunction()
+
+		ad := l_builder.NewAdToIndex(uint64(docId))
+
+		for _, f := range fields {
+			if f.name == "query_e" || f.name == "query_h" || f.name == "query_o" {
+				s, e := f.start, f.start+rand.Int63n(f.end-f.start)
+				conj.Between(be_indexer.BEField(f.name), s, e)
+
+				ad.AddTargetingByRange(false, uint64(s), uint64(e))
+			} else {
+				values := []uint64{}
+				for j := 0; j < 15; j++ {
+					values = append(values, uint64(f.start+rand.Int63n(f.end-f.start)))
+				}
+				conj.In(be_indexer.BEField(f.name), values)
+
+				ad.AddTargetingByIDs(false, values)
+			}
+		}
+		doc.AddConjunction(conj)
+		_ = builder.AddDocument(doc)
+
+		l_builder.AddAdToIndex(ad)
+	}
+	be_index = builder.BuildIndex()
+	fmt.Println("==>be_index :")
+	PrintIndexInfo(be_index)
+
+	l_builder.BuildIndex()
+	l_adindexer = adindex.NewIndexSearcher(l_builder.GetIndex())
+	fmt.Println("==>l_adindexer len:", len(l_adindexer.GetAllAdIds()))
+	return nil
+}
+
+func TestMain(m *testing.M) {
+	err := prepareIndex()
+	if err != nil {
+		panic(err)
+	}
+
+	// 执行测试
+	code := m.Run()
+
+	// 退出时清理工作（如果有的话）
+	os.Exit(code)
+}
+
+func PrintIndexInfo(index be_indexer.BEIndex) {
+	if index == nil {
+		fmt.Println("nil indexer")
+	}
+	sb := &strings.Builder{}
+	index.DumpIndexInfo(sb)
+	fmt.Println(sb.String())
+}

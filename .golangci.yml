@@ -1,0 +1,262 @@
+# golangci-lint configuration file made by @ccoVeille
+# Source: https://github.com/ccoVeille/golangci-lint-config-examples/
+# Author: @ccoVeille
+# License: MIT
+# Variant: 03-safe
+# Version: v1.0.0
+#
+linters:
+  # some linters are enabled by default
+  # https://golangci-lint.run/usage/linters/
+  #
+  # enable some extra linters
+  enable:
+    # Errcheck is a program for checking for unchecked errors in Go code.
+    - errcheck
+
+    # Linter for Go source code that specializes in simplifying code.
+    - gosimple
+
+    # Vet examines Go source code and reports suspicious constructs.
+    - govet
+
+    # Detects when assignments to existing variables are not used.
+    - ineffassign
+
+    # It's a set of rules from staticcheck. See https://staticcheck.io/
+    - staticcheck
+
+    # Fast, configurable, extensible, flexible, and beautiful linter for Go.
+    # Drop-in replacement of golint.
+    - revive
+
+    # check imports order and makes it always deterministic.
+    - gci
+
+    # make sure to use t.Helper() when needed
+    - thelper
+
+    # mirror suggests rewrites to avoid unnecessary []byte/string conversion
+    - mirror
+
+    # detect the possibility to use variables/constants from the Go standard library.
+    - usestdlibvars
+
+    # Finds commonly misspelled English words.
+    - misspell
+
+    # Checks for duplicate words in the source code.
+    - dupword
+
+linters-settings:
+  gci: # define the section orders for imports
+    sections:
+      # Standard section: captures all standard packages.
+      - standard
+      # Default section: catchall that is not standard or custom
+      - default
+      # linters that related to local tool, so they should be separated
+      # - localmodule
+
+  revive:
+    rules:
+      # these are the default revive rules
+      # you can remove the whole "rules" node if you want
+      # BUT
+      # ! /!\ they all need to be present when you want to add more rules than the default ones
+      # otherwise, you won't have the default rules, but only the ones you define in the "rules" node
+
+      # Blank import should be only in a main or test package, or have a comment justifying it.
+      - name: blank-imports
+
+      # context.Context() should be the first parameter of a function when provided as argument.
+      - name: context-as-argument
+        arguments:
+          - allowTypesBefore: "*testing.T"
+
+      # Basic types should not be used as a key in `context.WithValue`
+      - name: context-keys-type
+
+      # Importing with `.` makes the programs much harder to understand
+      - name: dot-imports
+
+      # Empty blocks make code less readable and could be a symptom of a bug or unfinished refactoring.
+      - name: empty-block
+
+      # for better readability, variables of type `error` must be named with the prefix `err`.
+      - name: error-naming
+
+      # for better readability, the errors should be last in the list of returned values by a function.
+      - name: error-return
+
+      # for better readability, error messages should not be capitalized or end with punctuation or a newline.
+      - name: error-strings
+
+      # report when replacing `errors.New(fmt.Sprintf())` with `fmt.Errorf()` is possible
+      - name: errorf
+
+      # incrementing an integer variable by 1 is recommended to be done using the `++` operator
+      - name: increment-decrement
+
+      # highlights redundant else-blocks that can be eliminated from the code
+      - name: indent-error-flow
+
+      # This rule suggests a shorter way of writing ranges that do not use the second value.
+      - name: range
+
+      # receiver names in a method should reflect the struct name (p for Person, for example)
+      - name: receiver-naming
+
+      # redefining built in names (true, false, append, make) can lead to bugs very difficult to detect.
+      - name: redefines-builtin-id
+
+      # redundant else-blocks that can be eliminated from the code.
+      - name: superfluous-else
+
+      # prevent confusing name for variables when using `time` package
+      - name: time-naming
+
+      # warns when an exported function or method returns a value of an un-exported type.
+      - name: unexported-return
+
+      # spots and proposes to remove unreachable code. also helps to spot errors
+      - name: unreachable-code
+
+      # Functions or methods with unused parameters can be a symptom of an unfinished refactoring or a bug.
+      - name: unused-parameter
+
+      # report when a variable declaration can be simplified
+      - name: var-declaration
+
+      # warns when initialism, variable or package naming conventions are not followed.
+      - name: var-naming
+      # https://github.com/mgechev/revive/blob/master/RULES_DESCRIPTIONS.md#add-constant
+      # - name: add-constant
+      # https://github.com/mgechev/revive/blob/master/RULES_DESCRIPTIONS.md#argument-limit
+      - name: argument-limit
+      # https://github.com/mgechev/revive/blob/master/RULES_DESCRIPTIONS.md#atomic
+      - name: atomic
+      # https://github.com/mgechev/revive/blob/master/RULES_DESCRIPTIONS.md#banned-characters
+      - name: banned-characters
+      # https://github.com/mgechev/revive/blob/master/RULES_DESCRIPTIONS.md#bare-return
+      - name: bare-return
+      # https://github.com/mgechev/revive/blob/master/RULES_DESCRIPTIONS.md#bool-literal-in-expr
+      - name: bool-literal-in-expr
+      # https://github.com/mgechev/revive/blob/master/RULES_DESCRIPTIONS.md#call-to-gc
+      - name: call-to-gc
+      # https://github.com/mgechev/revive/blob/master/RULES_DESCRIPTIONS.md#cognitive-complexity
+      - name: cognitive-complexity
+      # https://github.com/mgechev/revive/blob/master/RULES_DESCRIPTIONS.md#confusing-naming
+      - name: confusing-naming
+      # https://github.com/mgechev/revive/blob/master/RULES_DESCRIPTIONS.md#confusing-results
+      - name: confusing-results
+      # https://github.com/mgechev/revive/blob/master/RULES_DESCRIPTIONS.md#constant-logical-expr
+      - name: constant-logical-expr
+      # https://github.com/mgechev/revive/blob/master/RULES_DESCRIPTIONS.md#cyclomatic
+      - name: cyclomatic
+      # https://github.com/mgechev/revive/blob/master/RULES_DESCRIPTIONS.md#datarace
+      - name: datarace
+      # https://github.com/mgechev/revive/blob/master/RULES_DESCRIPTIONS.md#deep-exit
+      - name: deep-exit
+      # https://github.com/mgechev/revive/blob/master/RULES_DESCRIPTIONS.md#defer
+      - name: defer
+      # https://github.com/mgechev/revive/blob/master/RULES_DESCRIPTIONS.md#early-return
+      - name: early-return
+      # https://github.com/mgechev/revive/blob/master/RULES_DESCRIPTIONS.md#enforce-map-style
+      - name: enforce-map-style
+      # https://github.com/mgechev/revive/blob/master/RULES_DESCRIPTIONS.md#enforce-repeated-arg-type-style
+      - name: enforce-repeated-arg-type-style
+      # https://github.com/mgechev/revive/blob/master/RULES_DESCRIPTIONS.md#exported
+      - name: exported
+      # https://github.com/mgechev/revive/blob/master/RULES_DESCRIPTIONS.md#file-header
+      - name: file-header
+      # https://github.com/mgechev/revive/blob/master/RULES_DESCRIPTIONS.md#filename-format
+      - name: filename-format
+      # https://github.com/mgechev/revive/blob/master/RULES_DESCRIPTIONS.md#flag-parameter
+      - name: flag-parameter
+      # https://github.com/mgechev/revive/blob/master/RULES_DESCRIPTIONS.md#function-length
+      # - name: function-length
+      # https://github.com/mgechev/revive/blob/master/RULES_DESCRIPTIONS.md#function-result-limit
+      - name: function-result-limit
+      # https://github.com/mgechev/revive/blob/master/RULES_DESCRIPTIONS.md#get-return
+      - name: get-return
+      # https://github.com/mgechev/revive/blob/master/RULES_DESCRIPTIONS.md#import-shadowing
+      - name: import-shadowing
+      # https://github.com/mgechev/revive/blob/master/RULES_DESCRIPTIONS.md#imports-blocklist
+      - name: imports-blocklist
+      # https://github.com/mgechev/revive/blob/master/RULES_DESCRIPTIONS.md#line-length-limit
+      - name: line-length-limit
+        arguments: [120]
+      # https://github.com/mgechev/revive/blob/master/RULES_DESCRIPTIONS.md#range-val-address
+      - name: range-val-address
+      # https://github.com/mgechev/revive/blob/master/RULES_DESCRIPTIONS.md#range-val-in-closure
+      - name: range-val-in-closure
+      # https://github.com/mgechev/revive/blob/master/RULES_DESCRIPTIONS.md#nested-structs
+      - name: nested-structs
+      # https://github.com/mgechev/revive/blob/master/RULES_DESCRIPTIONS.md#redundant-import-alias
+      - name: redundant-import-alias
+      # https://github.com/mgechev/revive/blob/master/RULES_DESCRIPTIONS.md#string-format
+      - name: string-format
+      # https://github.com/mgechev/revive/blob/master/RULES_DESCRIPTIONS.md#unchecked-type-assertion
+      - name: unchecked-type-assertion
+      # https://github.com/mgechev/revive/blob/master/RULES_DESCRIPTIONS.md#unexported-naming
+      - name: unexported-naming
+      # https://github.com/mgechev/revive/blob/master/RULES_DESCRIPTIONS.md#unhandled-error
+      - name: unhandled-error
+      # https://github.com/mgechev/revive/blob/master/RULES_DESCRIPTIONS.md#unnecessary-stmt
+      - name: unnecessary-stmt
+      # https://github.com/mgechev/revive/blob/master/RULES_DESCRIPTIONS.md#unused-receiver
+      - name: unused-receiver
+      # https://github.com/mgechev/revive/blob/master/RULES_DESCRIPTIONS.md#useless-break
+      - name: useless-break
+      # https://github.com/mgechev/revive/blob/master/RULES_DESCRIPTIONS.md#waitgroup-by-value
+      - name: waitgroup-by-value
+
+  dupword:
+    # Keywords used to ignore detection.
+    # Default: []
+    ignore:
+    #  - "blah" # this will accept "blah blah …" as a valid duplicate word
+
+  misspell:
+    # Correct spellings using locale preferences for US or UK.
+    # Setting locale to US will correct the British spelling of 'colour' to 'color'.
+    # Default ("") is to use a neutral variety of English.
+    locale: US
+
+    # List of words to ignore
+    # among the one defined in https://github.com/golangci/misspell/blob/master/words.go
+    ignore-words:
+    #  - valor
+    #  - and
+
+    # Extra word corrections.
+    extra-words:
+    #  - typo: "whattever"
+    #    correction: "whatever"
+
+run:
+  tests: false
+  timeout: 3m
+
+issues:
+  # Maximum issues count per one linter.
+  # Set to 0 to disable.
+  # Default: 50
+  max-issues-per-linter: 0
+  # Maximum count of issues with the same text.
+  # Set to 0 to disable.
+  # Default: 3
+  max-same-issues: 0
+  # List of regexps of issue texts to exclude.
+  # Excluding configuration per-path, per-linter, per-text and per-source
+  exclude-rules:
+    # Exclude some linters from running on tests files.
+    - path: _test\.go
+      linters:
+        - typecheck
+        - gocyclo
+        - errcheck
+        - dupl
+        - gosec
+        - revive

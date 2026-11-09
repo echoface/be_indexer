@@ -181,6 +181,66 @@ func BenchmarkKGroupsBEIndexRetrieveFromJSONL(b *testing.B) {
 
 var benchmarkQuerySink uint64
 
+// BenchmarkCompactBEIndexRetrieveFromJSONL uses the same documents and query
+// as BenchmarkKGroupsBEIndexRetrieveFromJSONL, but builds the compact index.
+func BenchmarkCompactBEIndexRetrieveFromJSONL(b *testing.B) {
+	path := filepath.Join("..", "static", "testdata", "bench_docs.json")
+	file, err := os.Open(path)
+	if err != nil {
+		b.Fatalf("open benchmark data %q (generate it with python3 static/generate_bench_docs.py): %v", path, err)
+	}
+	defer file.Close()
+
+	builder := be_indexer.NewCompactIndexerBuilder()
+	for _, field := range []string{"gender", "number_1", "number_2", "number_3", "char_1", "char_2", "char_3", "char_4", "char_5"} {
+		builder.ConfigField(be_indexer.BEField(field), be_indexer.FieldOption{Container: be_indexer.HolderNameDefault})
+	}
+	for _, field := range []string{"age_1", "age_2", "age_3", "age_4", "age_5"} {
+		builder.ConfigField(be_indexer.BEField(field), be_indexer.FieldOption{Container: be_indexer.HolderNameExtendRange})
+	}
+
+	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
+	var queryDoc benchDocument
+	lineNumber := 0
+	for scanner.Scan() {
+		lineNumber++
+		var row benchDocument
+		if err := json.Unmarshal(scanner.Bytes(), &row); err != nil {
+			b.Fatalf("decode JSONL line %d: %v", lineNumber, err)
+		}
+		if lineNumber == 1 {
+			queryDoc = row
+		}
+		if err := addBenchmarkDocument(builder, row); err != nil {
+			b.Fatalf("index JSONL line %d (document %d): %v", lineNumber, row.ID, err)
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		b.Fatalf("read benchmark data: %v", err)
+	}
+	if lineNumber == 0 {
+		b.Fatal("benchmark data file is empty")
+	}
+
+	indexer := builder.BuildIndex()
+	queries := benchmarkAssignments(queryDoc)
+	b.ReportAllocs()
+	b.ResetTimer() // Exclude file I/O, JSON decoding, and index construction.
+	totalHits := 0
+	for i := 0; i < b.N; i++ {
+		result, err := indexer.Retrieve(queries)
+		if err != nil {
+			b.Fatal(fmt.Errorf("retrieve benchmark query: %w", err))
+		}
+		totalHits += len(result)
+		benchmarkQuerySink += uint64(len(result))
+	}
+	b.StopTimer()
+	b.ReportMetric(float64(lineNumber), "docs")
+	b.ReportMetric(float64(totalHits)/float64(b.N), "avgHits")
+}
+
 // BenchmarkSegmentIndexBEIndexRetrieveFromJSONL uses exactly the same
 // documents and query as BenchmarkKGroupsBEIndexRetrieveFromJSONL, so their
 // query timings are directly comparable.

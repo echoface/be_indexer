@@ -56,7 +56,7 @@ All notable changes to this project will be documented in this file.
 **文件改动：**
 
 - `segmentindex/query.go`: dense `(group, doc)` slot 查询索引、exact-term 快速路径、range point/interval 索引
-- `benchmark/retrive_test.go`: `github.com/echoface/be_indexer` API 迁移及 KGroups/segmentindex 严格同数据同查询 benchmark
+- `benchmark/retrive_test.go`: `github.com/echoface/be_indexer` API 迁移及 KGroups/Compact/segmentindex 严格同数据同查询 benchmark
 - `segmentindex/query_test.go`: 数值/字符串 term 语义回归测试
 - `segmentindex/boolean.go`: `RetrieveAssignmentsInto` 与 tombstone 过滤结果复用
 - `segmentindex/query.go`: 查询 scratch 池、短数值 slice 存储与结果缓冲复用

@@ -6,7 +6,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/echoface/be_indexer/planner"
 	"github.com/echoface/be_indexer/storage"
 )
 
@@ -148,11 +147,21 @@ func mergeDeltas(ctx context.Context, deltas []*Delta, tomb *tombstoneSet, limit
 			if err != nil {
 				return nil, err
 			}
+			docs := make([]uint64, 0, len(bucket.seqs))
+			for id := range bucket.seqs {
+				docs = append(docs, id)
+			}
+			sort.Slice(docs, func(i, j int) bool { return docs[i] < docs[j] })
 			segments = append(segments, segment)
-			groups = append(groups, groupMeta{shapes: bucket.shapes, ranges: bucket.ranges, seqs: bucket.seqs})
+			groups = append(groups, groupMeta{
+				shapes: bucket.shapes,
+				ranges: bucket.ranges,
+				seqs:   bucket.seqs,
+				docs:   docs,
+			})
 		}
 	}
-	return &Index{segments: segments, groups: groups, planner: planner.New()}, nil
+	return newIndex(segments, groups), nil
 }
 
 // pickBucket returns the first bucket with the same signature whose doc id

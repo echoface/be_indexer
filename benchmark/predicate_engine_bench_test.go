@@ -1,3 +1,6 @@
+//go:build legacy_benchmark
+// +build legacy_benchmark
+
 package be_indexer_test
 
 import (

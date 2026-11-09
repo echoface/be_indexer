@@ -25,8 +25,8 @@ import (
 // 全部字段都未覆盖时 conjunction 退化为通配命中；brute-force 模型按同一规则交叉校验。
 
 const (
-	recallDatasetEnv         = "BE_BENCH_DOCS_FILE"
-	recallDatasetDefaultPath = "../static/testdata/bench_docs.json"
+	recallDatasetEnv               = "BE_BENCH_DOCS_FILE"
+	recallDatasetDefaultPath       = "../static/testdata/bench_docs.json"
 	recallQuerySeed          int64 = 20261106
 	recallQueriesPerShape          = 256
 	recallWarmupPerShape           = 32
@@ -149,18 +149,18 @@ func recallFieldValues(fi int, recs ...*recallRecord) be.Values {
 
 // recallTemplates 文档定向规则模板（按记录 id 轮转分配）
 var recallTemplates = [][]recallExprSpec{
-	{{recallFiGender, true, 1}},                                              // gender 定向
-	{{recallFiAge1, true, 1}},                                                // age_1 定向
-	{{recallFiGender, true, 1}, {recallFiAge1, true, 1}},                     // 人群基础定向
+	{{recallFiGender, true, 1}},                          // gender 定向
+	{{recallFiAge1, true, 1}},                            // age_1 定向
+	{{recallFiGender, true, 1}, {recallFiAge1, true, 1}}, // 人群基础定向
 	{{recallFiGender, true, 1}, {recallFiAge1, true, 1}, {recallFiAge2, true, 1}, {recallFiAge3, true, 1}},
-	{{recallFiAge1, true, 2}, {recallFiAge2, true, 2}},                       // 多值年龄段
-	{{recallFiNum1, true, 1}},                                                // 高基数数值定向
-	{{recallFiNum1, true, 4}, {recallFiAge1, true, 1}},                       // 数值多值
-	{{recallFiChar1, true, 1}},                                               // 高基数字符串定向
-	{{recallFiChar1, true, 1}, {recallFiChar2, true, 1}},                     // 字符串组合
-	{{recallFiChar3, true, 8}, {recallFiChar4, true, 8}},                     // 字符串列表
+	{{recallFiAge1, true, 2}, {recallFiAge2, true, 2}}, // 多值年龄段
+	{{recallFiNum1, true, 1}},                                                     // 高基数数值定向
+	{{recallFiNum1, true, 4}, {recallFiAge1, true, 1}},                            // 数值多值
+	{{recallFiChar1, true, 1}},                                                    // 高基数字符串定向
+	{{recallFiChar1, true, 1}, {recallFiChar2, true, 1}},                          // 字符串组合
+	{{recallFiChar3, true, 8}, {recallFiChar4, true, 8}},                          // 字符串列表
 	{{recallFiGender, true, 1}, {recallFiAge5, true, 1}, {recallFiNum2, true, 1}}, // 混合
-	{{recallFiGender, true, 1}, {recallFiAge1, false, 3}},                    // 排除定向
+	{{recallFiGender, true, 1}, {recallFiAge1, false, 3}},                         // 排除定向
 	{{recallFiAge2, true, 1}, {recallFiGender, false, 1}, {recallFiAge3, false, 2}},
 	{{recallFiGender, true, 1}, {recallFiAge1, true, 1}, {recallFiNum1, true, 1},
 		{recallFiChar1, true, 1}, {recallFiNum2, true, 1}, {recallFiChar2, true, 1}}, // k=6
@@ -312,6 +312,20 @@ func recallBuildSegmentIndex(tb testing.TB, ds *recallDataset) *segmentindex.Ind
 	return index
 }
 
+// recallBuildKGroupsIndex builds the legacy KGroups engine from exactly the
+// same documents as the segmentindex recall benchmark.
+func recallBuildKGroupsIndex(tb testing.TB, ds *recallDataset) be.BEIndex {
+	tb.Helper()
+	builder := be.NewIndexerBuilder()
+	for _, def := range recallFieldDefs {
+		builder.ConfigField(def.name, be.FieldOption{Container: be.HolderNameDefault})
+	}
+	if err := builder.AddDocument(ds.docs...); err != nil {
+		tb.Fatalf("add documents to KGroups index: %v", err)
+	}
+	return builder.BuildIndex()
+}
+
 // ---------- brute-force 语义模型（交叉校验用） ----------
 
 // recallValueHits 查询值集合与表达式值集合是否有交集
@@ -404,14 +418,34 @@ func recallCompareSets(got []be.DocID, want map[be.DocID]bool) error {
 // ---------- 共享构建（一次进程只构建一次，计时前完成） ----------
 
 var (
-	recallSetupOnce sync.Once
-	recallSetupData *recallDataset
-	recallSetupIdx  *segmentindex.Index
-	recallSetupHits map[string]float64
+	recallDatasetOnce sync.Once
+	recallDatasetData *recallDataset
+	recallSetupOnce   sync.Once
+	recallSetupData   *recallDataset
+	recallSetupIdx    recallIndexReader
+	recallSetupGroups int
+	recallSetupHits   map[string]float64
+	recallKGroupsOnce sync.Once
+	recallKGroupsData *recallDataset
+	recallKGroupsIdx  recallIndexReader
+	recallKGroupsHits map[string]float64
+	recallQuerySink   uint64
 )
 
+type recallIndexReader interface {
+	RetrieveAssignments(be.Assignments) ([]be.DocID, error)
+}
+
+type kGroupsRecallReader struct {
+	index be.BEIndex
+}
+
+func (r kGroupsRecallReader) RetrieveAssignments(assignments be.Assignments) ([]be.DocID, error) {
+	return r.index.Retrieve(assignments)
+}
+
 // recallWarmup 预热并统计各形态平均命中数
-func recallWarmup(tb testing.TB, ds *recallDataset, idx *segmentindex.Index) map[string]float64 {
+func recallWarmup(tb testing.TB, ds *recallDataset, idx recallIndexReader) map[string]float64 {
 	tb.Helper()
 	hits := make(map[string]float64, len(ds.shapes))
 	for _, sq := range ds.shapes {
@@ -436,16 +470,39 @@ func recallWarmup(tb testing.TB, ds *recallDataset, idx *segmentindex.Index) map
 	return hits
 }
 
+// recallSharedDataset 只加载一次数据与查询集，两个索引 benchmark 使用完全相同的输入。
+func recallSharedDataset(tb testing.TB) *recallDataset {
+	tb.Helper()
+	recallDatasetOnce.Do(func() {
+		recallDatasetData = recallLoadDataset(tb)
+	})
+	return recallDatasetData
+}
+
 // recallSharedSetup 构建索引 + 预热，只执行一次；构建时间不计入 benchmark
-func recallSharedSetup(tb testing.TB) (*recallDataset, *segmentindex.Index, map[string]float64) {
+func recallSharedSetup(tb testing.TB) (*recallDataset, recallIndexReader, int, map[string]float64) {
 	tb.Helper()
 	recallSetupOnce.Do(func() {
-		ds := recallLoadDataset(tb)
+		ds := recallSharedDataset(tb)
 		idx := recallBuildSegmentIndex(tb, ds)
 		hits := recallWarmup(tb, ds, idx)
-		recallSetupData, recallSetupIdx, recallSetupHits = ds, idx, hits
+		recallSetupData, recallSetupIdx = ds, idx
+		recallSetupGroups = len(idx.Segments())
+		recallSetupHits = hits
 	})
-	return recallSetupData, recallSetupIdx, recallSetupHits
+	return recallSetupData, recallSetupIdx, recallSetupGroups, recallSetupHits
+}
+
+// recallKGroupsSetup 用相同数据构建 KGroups 索引并预热，构建时间不计入 benchmark。
+func recallKGroupsSetup(tb testing.TB) (*recallDataset, recallIndexReader, map[string]float64) {
+	tb.Helper()
+	recallKGroupsOnce.Do(func() {
+		ds := recallSharedDataset(tb)
+		idx := kGroupsRecallReader{index: recallBuildKGroupsIndex(tb, ds)}
+		hits := recallWarmup(tb, ds, idx)
+		recallKGroupsData, recallKGroupsIdx, recallKGroupsHits = ds, idx, hits
+	})
+	return recallKGroupsData, recallKGroupsIdx, recallKGroupsHits
 }
 
 // recallPools 并发压测查询池：mixed 全形态混合，broad 仅宽召回形态
@@ -472,7 +529,7 @@ func TestRecallDatasetPipeline(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping recall dataset test in short mode")
 	}
-	ds, idx, _ := recallSharedSetup(t)
+	ds, idx, _, _ := recallSharedSetup(t)
 
 	for _, sq := range ds.shapes {
 		sq := sq
@@ -495,21 +552,53 @@ func TestRecallDatasetPipeline(t *testing.T) {
 // ---------- 单线程召回 benchmark ----------
 
 func BenchmarkRecallSegmentIndex(b *testing.B) {
-	ds, idx, hits := recallSharedSetup(b)
+	ds, idx, groups, hits := recallSharedSetup(b)
 	for _, sq := range ds.shapes {
 		sq := sq
 		b.Run(sq.shape.name, func(b *testing.B) {
-			b.ReportMetric(float64(len(ds.docs)), "docs")
-			b.ReportMetric(float64(len(idx.Segments())), "groups")
-			b.ReportMetric(float64(len(sq.queries)), "queries")
-			b.ReportMetric(hits[sq.shape.name], "avgHits")
 			b.ReportAllocs()
 			b.ResetTimer()
+			totalHits := 0
 			for i := 0; i < b.N; i++ {
-				if _, err := idx.RetrieveAssignments(sq.queries[i%len(sq.queries)].ass); err != nil {
+				got, err := idx.RetrieveAssignments(sq.queries[i%len(sq.queries)].ass)
+				if err != nil {
 					b.Fatal(err)
 				}
+				totalHits += len(got)
+				atomic.AddUint64(&recallQuerySink, uint64(len(got)))
 			}
+			b.StopTimer()
+			b.ReportMetric(float64(len(ds.docs)), "docs")
+			b.ReportMetric(float64(groups), "groups")
+			b.ReportMetric(float64(len(sq.queries)), "queries")
+			b.ReportMetric(float64(totalHits)/float64(b.N), "avgHits")
+			b.ReportMetric(hits[sq.shape.name], "warmupHits")
+		})
+	}
+}
+
+func BenchmarkRecallKGroupsBEIndex(b *testing.B) {
+	ds, idx, hits := recallKGroupsSetup(b)
+	for _, sq := range ds.shapes {
+		sq := sq
+		b.Run(sq.shape.name, func(b *testing.B) {
+			b.ReportAllocs()
+			b.ResetTimer()
+			totalHits := 0
+			for i := 0; i < b.N; i++ {
+				got, err := idx.RetrieveAssignments(sq.queries[i%len(sq.queries)].ass)
+				if err != nil {
+					b.Fatal(err)
+				}
+				totalHits += len(got)
+				atomic.AddUint64(&recallQuerySink, uint64(len(got)))
+			}
+			b.StopTimer()
+			b.ReportMetric(float64(len(ds.docs)), "docs")
+			b.ReportMetric(float64(len(ds.docs)), "groups")
+			b.ReportMetric(float64(len(sq.queries)), "queries")
+			b.ReportMetric(float64(totalHits)/float64(b.N), "avgHits")
+			b.ReportMetric(hits[sq.shape.name], "warmupHits")
 		})
 	}
 }
@@ -517,12 +606,12 @@ func BenchmarkRecallSegmentIndex(b *testing.B) {
 // ---------- 并发压测 benchmark ----------
 
 func BenchmarkRecallSegmentIndexParallel(b *testing.B) {
-	ds, idx, _ := recallSharedSetup(b)
+	ds, idx, groups, _ := recallSharedSetup(b)
 	for _, pool := range recallPools(ds) {
 		pool := pool
 		b.Run(pool.name, func(b *testing.B) {
 			b.ReportMetric(float64(len(ds.docs)), "docs")
-			b.ReportMetric(float64(len(idx.Segments())), "groups")
+			b.ReportMetric(float64(groups), "groups")
 			b.ReportMetric(float64(len(pool.queries)), "queries")
 			b.ReportAllocs()
 			b.ResetTimer()
@@ -534,10 +623,12 @@ func BenchmarkRecallSegmentIndexParallel(b *testing.B) {
 				for pb.Next() {
 					q := pool.queries[(start+i)%len(pool.queries)]
 					i++
-					if _, err := idx.RetrieveAssignments(q.ass); err != nil {
+					got, err := idx.RetrieveAssignments(q.ass)
+					if err != nil {
 						b.Error(err)
 						return
 					}
+					atomic.AddUint64(&recallQuerySink, uint64(len(got)))
 				}
 			})
 		})

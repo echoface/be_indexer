@@ -13,14 +13,45 @@ import (
 // well; use this entry point (not Index.Retrieve) when documents contain
 // ranges.
 func (i *Index) RetrieveAssignments(assignments be.Assignments) ([]be.DocID, error) {
-	return i.retrieveAssignmentsFiltered(assignments, nil)
+	return i.retrieveAssignmentsFilteredInto(assignments, nil, nil)
 }
 
-// retrieveAssignmentsFiltered behaves like RetrieveAssignments but drops
-// result ids whose group versions are marked dead by tomb.
+// RetrieveAssignmentsInto behaves like RetrieveAssignments but reuses dst as
+// the result buffer. The returned slice is sorted and deduplicated; callers
+// may pass the returned slice back into subsequent calls to avoid allocating
+// a result slice for every query.
+func (i *Index) RetrieveAssignmentsInto(dst []be.DocID, assignments be.Assignments) ([]be.DocID, error) {
+	return i.retrieveAssignmentsFilteredInto(assignments, nil, dst)
+}
+
+// retrieveAssignmentsFiltered is the compatibility wrapper used by store
+// snapshots; new callers should use RetrieveAssignmentsInto when they can
+// reuse a result buffer.
 func (i *Index) retrieveAssignmentsFiltered(assignments be.Assignments, tomb *tombstoneSet) ([]be.DocID, error) {
+	return i.retrieveAssignmentsFilteredInto(assignments, tomb, nil)
+}
+
+// retrieveAssignmentsFilteredInto behaves like RetrieveAssignments but drops
+// result ids whose group versions are marked dead by tomb. dst is reused when
+// supplied.
+func (i *Index) retrieveAssignmentsFilteredInto(assignments be.Assignments, tomb *tombstoneSet, dst []be.DocID) ([]be.DocID, error) {
 	if i == nil {
 		return nil, ErrUnsupportedExpression
+	}
+	if i.query != nil {
+		query, err := prepareQuery(i.query, assignments)
+		if err != nil {
+			return nil, err
+		}
+		defer releasePreparedQuery(query)
+		result, ok := i.query.matchGroupIDsInto(query, tomb, i.groups, dst)
+		if ok {
+			return result, nil
+		}
+		scratch := acquireQueryScratch()
+		defer releaseQueryScratch(scratch)
+		groups := i.query.matchGroups(query, scratch)
+		return i.collectGroupDocsInto(groups, query, tomb, scratch, dst)
 	}
 	seen := make(map[be.DocID]struct{})
 	for idx, segment := range i.segments {
@@ -38,7 +69,7 @@ func (i *Index) retrieveAssignmentsFiltered(assignments be.Assignments, tomb *to
 			seen[be.DocID(id)] = struct{}{}
 		}
 	}
-	result := make([]be.DocID, 0, len(seen))
+	result := dst[:0]
 	for id := range seen {
 		result = append(result, id)
 	}

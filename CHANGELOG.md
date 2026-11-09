@@ -47,6 +47,20 @@ All notable changes to this project will be documented in this file.
 - `storage/segment.go`: TermKeys()
 - 测试：`store_test.go`、`merge_test.go`（快照稳定性、tombstone、合并保序、失败恢复、限速、后台合并）
 
+### Performance
+
+#### segmentindex 查询索引优化
+
+为离线构建、在线查询场景增加不可变查询索引与严格对比 benchmark，构建阶段额外预计算 term/range postings、单文档 group 快速路径和数值 term 的 `int64` 索引；`RetrieveAssignments` 对高选择性精确查询避免逐字段构造 Roaring bitmap，并复用查询 scratch、直接映射结果 DocID，对宽召回查询继续使用 bitmap 回退路径。
+
+**文件改动：**
+
+- `segmentindex/query.go`: dense `(group, doc)` slot 查询索引、exact-term 快速路径、range point/interval 索引
+- `benchmark/retrive_test.go`: `github.com/echoface/be_indexer` API 迁移及 KGroups/segmentindex 严格同数据同查询 benchmark
+- `segmentindex/query_test.go`: 数值/字符串 term 语义回归测试
+- `segmentindex/boolean.go`: `RetrieveAssignmentsInto` 与 tombstone 过滤结果复用
+- `segmentindex/query.go`: 查询 scratch 池、短数值 slice 存储与结果缓冲复用
+
 ---
 
 ## [Unreleased] - 2026-02-10

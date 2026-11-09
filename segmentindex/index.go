@@ -175,10 +175,20 @@ func (b *Builder) Seal() (*Index, error) {
 		for id, seq := range group.seqs {
 			seqs[id] = seq
 		}
+		docs := make([]uint64, 0, len(group.liveDocs))
+		for id := range group.liveDocs {
+			docs = append(docs, id)
+		}
+		sort.Slice(docs, func(i, j int) bool { return docs[i] < docs[j] })
 		segments = append(segments, segment)
-		groups = append(groups, groupMeta{shapes: shapes, ranges: append([]rangePredicate(nil), group.ranges...), seqs: seqs})
+		groups = append(groups, groupMeta{
+			shapes: shapes,
+			ranges: append([]rangePredicate(nil), group.ranges...),
+			seqs:   seqs,
+			docs:   docs,
+		})
 	}
-	return &Index{segments: segments, groups: groups, planner: planner.New()}, nil
+	return newIndex(segments, groups), nil
 }
 
 // groupMeta carries the conjunction-side metadata one Segment alone cannot
@@ -188,6 +198,7 @@ type groupMeta struct {
 	shapes map[string]fieldShape
 	ranges []rangePredicate
 	seqs   map[uint64]uint64 // docID -> add sequence
+	docs   []uint64          // sorted live doc IDs for query slot mapping
 }
 
 // dead reports whether tombstones mark id dead inside this group: a tombstone
@@ -205,6 +216,16 @@ type Index struct {
 	segments []*storage.Segment
 	groups   []groupMeta
 	planner  *planner.Planner
+	query    *queryIndex
+}
+
+func newIndex(segments []*storage.Segment, groups []groupMeta) *Index {
+	return &Index{
+		segments: segments,
+		groups:   groups,
+		planner:  planner.New(),
+		query:    newQueryIndex(groups, segments),
+	}
 }
 
 // Segment returns the first group Segment for compatibility with the single-

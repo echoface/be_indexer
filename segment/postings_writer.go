@@ -83,11 +83,11 @@ func (p *postingBlockWriter) add(entries []core.EntryID) (PostingRef, error) {
 		p.opened = true
 	}
 	ref := PostingRef{Offset: p.relOff, Count: uint32(len(entries))}
-	// WriteFlatPostingList allocates O(one posting list) — the accepted, per-term
+	// EncodeFlatPostingList allocates O(one posting list) — the accepted, per-term
 	// serialization cost — never the whole field at once. It also validates the
 	// entry count against the uint32 format limit, returning an error instead of
 	// panicking on an oversized posting list.
-	b, err := WriteFlatPostingList(entries)
+	b, err := EncodeFlatPostingList(entries)
 	if err != nil {
 		return PostingRef{}, err
 	}

@@ -15,8 +15,12 @@ func TestCheckedU32(t *testing.T) {
 	if _, err := checkedU32(MaxBlockSize, "x"); err != nil {
 		t.Fatalf("max must be valid: %v", err)
 	}
-	if _, err := checkedU32(MaxBlockSize+1, "x"); err == nil {
-		t.Fatal("expected overflow error for MaxBlockSize+1")
+	// On 32-bit hosts MaxBlockSize is already MaxInt, so no larger int exists.
+	maxBlock := int(MaxBlockSize)
+	if maxBlock < int(^uint(0)>>1) {
+		if _, err := checkedU32(maxBlock+1, "x"); err == nil {
+			t.Fatal("expected overflow error for MaxBlockSize+1")
+		}
 	}
 	if _, err := checkedU32(-1, "x"); err == nil {
 		t.Fatal("expected error for negative")
@@ -32,12 +36,12 @@ func TestCheckedU16(t *testing.T) {
 	}
 }
 
-// --- WriteFlatPostingList / WriteFlatDict contract ------------------------------
+// --- EncodeFlatPostingList / EncodeFlatDict contract ------------------------------
 
 // A normal-sized posting list must serialize without error and round-trip.
-func TestWriteFlatPostingList_ValidRoundTrip(t *testing.T) {
+func TestEncodeFlatPostingList_ValidRoundTrip(t *testing.T) {
 	entries := []core.EntryID{1, 5, 9, 42}
-	buf, err := WriteFlatPostingList(entries)
+	buf, err := EncodeFlatPostingList(entries)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -51,8 +55,8 @@ func TestWriteFlatPostingList_ValidRoundTrip(t *testing.T) {
 }
 
 // An empty posting list is valid (count 0) and must not error or panic.
-func TestWriteFlatPostingList_Empty(t *testing.T) {
-	buf, err := WriteFlatPostingList(nil)
+func TestEncodeFlatPostingList_Empty(t *testing.T) {
+	buf, err := EncodeFlatPostingList(nil)
 	if err != nil {
 		t.Fatalf("empty list must not error: %v", err)
 	}
@@ -61,12 +65,12 @@ func TestWriteFlatPostingList_Empty(t *testing.T) {
 	}
 }
 
-func TestWriteFlatDict_ValidRoundTrip(t *testing.T) {
+func TestEncodeFlatDict_ValidRoundTrip(t *testing.T) {
 	dict := map[string]PostingRef{
 		"apple":  {Offset: 0, Count: 1},
 		"banana": {Offset: 16, Count: 2},
 	}
-	buf, err := WriteFlatDict(dict)
+	buf, err := EncodeFlatDict(dict)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

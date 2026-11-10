@@ -1,8 +1,8 @@
 package be_indexer
 
 import (
-	"github.com/echoface/be_indexer/core"
 	"fmt"
+	"github.com/echoface/be_indexer/core"
 	"sort"
 	"testing"
 
@@ -20,7 +20,10 @@ func TestEntries_Less(t *testing.T) {
 
 func TestNewConjID(t *testing.T) {
 	convey.Convey("test conjunction id", t, func() {
-		cases := [][3]int{
+		cases := []struct {
+			docID       core.DocID
+			index, size int
+		}{
 			{0, 0, 0},
 			{1, 2, 3},
 			{2, 0, 1},
@@ -30,10 +33,10 @@ func TestNewConjID(t *testing.T) {
 			{-core.MaxDocID, 255, 255},
 		}
 		for _, cs := range cases {
-			id := core.NewConjID(core.DocID(cs[0]), cs[1], cs[2])
-			convey.So(id.DocID(), convey.ShouldEqual, cs[0])
-			convey.So(id.Index(), convey.ShouldEqual, cs[1])
-			convey.So(id.Size(), convey.ShouldEqual, cs[2])
+			id := core.NewConjID(cs.docID, cs.index, cs.size)
+			convey.So(id.DocID(), convey.ShouldEqual, cs.docID)
+			convey.So(id.Index(), convey.ShouldEqual, cs.index)
+			convey.So(id.IncludeCount(), convey.ShouldEqual, cs.size)
 		}
 	})
 }

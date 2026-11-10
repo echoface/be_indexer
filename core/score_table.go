@@ -24,7 +24,7 @@ type ScoredDoc struct {
 
 // AtomicScoreSource is a concurrency-safe holder for an immutable
 // ScoreSource. Producers build a complete new source and Store it; each
-// retrieval Load()s once and uses that snapshot for its entire lifetime.
+// retrieval Snapshot()s once and uses that snapshot for its entire lifetime.
 type AtomicScoreSource struct {
 	ptr atomic.Pointer[scoreSourceBox]
 }
@@ -56,7 +56,7 @@ type DenseScoreTable struct {
 // NewDenseScoreTable builds a table over the contiguous range
 // [base, base+len(scores)). Slots holding NaN are treated as absent.
 func NewDenseScoreTable(base DocID, scores []float64) *DenseScoreTable {
-	return &DenseScoreTable{base: base, scores: scores}
+	return &DenseScoreTable{base: base, scores: append([]float64(nil), scores...)}
 }
 
 func (t *DenseScoreTable) Score(id DocID) (float64, bool) {
@@ -92,8 +92,12 @@ func NewRoaringScoreTable(ids []DocID, scores []float64) (*RoaringScoreTable, er
 		}
 		bm.Add(uint64(id))
 	}
-	// scores must be reordered into bitmap iteration (ascending id) order.
-	ordered := append([]float64(nil), scores...)
+	// Roaring orders uint64 keys: nonnegative IDs precede negative IDs.
+	// Input is sorted by signed DocID, so rotate the score array at zero.
+	ordered := make([]float64, len(scores))
+	for i, id := range ids {
+		ordered[bm.Rank(uint64(id))-1] = scores[i]
+	}
 	return &RoaringScoreTable{ids: bm, scores: ordered}, nil
 }
 
@@ -102,7 +106,8 @@ func (t *RoaringScoreTable) Score(id DocID) (float64, bool) {
 	if !t.ids.Contains(u) {
 		return 0, false
 	}
-	return t.scores[t.ids.Rank(u)-1], true
+	score := t.scores[t.ids.Rank(u)-1]
+	return score, !math.IsNaN(score)
 }
 
 func (t *RoaringScoreTable) Len() int { return len(t.scores) }

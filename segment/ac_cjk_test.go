@@ -291,7 +291,7 @@ func TestACMatchQueryPropagatesPostingRefError(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.MatchQuery(BlockContext{Pl: make([]byte, 8)}, "keyword", "abc"); err == nil {
+	if _, err := r.MatchQuery(BlockContext{PostingBlock: make([]byte, 8)}, "keyword", "abc"); err == nil {
 		t.Fatal("expected out-of-range posting ref error")
 	}
 }

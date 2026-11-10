@@ -13,7 +13,7 @@ func TestFlatPostingList(t *testing.T) {
 		10, 20, 30, 40, 50,
 	}
 
-	buf, err := WriteFlatPostingList(entries)
+	buf, err := EncodeFlatPostingList(entries)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,8 +45,8 @@ func TestFlatPostingList(t *testing.T) {
 	}
 
 	// SkipTo end
-	if e := cursor.SkipTo(100); e != core.NULLENTRY {
-		t.Fatalf("expected NULLENTRY, got %d", e)
+	if e := cursor.SkipTo(100); e != core.EndEntryID {
+		t.Fatalf("expected EndEntryID, got %d", e)
 	}
 }
 
@@ -84,7 +84,7 @@ func TestFlatPostingListAlignment(t *testing.T) {
 	}
 
 	// Header size invariant: EntryID array begins at offset 8 inside a list.
-	pl, err := WriteFlatPostingList([]core.EntryID{1})
+	pl, err := EncodeFlatPostingList([]core.EntryID{1})
 	if err != nil {
 		t.Fatal(err)
 	}

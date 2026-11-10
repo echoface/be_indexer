@@ -18,7 +18,19 @@ func NewDictReader(dict *FlatDict) DictIndex {
 	return DictIndex{dict: dict}
 }
 
-func (c DictIndex) MatchQuery(ctx BlockContext, field core.BEField, query interface{}) ([]core.PostingIterator, error) {
+func (c DictIndex) Validate(ctx BlockContext) error {
+	if c.dict == nil {
+		return nil
+	}
+	for _, item := range c.dict.items {
+		if err := validatePostingRef(ctx.PostingBlock, PostingRef{Offset: item.postingOff, Count: item.postingCount}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (c DictIndex) MatchQuery(ctx BlockContext, field core.FieldName, query interface{}) ([]core.PostingIterator, error) {
 	term, ok := query.(string)
 	if !ok {
 		return nil, fmt.Errorf("dict index: query must be string, got %T", query)
@@ -30,7 +42,7 @@ func (c DictIndex) MatchQuery(ctx BlockContext, field core.BEField, query interf
 	if !found {
 		return nil, nil
 	}
-	pl, err := NewPostingListAt(ctx.Pl, ref)
+	pl, err := NewPostingListAt(ctx.PostingBlock, ref)
 	if err != nil {
 		return nil, fmt.Errorf("field %s: %w", field, err)
 	}
@@ -52,7 +64,7 @@ type DictBuilder struct {
 
 func NewDictBuilder(env BuilderEnv) IndexBuilder {
 	return &DictBuilder{
-		merger: NewSortedPostingMerger(env.MaxPostingsInMemory, env.TmpDir),
+		merger: NewSortedPostingMerger(env.MaxDistinctKeysInMemory, env.TmpDir),
 	}
 }
 
@@ -76,7 +88,7 @@ func (b *DictBuilder) Build(bw BlockWriter) error {
 	if n == 0 {
 		return nil
 	}
-	dictBytes, err := WriteFlatDict(dict)
+	dictBytes, err := EncodeFlatDict(dict)
 	if err != nil {
 		return err
 	}

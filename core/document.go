@@ -10,13 +10,14 @@ type (
 	DocID     int64
 	DocIDList []DocID
 
-	Conjunction struct { // 每个conjunction 内的field 逻辑为且， 参考DNF定义
-		Predicates map[BEField][]*ValueExpr `json:"predicates"` // 同一个Conj内不允许重复的Field
+	// Conjunction is an AND of predicates, grouped by field name.
+	Conjunction struct {
+		Constraints map[FieldName][]*Constraint `json:"predicates"` // 同字段最多一个 Include，可有多个 Exclude
 	}
 
 	Document struct {
-		ID      DocID          `json:"id"`      // 只支持2^43最大值个Doc
-		Version uint64         `json:"version"` // 【增量缓存】业务提供的文档版本号，0表示不使用缓存
+		ID      DocID          `json:"id"`      // 范围 [-MaxDocID, MaxDocID]
+		Version uint64         `json:"version"` // 业务版本号；增量冲突由 Mutation.Version 处理
 		Cons    []*Conjunction `json:"cons"`    // conjunction之间的关系是或，具体描述可以看论文的表述
 	}
 )
@@ -24,7 +25,7 @@ type (
 func NewDocument(id DocID) *Document {
 	return &Document{
 		ID:      id,
-		Version: 0, // 默认为0，表示不使用缓存
+		Version: 0,
 		Cons:    make([]*Conjunction, 0),
 	}
 }
@@ -96,73 +97,73 @@ func (doc *Document) String() string {
 
 func NewConjunction() *Conjunction {
 	return &Conjunction{
-		Predicates: make(map[BEField][]*ValueExpr),
+		Constraints: make(map[FieldName][]*Constraint),
 	}
 }
 
 // In any value in values is a **true** expression
 // In is an alias for Include. Prefer Include for clarity.
-func (conj *Conjunction) In(field BEField, values Values) *Conjunction {
+func (conj *Conjunction) In(field FieldName, values Values) *Conjunction {
 	return conj.Include(field, values)
 }
 
 // NotIn any value in values is a **false** expression
 // NotIn is an alias for Exclude. Prefer Exclude for clarity.
-func (conj *Conjunction) NotIn(field BEField, values Values) *Conjunction {
+func (conj *Conjunction) NotIn(field FieldName, values Values) *Conjunction {
 	return conj.Exclude(field, values)
 }
 
-func (conj *Conjunction) Include(field BEField, values Values) *Conjunction {
-	conj.addPredicate(field, NewValueExpr(ValueOptEQ, values, true))
+func (conj *Conjunction) Include(field FieldName, values Values) *Conjunction {
+	conj.addPredicate(field, NewConstraint(ValueOpEQ, values, true))
 	return conj
 }
 
-func (conj *Conjunction) Exclude(field BEField, values Values) *Conjunction {
-	conj.addPredicate(field, NewValueExpr(ValueOptEQ, values, false))
+func (conj *Conjunction) Exclude(field FieldName, values Values) *Conjunction {
+	conj.addPredicate(field, NewConstraint(ValueOpEQ, values, false))
 	return conj
 }
 
-func (conj *Conjunction) GreaterThan(field BEField, value int64) *Conjunction {
+func (conj *Conjunction) GreaterThan(field FieldName, value int64) *Conjunction {
 	conj.AddPredicates(&Predicate{
-		Field:     field,
-		ValueExpr: NewGTValueExpr(value),
+		Field:      field,
+		Constraint: NewGTConstraint(value),
 	})
 	return conj
 }
 
-func (conj *Conjunction) LessThan(field BEField, value int64) *Conjunction {
+func (conj *Conjunction) LessThan(field FieldName, value int64) *Conjunction {
 	conj.AddPredicates(&Predicate{
-		Field:     field,
-		ValueExpr: NewLTValueExpr(value),
+		Field:      field,
+		Constraint: NewLTConstraint(value),
 	})
 	return conj
 }
 
-func (conj *Conjunction) Between(field BEField, l, h int64) *Conjunction {
+func (conj *Conjunction) Between(field FieldName, l, h int64) *Conjunction {
 	conj.AddPredicates(&Predicate{
-		Field:     field,
-		ValueExpr: NewValueExpr(ValueOptBetween, []int64{l, h}, true),
+		Field:      field,
+		Constraint: NewConstraint(ValueOpBetween, []int64{l, h}, true),
 	})
 	return conj
 }
 
-// AddPredicates append boolean expression,
-// don't allow same field added twice in one conjunction
+// AddPredicates appends field constraints. Build-time validation allows at most
+// one Include per field and any number of Excludes; this method only appends.
 func (conj *Conjunction) AddPredicates(exprs ...*Predicate) *Conjunction {
 	for _, expr := range exprs {
-		conj.addPredicate(expr.Field, expr.ValueExpr)
+		conj.addPredicate(expr.Field, expr.Constraint)
 	}
 	return conj
 }
 
 // AddPredicateValues is a convenience that creates an EQ predicate from raw values.
 func (conj *Conjunction) AddPredicateValues(field string, include bool, values Values) *Conjunction {
-	conj.addPredicate(BEField(field), NewValueExpr(ValueOptEQ, values, include))
+	conj.addPredicate(FieldName(field), NewConstraint(ValueOpEQ, values, include))
 	return conj
 }
 
-func (conj *Conjunction) addPredicate(field BEField, boolValues ValueExpr) {
-	conj.Predicates[field] = append(conj.Predicates[field], &boolValues)
+func (conj *Conjunction) addPredicate(field FieldName, boolValues Constraint) {
+	conj.Constraints[field] = append(conj.Constraints[field], &boolValues)
 }
 
 func (conj *Conjunction) JSONString() string {
@@ -173,8 +174,8 @@ func (conj *Conjunction) JSONString() string {
 func (conj *Conjunction) String() string {
 	strBuilder := strings.Builder{}
 	strBuilder.WriteString("{")
-	cnt := len(conj.Predicates)
-	for field, exprs := range conj.Predicates {
+	cnt := len(conj.Constraints)
+	for field, exprs := range conj.Constraints {
 		strBuilder.WriteString(fmt.Sprintf("%s (", field))
 		for i, expr := range exprs {
 			if i != 0 {
@@ -193,8 +194,11 @@ func (conj *Conjunction) String() string {
 	return strBuilder.String()
 }
 
-func (conj *Conjunction) CalcConjSize() (size int) {
-	for _, bvs := range conj.Predicates {
+// IncludeCount returns K: the number of fields with an Include constraint.
+// Valid conjunctions have at most one Include per field, so this is also the
+// number of Include constraints. Excludes and multiple values do not increase K.
+func (conj *Conjunction) IncludeCount() (size int) {
+	for _, bvs := range conj.Constraints {
 	EXPR:
 		for _, expr := range bvs {
 			if expr.Incl {
@@ -206,6 +210,8 @@ func (conj *Conjunction) CalcConjSize() (size int) {
 	return size
 }
 
-func (conj *Conjunction) PredicateCount() (size int) {
-	return len(conj.Predicates)
+// FieldCount returns the number of distinct field keys, including Exclude-only
+// fields. It does not count individual constraints or their values.
+func (conj *Conjunction) FieldCount() (size int) {
+	return len(conj.Constraints)
 }

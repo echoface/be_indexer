@@ -17,7 +17,7 @@ import (
 // for test-sized inputs) overflow error.
 func mustWritePL(t *testing.T, entries core.Entries) []byte {
 	t.Helper()
-	b, err := segment.WriteFlatPostingList(entries)
+	b, err := segment.EncodeFlatPostingList(entries)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,20 +61,20 @@ func TestContainerRoundTrip(t *testing.T) {
 		convey.So(err, convey.ShouldBeNil)
 
 		convey.Convey("prefix hit returns the matching posting", func() {
-			iters, err := cr.MatchQuery(segment.BlockContext{Pl: postingBlock}, "path", "/api/v1/users")
+			iters, err := cr.MatchQuery(segment.BlockContext{PostingBlock: postingBlock}, "path", "/api/v1/users")
 			convey.So(err, convey.ShouldBeNil)
 			convey.So(len(iters), convey.ShouldEqual, 1)
 			convey.So(iters[0].Current(), convey.ShouldEqual, eidA)
 		})
 
 		convey.Convey("no prefix match returns nothing", func() {
-			iters, err := cr.MatchQuery(segment.BlockContext{Pl: postingBlock}, "path", "/other")
+			iters, err := cr.MatchQuery(segment.BlockContext{PostingBlock: postingBlock}, "path", "/other")
 			convey.So(err, convey.ShouldBeNil)
 			convey.So(len(iters), convey.ShouldEqual, 0)
 		})
 
 		convey.Convey("non-string query is an error", func() {
-			_, err := cr.MatchQuery(segment.BlockContext{Pl: postingBlock}, "path", 42)
+			_, err := cr.MatchQuery(segment.BlockContext{PostingBlock: postingBlock}, "path", 42)
 			convey.So(err, convey.ShouldNotBeNil)
 		})
 

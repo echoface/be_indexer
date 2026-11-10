@@ -17,42 +17,40 @@ flowchart LR
         B --> S["Segment (.bei)\nFlatDict + FlatPostingList\n+ wildcards block"]
     end
     subgraph Online["Online Serving"]
-        Q["Assignments\n{age: 20, city: bj}"] --> E["BooleanEngine\nencode → initCursors → mergeCursors"]
+        Q["Assignments\n{age: 20, city: bj}"] --> E["BooleanEngine\nencode → initCursors → matchConjunctions"]
         S -->|mmap, zero-copy| E
         E --> R["ResultCollector\nroaring64 bitmap"]
     end
 ```
 
-**Key insight:** K (number of INCLUDE predicates per conjunction) is encoded in EntryID bits 56–63. EntryIDs with the same K sort together naturally — no physical K-bucketing needed. The `mergeCursors` algorithm reads K dynamically from each EntryID.
+**Key insight:** K (number of INCLUDE predicates per conjunction) is encoded in EntryID bits 56–63. EntryIDs with the same K sort together naturally — no physical K-bucketing needed. The `matchConjunctions` algorithm reads K dynamically from each EntryID.
 
 ### Layered Architecture
 
-<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 420px; margin: 20px 0;">
-  <div style="display: flex; flex-direction: column; align-items: center; gap: 4px;">
-    <div style="background: #ffeecc; border: 2px solid #d4a04a; border-radius: 6px; padding: 8px 28px; font-weight: 600;">Application</div>
-    <div style="color: #666; font-size: 16px;">↓ &nbsp; ↓</div>
-    <div style="display: flex; gap: 10px;">
-      <div style="background: #d4edda; border: 1px solid #28a745; border-radius: 6px; padding: 6px 12px; text-align: center; font-size: 12px;">
-        <div style="font-weight: 600;">builder</div><div style="color: #666;">offline</div>
-      </div>
-      <div style="background: #d1ecf1; border: 1px solid #17a2b8; border-radius: 6px; padding: 6px 12px; text-align: center; font-size: 12px;">
-        <div style="font-weight: 600;">engine</div><div style="color: #666;">online</div>
-      </div>
-    </div>
-    <div style="color: #666; font-size: 16px;">↓</div>
-    <div style="background: #f5deb3; border: 1px solid #d4a04a; border-radius: 6px; padding: 6px 20px; text-align: center; font-size: 12px;">
-      <div style="font-weight: 600;">segment</div><div style="color: #666;">mmap r/o, zero-copy</div>
-    </div>
-    <div style="color: #666; font-size: 16px;">↓</div>
-    <div style="background: #f0e0e0; border: 1px solid #c08080; border-radius: 6px; padding: 6px 20px; text-align: center; font-size: 12px;">
-      <div style="font-weight: 600;">core</div><div style="color: #666;">types, ConjID/EntryID encoding</div>
-    </div>
-  </div>
-</div>
+```mermaid
+flowchart TD
+    API["be_indexer: api_*.go"] --> builder
+    API --> engine
+    API --> loader
+    API --> manifest
+    loader --> engine
+    loader --> manifest
+    builder --> parser
+    builder --> segment
+    builder --> manifest
+    engine --> parser
+    engine --> segment
+    parser --> core
+    segment --> core
+```
+
+根包按规则模型、查询、评分、构建、段读取、快照和索引合并/重建评估组织公共 API；扩展容器使用 `parser` / `segment` 接口。`core` 包含类型、ID 编码、游标、collector 和评分原语。`api_maintenance.go` 只给业务提供评估参考：是否合并 delta、重新构建并发布 full；实际任务由业务执行。
 
 ### Production: Full + Delta
 
 For incremental updates, segments are organized into full + delta snapshots with atomic manifest switching:
+
+**实际业务推荐一个 full（全量索引）和一个 delta（累计增量索引）**，各自可以包含多个 segment。每轮 delta 覆盖当前 full 的数据截止位置之后的全部变更，发布时替换上轮 delta。具体流程及可选的合并/重建评估见[最佳实践](docs/guide/best-practices.md#10-索引合并与全量发布评估)。
 
 ```mermaid
 flowchart LR
@@ -106,6 +104,28 @@ results, _ := engine.Retrieve(be_indexer.Assignments{
 
 ---
 
+## Exact Top K 与分数 sidecar
+
+BooleanEngine、CompositeEngine 和 Holder 支持按独立 Document 分数检索全局 Top K，按 score 降序、同分 signed DocID 升序返回。周期任务构造完整不可变分数表后原子发布，每次查询固定一份快照：
+
+```go
+// ids 按 signed DocID 严格递增。构建失败时保留已发布的旧分数。
+scores, err := be_indexer.NewBlockMaxScoreTable(ids, values)
+if err != nil {
+    return err
+}
+engine.SetScoreSource(scores)
+ranked, err := engine.RetrieveTopK(assignments, 100, nil)
+```
+
+检索先计算现有 K-group 布尔 pivot，再通过 sidecar 区间最高分把 FieldCursor 继续向前推进，跳过不能进入 Top K 的 Document。full 和 delta 共享一个 Top K 堆。分数刷新不需要重建 segment，Holder 的索引 Reload 也不会清空分数。
+
+默认缺失分数按零分处理；`TopKCollector.SetMissingScoreMode(MissingScoreSkip)` 可排除缺分文档。scored collector 收满指定数量的结果后仍继续检索，只有可靠上界允许提前结束；`NewTopKCollector(k, nil)` 保留原有任意前 k 个命中的用法。
+
+对命中极少或上界不易剪枝的查询，可传 `be_indexer.WithScorePruning(false)` 使用普通布尔跳转，结果仍是精确 Top K。接口、正确性证明、刷新接入方式和其他全局检索路径见 [Top K 设计](docs/design/topk.md)。
+
+---
+
 ## Production Pattern: Full + Delta with Manifest
 
 For production serving with incremental updates, use the full+delta snapshot model:
@@ -114,7 +134,7 @@ For production serving with incremental updates, use the full+delta snapshot mod
 
 ```go
 // Full build (offline, e.g. daily)
-fullOpt := be_indexer.FullIndexBuildOption{
+fullOpt := be_indexer.FullIndexBuildOptions{
     Root:       "/data/index",
     Generation: 20240701,
     Fields:     fields,
@@ -125,8 +145,8 @@ for _, doc := range docs {
 }
 fullDesc, _ := full.Build()
 
-// Delta build (online, e.g. every 5 min)
-deltaOpt := be_indexer.DeltaIndexBuildOption{
+// Rebuild the cumulative delta (e.g. every 5 min) from all changes since full.
+deltaOpt := be_indexer.DeltaIndexBuildOptions{
     Root:                 "/data/index",
     Generation:           202407010001,
     FromWatermarkExclusive: 0,
@@ -181,9 +201,9 @@ ConjID  = [ reserved(4) | K(8) | index(8) | negSign(1) | docID(43) ]
 EntryID = ConjID << 4 | incl/excl
 ```
 
-K (conjunction size: number of INCLUDE predicates) occupies bits 56–63 of EntryID. All EntryIDs with the same K sort together naturally — no physical K-bucketing needed. K is read dynamically via `conjID.Size()` during query.
+K (conjunction size: number of INCLUDE predicates) occupies bits 56–63 of EntryID. All EntryIDs with the same K sort together naturally — no physical K-bucketing needed. K is read dynamically via `conjID.IncludeCount()` during query.
 
-### mergeCursors: Single-Pass Multiway Merge
+### matchConjunctions: Single-Pass Multiway Merge
 
 ```mermaid
 flowchart TD
@@ -196,10 +216,10 @@ flowchart TD
     F -->|Yes| G{Include or Exclude?}
     F -->|No| H["Advance first needMatchCnt cursors\nvia SkipTo(nextID)"]
     G -->|Include| I[Collect DocID]
-    G -->|Exclude| J[Skip ALL cursors\npast this DocID]
+    G -->|Exclude| J[Skip ALL cursors\npast this Conjunction]
     I --> H
     J --> H
-    H --> K[Compact exhausted cursors]
+    H --> K[Remove exhausted cursors]
     K --> C
 ```
 
@@ -207,7 +227,7 @@ All cursors (wildcard + per-field postings from all segments) compete in a singl
 
 ### Galloping SkipTo
 
-~90% of cursor advances are "next element" (+1). Full binary search is O(log N) every call. Galloping uses a fast-path check (O(1) for seq) and exponential probe for jumps:
+Galloping uses a current-entry fast path and exponential probing before binary search. The following historical synthetic measurements illustrate sequential and strided workloads; they are not current performance guarantees:
 
 | N=100K | Binary Search | Galloping | Speedup |
 |:------|:---:|:---:|:---:|
@@ -219,7 +239,7 @@ All cursors (wildcard + per-field postings from all segments) compete in a singl
 
 ### Zero-Copy Wildcards
 
-Wildcards (K=0 conjunctions) are embedded in each segment as a `__wildcards` block. The mmap reader decodes them via `unsafe.Slice` — no heap allocation. At query time, per-segment `SliceIterator`s are grouped into a single `FieldCursor` whose internal heap performs **lazy K-way merge**, eliminating the need for a load-time merge step entirely.
+Wildcards (K=0 conjunctions) are embedded in each segment as a `__wildcards` block. On aligned little-endian input, the reader borrows them via `unsafe.Slice`; other hosts/alignments decode into owned storage. At query time, per-segment `SliceIterator`s are grouped into a single `FieldCursor` whose internal heap performs **lazy K-way merge**, eliminating the need for a load-time merge step entirely.
 
 ```mermaid
 flowchart LR
@@ -231,7 +251,7 @@ flowchart LR
         Q1["initCursors:\nper-segment SliceIterator"] --> Q2[Wrap in single FieldCursor]
         Q2 -.-> Q2a["internal heap does\nlazy K-way merge"]
     end
-    subgraph Merge["mergeCursors"]
+    subgraph Merge["matchConjunctions"]
         M1["wildcard FieldCursor competes\nwith field cursors naturally"]
     end
     subgraph Result["Result"]
@@ -310,11 +330,11 @@ A pre-built roaring64 sidecar is available as an optional storage/load optimizat
     </div>
   </div>
   <div style="margin-top: 8px; color: #666; font-size: 11px; font-style: italic;">
-    All blocks 8-byte aligned → zero-copy unsafe.Slice
+    Aligned little-endian blocks → zero-copy unsafe.Slice
   </div>
 </div>
 
-All posting blocks and the wildcards block are 8-byte aligned, enabling zero-copy `unsafe.Slice` mapping from mmap'd memory.
+Posting/wildcard 块按 8 字节对齐，在 little-endian 主机上可直接映射。big-endian 或非对齐输入显式按 little-endian 解码。Reader 在打开时校验结构、字典顺序、range 拓扑和内置容器的 posting 引用；关闭 checksum 不会关闭结构校验。
 
 ---
 
@@ -324,13 +344,13 @@ Field-level index containers are registered via `segment.RegisterIndex(kind, Ind
 
 | Container | Index | `FieldOption.IndexType` | Use Case | Lookup |
 |:----------|:------|:------------------------|:---------|:-------|
-| [Default](static/docs/indexes/default.md) | Inverted posting list (FlatDict) | `"default"` or `""` | Exact match (EQ, IN, NOT IN) | `O(log n)` |
-| [`mph_dict`](static/docs/indexes/mph_dict.md) | Minimal perfect hash (CHD) | `"mph_dict"` | Huge opaque key sets (ids, hashes) | `O(1)` |
-| [`fst_dict`](static/docs/indexes/fst_dict.md) | Finite state transducer (vellum) | `"fst_dict"` | Huge structured keys (URLs, paths) | `O(len(term))` |
-| [`ac_matcher`](static/docs/indexes/ac_matcher.md) | Double-Array Trie (AC automaton) | `"ac_matcher"` | Multi-pattern substring match | `O(len(text))` |
-| [`ext_range`](static/docs/indexes/ext_range.md) | Segment-tree + point range index | `"ext_range"` | Numeric range (GT, LT, BETWEEN) | `O(log P + log m)` |
+| [Default](docs/architecture/indexes/default.md) | Inverted posting list (FlatDict) | `"default"` or `""` | Exact match (EQ, IN, NOT IN) | `O(log n)` |
+| [`mph_dict`](docs/architecture/indexes/mph_dict.md) | Minimal perfect hash (CHD) | `"mph_dict"` | Huge opaque key sets (ids, hashes) | `O(1)` |
+| [`fst_dict`](docs/architecture/indexes/fst_dict.md) | Finite state transducer (vellum) | `"fst_dict"` | Huge structured keys (URLs, paths) | `O(len(term))` |
+| [`ac_matcher`](docs/architecture/indexes/ac_matcher.md) | Double-Array Trie (AC automaton) | `"ac_matcher"` | Multi-pattern substring match | `O(len(text))` |
+| [`ext_range`](docs/architecture/indexes/ext_range.md) | Segment-tree + point range index | `"ext_range"` | Numeric range (GT, LT, BETWEEN) | `O(log P + log m)` |
 
-See **[static/docs/indexes/](static/docs/indexes/README.md)** for a per-container
+See **[docs/architecture/indexes/](docs/architecture/indexes/README.md)** for a per-container
 reference (when to use / when not, complexity, and on-disk layout) and a decision
 guide.
 
@@ -340,16 +360,16 @@ Custom containers implement `IndexBuilder` / `IndexReader` and register at init.
 
 ## Value Tokenizers
 
-Tokenizers convert typed values to string terms for the inverted index. The `FieldOption.Encoder` field selects the tokenizer (defaults to `IndexType` when empty):
+Tokenizers convert typed values to string terms for the inverted index. The `FieldOption.Encoder` field selects the tokenizer (defaults to `default` when empty, independently of `IndexType`):
 
 | Tokenizer | Input | Output | `FieldOption.Encoder` |
 |:----------|:------|:-------|:------------------------|
 | `default` | `string` | identity | `"default"` |
 | `number` | `int`/`int64` | `"<int>"` | `"number"` |
 | `geohash` | `[lat, lng]` | geohash prefixes | `"geohash"` |
-| [`proximitygeo`](static/docs/indexes/proximitygeo.md) | `(lat, lng, radius)` | geohash covering cells (stored in the default container) | `"proximitygeo"` |
+| [`proximitygeo`](docs/architecture/indexes/proximitygeo.md) | `(lat, lng, radius)` | geohash covering cells (stored in the default container) | `"proximitygeo"` |
 
-Custom tokenizers implement `parser.ValueTokenizer` and register via `parser.RegisterPredicateEncoder`.
+Custom tokenizers implement `parser.ValueTokenizer` and register via `parser.RegisterValueTokenizer`; custom predicate encoders implement `parser.PredicateEncoder` and register via `parser.RegisterPredicateEncoder`.
 
 ---
 
@@ -361,7 +381,9 @@ engine.Retrieve(assignments,
 )
 ```
 
-`RetrieveObserver` hooks into retrieval lifecycle: `OnRetrieveStart`, `OnRetrieveEnd`, `OnMatch`, `OnExcludeSkip`, `OnCursorInit`.
+普通 collector 每次查询只接收唯一、可见的 DocID；`CollectStop` 停止全部 full/delta 层。内置 bitmap/Top K collector 显式接受重复并自行去重。collector 由调用方独占，复用前 Reset，顺序不作保证。
+
+`RetrieveObserver` hooks into retrieval lifecycle: `OnRetrieveStart`, `OnRetrieveEnd`, `OnConjunctionMatch`, `OnExcludeSkip`, `OnCursorInit`.
 
 ---
 
@@ -375,21 +397,32 @@ go vet ./...
 
 ## Constraints
 
-- `DocID` range: `[-2^43, 2^43]`
+- `DocID` range: `[-(2^43-1), 2^43-1]`
 - Max conjunctions per document: < 256
 - Max K (conjunction size): < 256
 - Recommended docs per segment: ≤ 5M for balanced memory/build time
 
 ## Documentation
 
-- **[Best Practices](static/docs/BEST_PRACTICES.md)** — 使用方指南：规则建模、容器选型、full+delta 生产链路、热更新与反模式
-- [Quick Start](static/docs/QUICK_START.md) — end-to-end build & query walkthrough
-- [Architecture](static/docs/ARCHITECTURE.md) — layered design, ID encoding, retrieval
-- [API Reference](static/docs/API_REFERENCE.md) — package-level API
-- [Examples](static/docs/EXAMPLES.md) — recipes for common scenarios
-- **[Field Index Types](static/docs/indexes/README.md)** — per-container reference
+完整文档索引见 **[docs/README.md](docs/README.md)**，按使用、架构、设计与历史记录归类。
+
+**使用指南**
+- **[Best Practices](docs/guide/best-practices.md)** — 使用方指南：规则建模、容器选型、full+delta 生产链路、热更新与反模式
+- [Quick Start](docs/guide/quick-start.md) — end-to-end build & query walkthrough
+- [API Reference](docs/guide/api-reference.md) — package-level API
+- [Examples](docs/guide/examples.md) — recipes for common scenarios
+
+**架构与索引**
+- [Architecture](docs/architecture/overview.md) — layered design, ID encoding, retrieval
+- **[Field Index Types](docs/architecture/indexes/README.md)** — per-container reference
   (default, mph_dict, fst_dict, ac_matcher, ext_range, proximitygeo): when to use,
   complexity, and on-disk layout
+
+**设计**
+- [Exact Top K](docs/design/topk.md) — global top-k retrieval and score sidecar
+
+**历史记录**
+- [History](docs/history/README.md) — archived design reviews, specs, and implementation plans
 
 ## License
 

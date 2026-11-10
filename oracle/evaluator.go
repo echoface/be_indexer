@@ -34,7 +34,7 @@ func EvaluateConjunction(conj *core.Conjunction, assigns core.Assignments) (bool
 	if conj == nil {
 		return false, nil
 	}
-	for field, exprs := range conj.Predicates {
+	for field, exprs := range conj.Constraints {
 		queryValues := normalize(assigns[field])
 		queryPresent := len(queryValues) > 0
 		for _, expr := range exprs {
@@ -43,7 +43,7 @@ func EvaluateConjunction(conj *core.Conjunction, assigns core.Assignments) (bool
 			}
 
 			var intersects bool
-			if expr.Operator == core.ValueOptEQ {
+			if expr.Operator == core.ValueOpEQ {
 				predicateValues := normalize(expr.Value)
 				intersects = queryPresent && hasIntersection(queryValues, predicateValues)
 			} else {
@@ -74,7 +74,7 @@ func EvaluateConjunction(conj *core.Conjunction, assigns core.Assignments) (bool
 // rangeHit reports whether the query value for a range predicate lies inside any
 // interval the predicate expands to. Mirrors exclude-on-present-value: a missing
 // query field never intersects.
-func rangeHit(expr *core.ValueExpr, queryValue interface{}, queryPresent bool) (bool, error) {
+func rangeHit(expr *core.Constraint, queryValue interface{}, queryPresent bool) (bool, error) {
 	if !queryPresent {
 		return false, nil
 	}

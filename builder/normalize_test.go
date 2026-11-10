@@ -54,14 +54,14 @@ func TestNormalize_UnindexedIncludeDroppedFromK(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if got := norm.Cons[0].CalcConjSize(); got != 1 {
+	if got := norm.Cons[0].IncludeCount(); got != 1 {
 		t.Fatalf("normalized K = %d, want 1 (unindexed include must be dropped)", got)
 	}
-	if _, ok := norm.Cons[0].Predicates["unknown"]; ok {
+	if _, ok := norm.Cons[0].Constraints["unknown"]; ok {
 		t.Fatal("unindexed field must be dropped from normalized conjunction")
 	}
 	// Original doc must not be mutated.
-	if _, ok := doc.Cons[0].Predicates["unknown"]; !ok {
+	if _, ok := doc.Cons[0].Constraints["unknown"]; !ok {
 		t.Fatal("input document was mutated; normalization must copy")
 	}
 }
@@ -85,10 +85,10 @@ func TestNormalize_UnindexedIncludeFalseNegativeGuard(t *testing.T) {
 func TestNormalize_MultipleIncludeRejected(t *testing.T) {
 	codec := newTestCodec(t)
 	// age > 18 AND age < 60 modeled as two includes on the same field: ambiguous.
-	conj := &core.Conjunction{Predicates: map[core.BEField][]*core.ValueExpr{
+	conj := &core.Conjunction{Constraints: map[core.FieldName][]*core.Constraint{
 		"age": {
-			{Incl: true, Operator: core.ValueOptGT, Value: int64(18)},
-			{Incl: true, Operator: core.ValueOptLT, Value: int64(60)},
+			{Incl: true, Operator: core.ValueOpGT, Value: int64(18)},
+			{Incl: true, Operator: core.ValueOpLT, Value: int64(60)},
 		},
 	}}
 	doc := &core.Document{ID: 1, Cons: []*core.Conjunction{conj}}
@@ -103,10 +103,10 @@ func TestNormalize_MultipleIncludeRejected(t *testing.T) {
 
 func TestNormalize_MultipleExcludeAllowed(t *testing.T) {
 	codec := newTestCodec(t)
-	conj := &core.Conjunction{Predicates: map[core.BEField][]*core.ValueExpr{
+	conj := &core.Conjunction{Constraints: map[core.FieldName][]*core.Constraint{
 		"city": {
-			{Incl: false, Operator: core.ValueOptEQ, Value: "bj"},
-			{Incl: false, Operator: core.ValueOptEQ, Value: "sh"},
+			{Incl: false, Operator: core.ValueOpEQ, Value: "bj"},
+			{Incl: false, Operator: core.ValueOpEQ, Value: "sh"},
 		},
 	}}
 	doc := &core.Document{ID: 1, Cons: []*core.Conjunction{conj}}
@@ -138,7 +138,7 @@ func TestNormalize_NilConjunctionAndConstraint(t *testing.T) {
 	}
 
 	nilConstraint := &core.Document{ID: 1, Cons: []*core.Conjunction{
-		{Predicates: map[core.BEField][]*core.ValueExpr{"age": {nil}}},
+		{Constraints: map[core.FieldName][]*core.Constraint{"age": {nil}}},
 	}}
 	if _, err := ValidateAndNormalizeDocument(codec, nilConstraint, NormalizeOptions{}); err == nil {
 		t.Fatal("expected error for nil constraint")

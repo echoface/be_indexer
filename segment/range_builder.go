@@ -12,7 +12,7 @@ import (
 //
 // Like the dict/mph/ac builders, it funnels every (interval, EntryID) pair
 // through a SortedPostingMerger so that accumulation past
-// BuilderEnv.MaxPostingsInMemory spills sorted runs to disk instead of holding
+// BuilderEnv.MaxDistinctKeysInMemory spills sorted runs to disk instead of holding
 // the whole field in RAM. This keeps peak build memory bounded even for numeric
 // fields with tens of millions of documents. The interval [lo, hi] is used as
 // the merger key, so the merger's k-way merge naturally groups every
@@ -24,7 +24,7 @@ type RangeBuilder struct {
 // NewRangeBuilder creates a fresh RangeBuilder honoring the spill environment.
 func NewRangeBuilder(env BuilderEnv) IndexBuilder {
 	return &RangeBuilder{
-		merger: NewSortedPostingMerger(env.MaxPostingsInMemory, env.TmpDir),
+		merger: NewSortedPostingMerger(env.MaxDistinctKeysInMemory, env.TmpDir),
 	}
 }
 

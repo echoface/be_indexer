@@ -10,7 +10,8 @@ import (
 // BlockContext carries the posting block reference so index readers can produce
 // zero-copy PostingIterators at query time.
 type BlockContext struct {
-	Pl []byte
+	// PostingBlock contains the serialized postings referenced by this field's index.
+	PostingBlock []byte `json:"Pl"`
 }
 
 // IndexReader reads a serialized index block and provides query access.
@@ -18,7 +19,14 @@ type BlockContext struct {
 // block) and queried during retrieval (hot path). Implementations must be safe
 // for concurrent MatchQuery calls.
 type IndexReader interface {
-	MatchQuery(ctx BlockContext, field core.BEField, query interface{}) ([]core.PostingIterator, error)
+	MatchQuery(ctx BlockContext, field core.FieldName, query interface{}) ([]core.PostingIterator, error)
+}
+
+// IndexValidator validates references to a separate posting block after all
+// field blocks have been loaded. Containers with cross-block references should
+// implement this cold-path capability so malformed artifacts fail at open.
+type IndexValidator interface {
+	Validate(ctx BlockContext) error
 }
 
 // IndexBuilder is responsible for a field's entire indexing logic during
@@ -68,8 +76,9 @@ type BlockStream interface {
 // BuilderEnv carries build-time configuration from the framework to index
 // builders.
 type BuilderEnv struct {
-	MaxPostingsInMemory int    // <= 0 disables spill (in-memory only)
-	TmpDir              string // spill file directory when MaxPostingsInMemory > 0
+	// MaxDistinctKeysInMemory is the spill threshold per collector, not a byte limit.
+	MaxDistinctKeysInMemory int    `json:"MaxPostingsInMemory"` // <= 0 disables spill (in-memory only)
+	TmpDir                  string // spill file directory when MaxDistinctKeysInMemory > 0
 }
 
 // IndexReaderFactory creates an IndexReader from serialized block bytes.

@@ -119,26 +119,22 @@ func TestTopKCollector_FuzzOracle(t *testing.T) {
 		}
 
 		c := NewTopKCollector(k, src)
-		stopped := false
-		for i := 0; i < n*2; i++ {
-			if c.Add(DocID(rng.Intn(n)+1)) == CollectStop {
-				stopped = true
-				break
+		for _, i := range rng.Perm(n) {
+			if c.Add(DocID(i+1)) == CollectStop && k > 0 {
+				t.Fatalf("scored collector stopped before exhausting its input")
 			}
 		}
+		// Feed all documents again to cover duplicate winners and evicted IDs.
+		for _, i := range rng.Perm(n) {
+			c.Add(DocID(i + 1))
+		}
 		got := c.Scored()
-		// With early stop the heap holds the best k of the prefix actually
-		// fed; without stop it must equal the global oracle over all feeds.
-		wantLen := min(len(want), c.Count())
-		if !stopped && len(got) != len(want) {
-			wantLen = len(want)
+		if len(got) != len(want) {
+			t.Fatalf("iter %d: got %v want %v", iter, got, want)
 		}
-		if len(got) > wantLen {
-			t.Fatalf("iter %d: len got %d exceeds expected max %d", iter, len(got), wantLen)
-		}
-		for i := 1; i < len(got); i++ {
-			if got[i].Score > got[i-1].Score {
-				t.Fatalf("iter %d: output not descending at %d: %v", iter, i, got)
+		for i := range want {
+			if got[i] != want[i] {
+				t.Fatalf("iter %d: got %v want %v", iter, got, want)
 			}
 		}
 	}

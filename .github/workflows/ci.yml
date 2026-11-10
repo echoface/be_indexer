@@ -32,9 +32,17 @@ jobs:
       - run: go test ./... -race -count=1
       - run: go vet ./...
 
-  build-32bit:
-    name: Build (386)
+  cross-compile:
+    name: Cross-compile (${{ matrix.arch }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: ["386", "s390x"]
+    env:
+      GOOS: linux
+      GOARCH: ${{ matrix.arch }}
+      CGO_ENABLED: 0
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -42,4 +50,5 @@ jobs:
           go-version: "1.24.x"
           cache: true
       - run: go mod verify
-      - run: GOARCH=386 go build ./...
+      # Compile packages AND tests; true deliberately does not execute the target binaries.
+      - run: go test ./... -exec=true

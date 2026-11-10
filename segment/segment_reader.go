@@ -26,7 +26,7 @@ type blockLookup struct {
 // BooleanEngine resolves these views once at construction time, so retrieval
 // does not repeat field-name map lookups for every encoded query value.
 type ResolvedField struct {
-	name  core.BEField
+	name  core.FieldName
 	block *blockLookup
 }
 
@@ -39,7 +39,7 @@ func (f *ResolvedField) MatchQuery(kind string, query interface{}) ([]core.Posti
 	if !ok {
 		return nil, nil
 	}
-	return reader.MatchQuery(BlockContext{Pl: f.block.pl}, f.name, query)
+	return reader.MatchQuery(BlockContext{PostingBlock: f.block.pl}, f.name, query)
 }
 
 type BlockChecksumMode int
@@ -71,11 +71,11 @@ type OpenFileOptions struct {
 
 // SegmentReader serves queries from an immutable segment byte slice. The byte slice
 // may be backed by OS mmap or ordinary memory; all posting-list lookups are
-// zero-copy views into that backing slice when alignment permits.
+// zero-copy views into that backing slice on little-endian hosts when alignment permits.
 type SegmentReader struct {
 	b         []byte
 	meta      *MetaBlock
-	fields    map[core.BEField]*ResolvedField
+	fields    map[core.FieldName]*ResolvedField
 	wildcards core.Entries
 	// closer releases the backing storage (e.g. munmap). It is nil for readers
 	// over caller-owned byte slices, whose memory is reclaimed by the GC.
@@ -91,6 +91,9 @@ func NewSegmentReader(b []byte) (*SegmentReader, error) {
 
 // NewSegmentReaderWithOptions parses an immutable segment byte slice.
 func NewSegmentReaderWithOptions(b []byte, opts ReaderOptions) (*SegmentReader, error) {
+	if opts.BlockChecksumMode != BlockChecksumOnOpen && opts.BlockChecksumMode != BlockChecksumDisabled {
+		return nil, fmt.Errorf("invalid block checksum mode %d", opts.BlockChecksumMode)
+	}
 	if len(b) < 16 {
 		return nil, fmt.Errorf("truncated segment file")
 	}
@@ -101,7 +104,7 @@ func NewSegmentReaderWithOptions(b []byte, opts ReaderOptions) (*SegmentReader, 
 	}
 
 	metaOffset := binary.LittleEndian.Uint64(b[len(b)-8:])
-	if metaOffset > uint64(len(b)-8) {
+	if metaOffset < uint64(len(MagicNumber)) || metaOffset > uint64(len(b)-8) {
 		return nil, fmt.Errorf("invalid metadata offset %d", metaOffset)
 	}
 
@@ -113,7 +116,7 @@ func NewSegmentReaderWithOptions(b []byte, opts ReaderOptions) (*SegmentReader, 
 	if meta.Version != SegmentVersionV5 {
 		return nil, fmt.Errorf("unsupported segment version %d (expected v5)", meta.Version)
 	}
-	fields := make(map[core.BEField]*ResolvedField, len(meta.Fields))
+	fields := make(map[core.FieldName]*ResolvedField, len(meta.Fields))
 	var wildcards core.Entries
 	// Validate byte ranges before checksum metadata so malformed offsets and
 	// sizes retain their direct, deterministic diagnostics.
@@ -151,9 +154,12 @@ func NewSegmentReaderWithOptions(b []byte, opts ReaderOptions) (*SegmentReader, 
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse wildcards block: %w", err)
 	}
+	if blockDef.Kind != BlockKindWildcards || blockDef.Field != "" {
+		return nil, fmt.Errorf("invalid wildcards block identity")
+	}
 
 	for _, fieldMeta := range meta.Fields {
-		name := core.BEField(fieldMeta.Name)
+		name := core.FieldName(fieldMeta.Name)
 		if name == "" {
 			return nil, fmt.Errorf("segment declares an empty field name")
 		}
@@ -166,9 +172,12 @@ func NewSegmentReaderWithOptions(b []byte, opts ReaderOptions) (*SegmentReader, 
 	// Single O(blocks) pass: structured BlockDef carries (Field, kind).
 	for name, def := range meta.BlockIndex {
 		if def.Kind == BlockKindWildcards {
+			if name != meta.WildcardsBlock {
+				return nil, fmt.Errorf("duplicate wildcards block %q", name)
+			}
 			continue // already decoded above
 		}
-		resolved, ok := fields[core.BEField(def.Field)]
+		resolved, ok := fields[core.FieldName(def.Field)]
 		if !ok {
 			return nil, fmt.Errorf("block %s references unknown field %q", name, def.Field)
 		}
@@ -218,6 +227,13 @@ func NewSegmentReaderWithOptions(b []byte, opts ReaderOptions) (*SegmentReader, 
 			}
 			if _, ok := blk.readers[core.IndexNameDefault]; !ok {
 				blk.readers[core.IndexNameDefault] = NewDictReader(blk.dict)
+			}
+		}
+		for kind, reader := range blk.readers {
+			if validator, ok := reader.(IndexValidator); ok {
+				if err := validator.Validate(BlockContext{PostingBlock: blk.pl}); err != nil {
+					return nil, fmt.Errorf("field %s index %s: %w", field.name, kind, err)
+				}
 			}
 		}
 	}
@@ -329,7 +345,7 @@ func checkedBlockBytes(b []byte, metaOffset uint64, blockDef BlockDef) ([]byte, 
 
 // ResolveField returns an immutable field handle. Callers on a hot path should
 // resolve once and reuse the handle for all physical query values.
-func (sr *SegmentReader) ResolveField(field core.BEField) (*ResolvedField, bool) {
+func (sr *SegmentReader) ResolveField(field core.FieldName) (*ResolvedField, bool) {
 	if sr == nil {
 		return nil, false
 	}
@@ -340,7 +356,7 @@ func (sr *SegmentReader) ResolveField(field core.BEField) (*ResolvedField, bool)
 // GetPostingsByTerm returns a posting iterator for a physical term in the
 // merged (all-K) posting list. This is a convenience wrapper around
 // IndexQuery with the default dict container.
-func (sr *SegmentReader) GetPostingsByTerm(field core.BEField, term string) (core.PostingIterator, error) {
+func (sr *SegmentReader) GetPostingsByTerm(field core.FieldName, term string) (core.PostingIterator, error) {
 	iters, err := sr.IndexQuery(field, core.IndexNameDefault, term)
 	if err != nil {
 		return nil, err
@@ -354,7 +370,7 @@ func (sr *SegmentReader) GetPostingsByTerm(field core.BEField, term string) (cor
 // IndexQuery dispatches a query to a registered container and returns
 // posting iterators. kind is the container type (e.g. "default",
 // "ac_matcher", "ext_range").
-func (sr *SegmentReader) IndexQuery(field core.BEField, kind string, query interface{}) ([]core.PostingIterator, error) {
+func (sr *SegmentReader) IndexQuery(field core.FieldName, kind string, query interface{}) ([]core.PostingIterator, error) {
 	resolved, ok := sr.ResolveField(field)
 	if !ok {
 		return nil, core.ErrUnknownQueryField
@@ -364,13 +380,13 @@ func (sr *SegmentReader) IndexQuery(field core.BEField, kind string, query inter
 
 // MultiPatternSearch performs AC automaton matching on the input text and
 // returns posting iterators for all matched terms in the merged posting list.
-func (sr *SegmentReader) MultiPatternSearch(field core.BEField, text string) ([]core.PostingIterator, error) {
+func (sr *SegmentReader) MultiPatternSearch(field core.FieldName, text string) ([]core.PostingIterator, error) {
 	return sr.IndexQuery(field, BlockKindAC, text)
 }
 
 // GetRangePostings returns posting iterators for every interval that contains
 // the query point in an ext_range field, from the merged (all-K) posting list.
-func (sr *SegmentReader) GetRangePostings(field core.BEField, point int64) ([]core.PostingIterator, error) {
+func (sr *SegmentReader) GetRangePostings(field core.FieldName, point int64) ([]core.PostingIterator, error) {
 	return sr.IndexQuery(field, BlockKindRange, point)
 }
 

@@ -19,7 +19,7 @@ All notable changes to this project will be documented in this file.
 - `segment.ContainerReader` / `segment.ContainerBuilder` 接口 + `RegisterContainer()` 注册表
 - 内置 `ac_matcher`（AC 自动机）、`ext_range`（段树）注册为 container
 - `segment.SegmentReader.ContainerQuery()` 通用容器 dispatch
-- `engine/searcher.go` `default` 分支路由未知 `QueryKind` 到 `ContainerQuery`
+- `engine/boolean_engine.go` `default` 分支路由未知 `QueryKind` 到 `ContainerQuery`
 - `parser.EncodedPosting.Value any` / `parser.EncodedQuery.Value any` 承载自定义容器数据
 - `container/geo` 示例：基于 geohash 的空间索引容器（150 LOC 完整容器实现）
 - `segment.NewPostingListAt` 导出，外部 ContainerReader 可零拷贝创建 posting view
@@ -135,7 +135,7 @@ builder.ConfigureField("geo", roaringidx.FieldSetting{
 **文件改动：**
 - `parser/types.go`: 新增接口定义和别名
 - `parser/geohash_parser.go`: 实现双接口
-- `parser/number_parser.go`: 实现 ValueTokenizer 接口
+- `parser/number_tokenizer.go`: 实现 ValueTokenizer 接口
 - `parser/str_parser_hash.go`: 添加 Name() 方法
 - `parser/range_parser.go`: 添加 Name() 方法
 

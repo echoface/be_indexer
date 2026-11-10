@@ -27,7 +27,7 @@
 //	slice_copy         1.1 ms,  8MB alloc,    1 alloc
 //	roaring_unmarshal  0.5 ms,  2MB alloc,  507 allocs  (2.2x faster, 4x less memory)
 //
-// Query SkipTo (N=100K dense, seq full-scan = mergeCursors dominant pattern):
+// Query SkipTo (N=100K dense, seq full-scan = matchConjunctions dominant pattern):
 //
 //	Slice     ~3.9 ms, 0 allocs
 //	Roaring   ~2.1 ms, 928B alloc, 28 allocs   (1.86x faster)
@@ -46,7 +46,7 @@
 //   - Roaring unmarshal is the clear winner for load-side cold start:
 //     faster deserialize + smaller memory footprint vs raw EntryID slice.
 //   - Roaring SkipTo is ~2x faster for the seq/stride access pattern that
-//     dominates mergeCursors (continuous advancement through wildcard entries).
+//     dominates matchConjunctions (continuous advancement through wildcard entries).
 //   - Slice wins on sparse random access (few SkipTo calls across large ranges)
 //     AND has zero per-query allocations — better for latency-sensitive paths.
 //   - roaring_from_slice must be avoided on the load path (12x overhead).
@@ -131,7 +131,7 @@ func newRoaringEntryIter(bm *roaring64.Bitmap) *roaringEntryIter {
 	r := &roaringEntryIter{it: it}
 	if !it.HasNext() {
 		r.end = true
-		r.cur = NULLENTRY
+		r.cur = EndEntryID
 		return r
 	}
 	r.cur = EntryID(it.Next())
@@ -142,7 +142,7 @@ func (r *roaringEntryIter) Term() Term { return WildcardTerm }
 
 func (r *roaringEntryIter) Current() EntryID {
 	if r.end {
-		return NULLENTRY
+		return EndEntryID
 	}
 	return r.cur
 }
@@ -152,7 +152,7 @@ func (r *roaringEntryIter) ReachEnd() bool { return r.end }
 // SkipTo advances to the first entry >= id (same contract as SliceIterator.SkipTo).
 func (r *roaringEntryIter) SkipTo(id EntryID) EntryID {
 	if r.end {
-		return NULLENTRY
+		return EndEntryID
 	}
 	if r.cur >= id {
 		return r.cur
@@ -163,8 +163,8 @@ func (r *roaringEntryIter) SkipTo(id EntryID) EntryID {
 	r.it.AdvanceIfNeeded(uint64(id))
 	if !r.it.HasNext() {
 		r.end = true
-		r.cur = NULLENTRY
-		return NULLENTRY
+		r.cur = EndEntryID
+		return EndEntryID
 	}
 	// After AdvanceIfNeeded, PeekNext is >= id. Consume it as Current.
 	r.cur = EntryID(r.it.Next())

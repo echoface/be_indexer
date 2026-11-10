@@ -69,6 +69,7 @@ func (rs *refSnapshot) retire() {
 // high-frequency reload. The SegmentReader GC finalizer remains as a safety net
 // only, not the primary reclamation path.
 type Holder struct {
+	scores             core.AtomicScoreSource
 	root               string
 	fields             core.Schema
 	opts               Options
@@ -169,7 +170,7 @@ func (h *Holder) Reload() error {
 
 // Retrieve executes a query against the current engine, holding a reference for
 // the duration so a concurrent Reload cannot unmap the snapshot mid-query.
-func (h *Holder) Retrieve(queries core.Assignments, opts ...core.IndexOpt) (*core.BitmapDocSet, error) {
+func (h *Holder) Retrieve(queries core.Assignments, opts ...core.QueryOption) (*core.BitmapDocSet, error) {
 	rs := h.acquire()
 	if rs == nil {
 		return core.NewBitmapDocSet(), nil
@@ -180,7 +181,7 @@ func (h *Holder) Retrieve(queries core.Assignments, opts ...core.IndexOpt) (*cor
 
 // RetrieveWithCollector executes a query against the current engine, holding a
 // reference for the duration of the call.
-func (h *Holder) RetrieveWithCollector(queries core.Assignments, collector core.ResultCollector, opts ...core.IndexOpt) error {
+func (h *Holder) RetrieveWithCollector(queries core.Assignments, collector core.ResultCollector, opts ...core.QueryOption) error {
 	if collector == nil {
 		return core.ErrNilResultCollector
 	}
@@ -190,6 +191,27 @@ func (h *Holder) RetrieveWithCollector(queries core.Assignments, collector core.
 	}
 	defer rs.release()
 	return rs.engine.RetrieveWithCollector(queries, collector, opts...)
+}
+
+// SetScoreSource publishes scores independently of index reloads. Build the new
+// immutable source off the query path, then call this once per successful refresh.
+func (h *Holder) SetScoreSource(scores core.ScoreSource) { h.scores.Store(scores) }
+
+// RetrieveTopK pins both an index generation and a score snapshot for the call.
+// An explicit score source overrides the holder's published sidecar.
+func (h *Holder) RetrieveTopK(queries core.Assignments, k int, scores core.ScoreSource, opts ...core.QueryOption) ([]core.ScoredDoc, error) {
+	if k <= 0 {
+		return nil, nil
+	}
+	rs := h.acquire()
+	if rs == nil {
+		return nil, nil
+	}
+	defer rs.release()
+	if scores == nil {
+		scores = h.scores.Snapshot()
+	}
+	return rs.engine.RetrieveTopK(queries, k, scores, opts...)
 }
 
 // Close releases the currently published engine and its segment readers (e.g.

@@ -11,14 +11,14 @@ func TestExactTermEncoderUsesTokenizerInBothDirections(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	postings, err := enc.Build(&core.ValueExpr{Incl: true, Operator: core.ValueOptEQ, Value: []interface{}{"18", 18.9}})
+	postings, err := enc.EncodeConstraint(&core.Constraint{Incl: true, Operator: core.ValueOpEQ, Value: []interface{}{"18", 18.9}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(postings) != 1 || postings[0].Record != "18" {
 		t.Fatalf("unexpected build postings: %#v", postings)
 	}
-	queries, err := enc.Query("18")
+	queries, err := enc.EncodeAssignment("18")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -32,7 +32,7 @@ func TestRangeEncoderBuildAndQuery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	postings, err := enc.Build(&core.ValueExpr{Incl: true, Operator: core.ValueOptGT, Value: 18})
+	postings, err := enc.EncodeConstraint(&core.Constraint{Incl: true, Operator: core.ValueOpGT, Value: 18})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,7 +43,7 @@ func TestRangeEncoderBuildAndQuery(t *testing.T) {
 	if !ok || rr.Lo != 19 {
 		t.Fatalf("unexpected range postings: %#v", postings)
 	}
-	queries, err := enc.Query(25)
+	queries, err := enc.EncodeAssignment(25)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,14 +57,14 @@ func TestACEncoderBuildAndQuery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	postings, err := enc.Build(&core.ValueExpr{Incl: true, Operator: core.ValueOptEQ, Value: []string{"apple", "banana"}})
+	postings, err := enc.EncodeConstraint(&core.Constraint{Incl: true, Operator: core.ValueOpEQ, Value: []string{"apple", "banana"}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(postings) != 2 || postings[0].Record != "apple" || postings[1].Record != "banana" {
 		t.Fatalf("unexpected ac postings: %#v", postings)
 	}
-	queries, err := enc.Query([]string{"I love", "apple"})
+	queries, err := enc.EncodeAssignment([]string{"I love", "apple"})
 	if err != nil {
 		t.Fatal(err)
 	}

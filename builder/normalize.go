@@ -77,8 +77,8 @@ func ValidateAndNormalizeDocument(codec *parser.SchemaCodec, doc *core.Document,
 			return nil, fmt.Errorf("doc %d conjunction %d is nil", doc.ID, conjIdx)
 		}
 
-		var normPredicates map[core.BEField][]*core.ValueExpr // non-nil once this conj is rewritten
-		for field, exprs := range conj.Predicates {
+		var normPredicates map[core.FieldName][]*core.Constraint // non-nil once this conj is rewritten
+		for field, exprs := range conj.Constraints {
 			includeCount := 0
 			for _, e := range exprs {
 				if e == nil {
@@ -97,7 +97,7 @@ func ValidateAndNormalizeDocument(codec *parser.SchemaCodec, doc *core.Document,
 				// inflates K (Include) nor is silently ignored without record
 				// (Exclude): here dropping is the explicit, opt-in behavior.
 				if normPredicates == nil {
-					normPredicates = clonePredicates(conj.Predicates)
+					normPredicates = clonePredicates(conj.Constraints)
 				}
 				delete(normPredicates, field)
 				continue
@@ -117,7 +117,7 @@ func ValidateAndNormalizeDocument(codec *parser.SchemaCodec, doc *core.Document,
 				normCons = append([]*core.Conjunction(nil), doc.Cons...)
 				docChanged = true
 			}
-			normCons[conjIdx] = &core.Conjunction{Predicates: normPredicates}
+			normCons[conjIdx] = &core.Conjunction{Constraints: normPredicates}
 		}
 	}
 
@@ -127,10 +127,10 @@ func ValidateAndNormalizeDocument(codec *parser.SchemaCodec, doc *core.Document,
 	return &core.Document{ID: doc.ID, Version: doc.Version, Cons: normCons}, nil
 }
 
-// clonePredicates shallow-copies the predicate map. The []*ValueExpr slices and
+// clonePredicates shallow-copies the predicate map. The []*Constraint slices and
 // their elements are treated as immutable during a build, so they are shared.
-func clonePredicates(src map[core.BEField][]*core.ValueExpr) map[core.BEField][]*core.ValueExpr {
-	dst := make(map[core.BEField][]*core.ValueExpr, len(src))
+func clonePredicates(src map[core.FieldName][]*core.Constraint) map[core.FieldName][]*core.Constraint {
+	dst := make(map[core.FieldName][]*core.Constraint, len(src))
 	for f, exprs := range src {
 		dst[f] = exprs
 	}

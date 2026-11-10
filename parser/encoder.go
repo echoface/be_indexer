@@ -9,10 +9,11 @@ import (
 	"github.com/echoface/be_indexer/util"
 )
 
-// EncodedPosting is the build-side physical representation of one predicate.
+// EncodedRecord is one build-side record produced from a Constraint.
+// A constraint can produce several records, e.g. one per distinct term.
 // Record is a container-defined value; the framework routes it to the
-// container's AddPosting or AddKeyedPosting method.
-type EncodedPosting struct {
+// container's AddRecord method.
+type EncodedRecord struct {
 	Record any
 }
 
@@ -23,19 +24,21 @@ type EncodedQuery struct {
 }
 
 // PredicateEncoder is the single translation boundary between business values
-// and physical index keys. Builders must call Build, query engines must call
-// Query, and segment code must only consume the already-encoded keys. Encoders
+// and physical index keys. Builders call EncodeConstraint; query engines call
+// EncodeAssignment. Segment code consumes the already-encoded records. Encoders
 // are compiled once with the schema and then reused; implementations must be
-// safe for concurrent Query calls after construction.
+// safe for concurrent EncodeAssignment calls after construction.
 type PredicateEncoder interface {
-	Build(expr *core.ValueExpr) ([]EncodedPosting, error)
-	Query(value interface{}) ([]EncodedQuery, error)
+	// EncodeConstraint converts one stored constraint to container-specific records.
+	EncodeConstraint(expr *core.Constraint) ([]EncodedRecord, error)
+	// EncodeAssignment converts query values for one field to container lookups.
+	EncodeAssignment(value interface{}) ([]EncodedQuery, error)
 }
 
 // FieldCodec is the compiled runtime representation for one schema field.
 // It binds the schema map key to its canonical option and reusable encoder.
 type FieldCodec struct {
-	Field   core.BEField
+	Field   core.FieldName
 	Option  core.FieldOption
 	Encoder PredicateEncoder
 }
@@ -44,13 +47,13 @@ type FieldCodec struct {
 // once per schema/load and then reuse the per-field encoders instead of creating
 // encoders inside hot document/query loops.
 type SchemaCodec struct {
-	fields     map[core.BEField]FieldCodec
+	fields     map[core.FieldName]FieldCodec
 	schemaHash string
 }
 
 // NewSchemaCodec validates a schema and compiles one encoder per field.
 func NewSchemaCodec(schema core.Schema) (*SchemaCodec, error) {
-	codec := &SchemaCodec{fields: make(map[core.BEField]FieldCodec, len(schema))}
+	codec := &SchemaCodec{fields: make(map[core.FieldName]FieldCodec, len(schema))}
 	fields, err := core.NormalizeSchema(schema)
 	if err != nil {
 		return nil, err
@@ -78,7 +81,7 @@ func (c *SchemaCodec) SchemaHash() string {
 }
 
 // Field returns the compiled codec for one field.
-func (c *SchemaCodec) Field(field core.BEField) (FieldCodec, bool) {
+func (c *SchemaCodec) Field(field core.FieldName) (FieldCodec, bool) {
 	if c == nil {
 		return FieldCodec{}, false
 	}
@@ -102,19 +105,19 @@ func (c *SchemaCodec) Fields() []FieldCodec {
 }
 
 // EncoderFactory constructs a PredicateEncoder from a field and its option.
-type EncoderFactory func(field core.BEField, option core.FieldOption) (PredicateEncoder, error)
+type EncoderFactory func(field core.FieldName, option core.FieldOption) (PredicateEncoder, error)
 
 var predicateEncoderFactories = map[string]EncoderFactory{}
 
 func init() {
-	RegisterPredicateEncoder(core.IndexNameDefault, func(core.BEField, core.FieldOption) (PredicateEncoder, error) {
+	RegisterPredicateEncoder(core.IndexNameDefault, func(core.FieldName, core.FieldOption) (PredicateEncoder, error) {
 		return newExactTermEncoder("default")
 	})
-	RegisterPredicateEncoder("number", func(core.BEField, core.FieldOption) (PredicateEncoder, error) {
+	RegisterPredicateEncoder("number", func(core.FieldName, core.FieldOption) (PredicateEncoder, error) {
 		return newExactTermEncoder("number")
 	})
-	RegisterPredicateEncoder(core.IndexNameACMatcher, func(core.BEField, core.FieldOption) (PredicateEncoder, error) { return ACEncoder{}, nil })
-	RegisterPredicateEncoder(core.IndexNameExtendRange, func(core.BEField, core.FieldOption) (PredicateEncoder, error) { return RangeEncoder{}, nil })
+	RegisterPredicateEncoder(core.IndexNameACMatcher, func(core.FieldName, core.FieldOption) (PredicateEncoder, error) { return ACEncoder{}, nil })
+	RegisterPredicateEncoder(core.IndexNameExtendRange, func(core.FieldName, core.FieldOption) (PredicateEncoder, error) { return RangeEncoder{}, nil })
 }
 
 // RegisterPredicateEncoder installs or replaces the encoder factory for an
@@ -128,7 +131,7 @@ func RegisterPredicateEncoder(container string, factory EncoderFactory) {
 // If empty, it uses the default exact-term encoder. Encoder and IndexType are independent
 // choices — Encoder describes how values become physical keys, IndexType
 // describes how those keys are stored and queried.
-func NewPredicateEncoder(field core.BEField, option core.FieldOption) (PredicateEncoder, error) {
+func NewPredicateEncoder(field core.FieldName, option core.FieldOption) (PredicateEncoder, error) {
 	normalized, err := core.NormalizeFieldOption(field, option)
 	if err != nil {
 		return nil, err
@@ -155,11 +158,11 @@ type ExactTermEncoder struct {
 	tokenizer ValueTokenizer
 }
 
-func (e ExactTermEncoder) Build(expr *core.ValueExpr) ([]EncodedPosting, error) {
+func (e ExactTermEncoder) EncodeConstraint(expr *core.Constraint) ([]EncodedRecord, error) {
 	if expr == nil {
 		return nil, fmt.Errorf("nil value expression")
 	}
-	if expr.Operator != core.ValueOptEQ {
+	if expr.Operator != core.ValueOpEQ {
 		return nil, fmt.Errorf("%w: exact term encoder only supports EQ, got %d", core.ErrUnsupportedPredicate, expr.Operator)
 	}
 	terms, err := e.tokenizer.TokenizeValue(expr.Value)
@@ -167,14 +170,14 @@ func (e ExactTermEncoder) Build(expr *core.ValueExpr) ([]EncodedPosting, error) 
 		return nil, err
 	}
 	terms = util.DistinctString(terms)
-	out := make([]EncodedPosting, 0, len(terms))
+	out := make([]EncodedRecord, 0, len(terms))
 	for _, term := range terms {
-		out = append(out, EncodedPosting{Record: term})
+		out = append(out, EncodedRecord{Record: term})
 	}
 	return out, nil
 }
 
-func (e ExactTermEncoder) Query(value interface{}) ([]EncodedQuery, error) {
+func (e ExactTermEncoder) EncodeAssignment(value interface{}) ([]EncodedQuery, error) {
 	terms, err := e.tokenizer.TokenizeAssign(value)
 	if err != nil {
 		return nil, err
@@ -191,7 +194,7 @@ func (e ExactTermEncoder) Query(value interface{}) ([]EncodedQuery, error) {
 // query assignments into a single stabbing point for the ext_range container.
 type RangeEncoder struct{}
 
-func (RangeEncoder) Build(expr *core.ValueExpr) ([]EncodedPosting, error) {
+func (RangeEncoder) EncodeConstraint(expr *core.Constraint) ([]EncodedRecord, error) {
 	if expr == nil {
 		return nil, fmt.Errorf("nil value expression")
 	}
@@ -199,14 +202,14 @@ func (RangeEncoder) Build(expr *core.ValueExpr) ([]EncodedPosting, error) {
 	if err != nil {
 		return nil, err
 	}
-	out := make([]EncodedPosting, 0, len(intervals))
+	out := make([]EncodedRecord, 0, len(intervals))
 	for _, iv := range intervals {
-		out = append(out, EncodedPosting{Record: core.RangeRecord{Lo: iv.Lo, Hi: iv.Hi}})
+		out = append(out, EncodedRecord{Record: core.RangeRecord{Lo: iv.Lo, Hi: iv.Hi}})
 	}
 	return out, nil
 }
 
-func (RangeEncoder) Query(value interface{}) ([]EncodedQuery, error) {
+func (RangeEncoder) EncodeAssignment(value interface{}) ([]EncodedQuery, error) {
 	point, err := ParseRangePoint(value)
 	if err != nil {
 		return nil, err
@@ -219,11 +222,11 @@ func (RangeEncoder) Query(value interface{}) ([]EncodedQuery, error) {
 // segment writer can build the automaton from the same term dictionary.
 type ACEncoder struct{}
 
-func (ACEncoder) Build(expr *core.ValueExpr) ([]EncodedPosting, error) {
+func (ACEncoder) EncodeConstraint(expr *core.Constraint) ([]EncodedRecord, error) {
 	if expr == nil {
 		return nil, fmt.Errorf("nil value expression")
 	}
-	if expr.Operator != core.ValueOptEQ {
+	if expr.Operator != core.ValueOpEQ {
 		return nil, fmt.Errorf("%w: ac encoder only supports EQ, got %d", core.ErrUnsupportedPredicate, expr.Operator)
 	}
 	patterns, err := ValuesToStrings(expr.Value)
@@ -231,14 +234,14 @@ func (ACEncoder) Build(expr *core.ValueExpr) ([]EncodedPosting, error) {
 		return nil, err
 	}
 	patterns = util.DistinctString(patterns)
-	out := make([]EncodedPosting, 0, len(patterns))
+	out := make([]EncodedRecord, 0, len(patterns))
 	for _, pattern := range patterns {
-		out = append(out, EncodedPosting{Record: pattern})
+		out = append(out, EncodedRecord{Record: pattern})
 	}
 	return out, nil
 }
 
-func (ACEncoder) Query(value interface{}) ([]EncodedQuery, error) {
+func (ACEncoder) EncodeAssignment(value interface{}) ([]EncodedQuery, error) {
 	parts, err := ValuesToStrings(value)
 	if err != nil {
 		return nil, err

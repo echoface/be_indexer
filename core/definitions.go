@@ -1,5 +1,5 @@
 // Package core defines the foundational types for the be_indexer.
-// It contains type definitions and interfaces only — no business logic.
+// It contains shared types, cursor algorithms, result collection and scoring primitives.
 package core
 
 import (
@@ -13,7 +13,7 @@ import (
 // --------------------------------------------------------------------------------
 
 const (
-	WildcardFieldName = BEField("_Z_")
+	WildcardFieldName = FieldName("_Z_")
 
 	IndexNameDefault     = "default"
 	IndexNameACMatcher   = "ac_matcher"
@@ -21,13 +21,14 @@ const (
 )
 
 var (
-	ErrFieldNotConfigured     = errors.New("field not configured")
-	ErrFieldContainerRequired = errors.New("field container required")
-	ErrUnknownContainer       = errors.New("unknown field container")
-	ErrUnsupportedPredicate   = errors.New("unsupported predicate")
-	ErrUnknownQueryField      = errors.New("unknown query field")
-	ErrFieldIndexMissing      = errors.New("field index missing")
-	ErrNilResultCollector     = errors.New("result collector is nil")
+	ErrFieldNotConfigured       = errors.New("field not configured")
+	ErrFieldContainerRequired   = errors.New("field container required")
+	ErrUnknownContainer         = errors.New("unknown field container")
+	ErrUnsupportedPredicate     = errors.New("unsupported predicate")
+	ErrUnknownQueryField        = errors.New("unknown query field")
+	ErrFieldIndexMissing        = errors.New("field index missing")
+	ErrNilResultCollector       = errors.New("result collector is nil")
+	ErrDuplicateResultCollector = errors.New("cannot specify collector twice")
 )
 
 // --------------------------------------------------------------------------------
@@ -42,7 +43,7 @@ type FieldOption struct {
 
 // Schema maps each field name to its indexing configuration. The map key is the
 // field's sole logical identity; FieldOption contains behavior only.
-type Schema map[BEField]FieldOption
+type Schema map[FieldName]FieldOption
 
 // IndexerSettings holds per-field configuration for an index.
 type IndexerSettings struct {
@@ -66,17 +67,31 @@ const (
 	// CollectContinue means the collector is not saturated and the engine
 	// should keep traversing.
 	CollectContinue CollectResult = iota
-	// CollectStop means the collector is saturated (e.g. a TopK collector has
-	// gathered k unique documents); the engine should terminate immediately
-	// and the already-collected results are final.
+	// CollectStop means the collector has its final result (e.g. an unscored
+	// limit collector has gathered k unique documents). Scored Top K must keep
+	// searching until remaining candidates are proven unable to improve it.
 	CollectStop
 )
 
-// ResultCollector receives final matched document IDs. Conjunction details are
-// diagnostic data and are reported separately through RetrieveObserver.OnMatch.
+// ResultCollector receives visible matched DocIDs in unspecified order. Engines
+// deduplicate IDs before Add unless the collector opts into DuplicateTolerantCollector.
+// CollectStop ends the entire retrieval, including all remaining full/delta
+// layers: no further Add calls occur. Collectors belong to one retrieval goroutine
+// and callers reset reusable collectors before starting another query. If retrieval
+// returns an error, a streaming collector may contain partial results.
+// Conjunction details are reported separately through RetrieveObserver.OnConjunctionMatch.
 type ResultCollector interface {
 	// Add feeds one matched DocID and reports whether retrieval should stop.
 	Add(id DocID) CollectResult
+}
+
+// DuplicateTolerantCollector can consume repeated DocIDs without changing its
+// result or consuming additional quota. Returning true avoids the engine's
+// deduplication set. This capability is independent of CompetitiveCollector:
+// accepting duplicates does not authorize score-based skipping or early stop.
+type DuplicateTolerantCollector interface {
+	ResultCollector
+	AcceptsDuplicates() bool
 }
 
 // RetrieveObserver is an optional observer for retrieval instrumentation.
@@ -84,7 +99,9 @@ type ResultCollector interface {
 type RetrieveObserver interface {
 	OnRetrieveStart(ctx *RetrieveContext)
 	OnRetrieveEnd(ctx *RetrieveContext)
-	OnMatch(docID DocID, conjID ConjID)
+	// OnConjunctionMatch reports each matched conjunction visible to this engine.
+	// It runs before collector deduplication and CompositeEngine's layer filtering.
+	OnConjunctionMatch(docID DocID, conjID ConjID)
 	OnExcludeSkip(docID DocID)
 	OnCursorInit(fieldCount int)
 }
@@ -95,7 +112,7 @@ type RetrieveObserver interface {
 // distinguish a genuine no-match from a skipped error even in lenient mode.
 // Existing observers that do not implement it keep working unchanged.
 type FieldErrorObserver interface {
-	OnFieldError(field BEField, err error)
+	OnFieldError(field FieldName, err error)
 }
 
 // --------------------------------------------------------------------------------
@@ -110,16 +127,19 @@ type RetrieveContext struct {
 	// is skipped and retrieval continues. When
 	// true, the first field error aborts retrieval and is returned to the caller.
 	StrictQuery bool
-	Collector   ResultCollector
-	Assigns     Assignments
-	Observer    RetrieveObserver
+	// DisableScorePruning preserves exact scored Top K but uses only Boolean
+	// skips. It can be cheaper for highly selective queries or weak score bounds.
+	DisableScorePruning bool
+	Collector           ResultCollector
+	Assigns             Assignments
+	Observer            RetrieveObserver
 }
 
-// IndexOpt is a functional option for RetrieveContext.
-type IndexOpt func(ctx *RetrieveContext)
+// QueryOption is a functional option for RetrieveContext.
+type QueryOption func(ctx *RetrieveContext)
 
 // NewRetrieveCtx creates a context with the given assignments and options.
-func NewRetrieveCtx(ass Assignments, opts ...IndexOpt) RetrieveContext {
+func NewRetrieveCtx(ass Assignments, opts ...QueryOption) RetrieveContext {
 	ctx := RetrieveContext{Assigns: ass}
 	for _, fn := range opts {
 		fn(&ctx)
@@ -133,7 +153,7 @@ func NewRetrieveCtx(ass Assignments, opts ...IndexOpt) RetrieveContext {
 
 // Term names a (field, value) pair for debugging.
 type Term struct {
-	Field BEField
+	Field FieldName
 	Value any
 }
 
@@ -150,7 +170,7 @@ type PostingIterator interface {
 }
 
 // NewTerm creates a Term for a field/value pair.
-func NewTerm(field BEField, v interface{}) Term {
+func NewTerm(field FieldName, v interface{}) Term {
 	return Term{Field: field, Value: v}
 }
 
@@ -165,15 +185,4 @@ func (key *Term) String() string {
 		fmt.Println("unknown type", reflect.TypeOf(key.Value).String())
 	}
 	return fmt.Sprintf("[%s,%+v]", key.Field, key.Value)
-}
-
-// --------------------------------------------------------------------------------
-// Logger
-// --------------------------------------------------------------------------------
-
-// BEIndexLogger is the logging interface for the indexer.
-type BEIndexLogger interface {
-	Debugf(format string, v ...interface{})
-	Infof(format string, v ...interface{})
-	Errorf(format string, v ...interface{})
 }

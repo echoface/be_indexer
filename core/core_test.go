@@ -34,7 +34,7 @@ func TestConjID_EncodeDecode(t *testing.T) {
 		if got := id.Index(); got != cs.index {
 			t.Errorf("Index mismatch: input=%d got=%d", cs.index, got)
 		}
-		if got := id.Size(); got != cs.size {
+		if got := id.IncludeCount(); got != cs.size {
 			t.Errorf("Size mismatch: input=%d got=%d", cs.size, got)
 		}
 	}
@@ -84,8 +84,8 @@ func TestConjID_NegativeDocID(t *testing.T) {
 	if id.Index() != 5 {
 		t.Errorf("Index mismatch for negative DocID: got=%d want=5", id.Index())
 	}
-	if id.Size() != 10 {
-		t.Errorf("Size mismatch for negative DocID: got=%d want=10", id.Size())
+	if id.IncludeCount() != 10 {
+		t.Errorf("Size mismatch for negative DocID: got=%d want=10", id.IncludeCount())
 	}
 }
 
@@ -136,7 +136,7 @@ func TestEntryID_IncludeExclude(t *testing.T) {
 	if incl.IsExclude() {
 		t.Errorf("Include entry should report IsExclude=false")
 	}
-	if got := incl.GetConjID(); got != conjID {
+	if got := incl.ConjID(); got != conjID {
 		t.Errorf("ConjID extraction failed: got=%v want=%v", got, conjID)
 	}
 
@@ -147,7 +147,7 @@ func TestEntryID_IncludeExclude(t *testing.T) {
 	if !excl.IsExclude() {
 		t.Errorf("Exclude entry should report IsExclude=true")
 	}
-	if got := excl.GetConjID(); got != conjID {
+	if got := excl.ConjID(); got != conjID {
 		t.Errorf("ConjID extraction failed: got=%v want=%v", got, conjID)
 	}
 }
@@ -162,12 +162,12 @@ func TestEntryID_Ordering(t *testing.T) {
 	}
 }
 
-func TestEntryID_NULLENTRY(t *testing.T) {
-	if !NULLENTRY.IsNULLEntry() {
-		t.Error("NULLENTRY should report IsNULLEntry=true")
+func TestEntryID_EndEntryID(t *testing.T) {
+	if !EndEntryID.IsEnd() {
+		t.Error("EndEntryID should report IsEnd=true")
 	}
-	if NewEntryID(NewConjID(1, 0, 0), true).IsNULLEntry() {
-		t.Error("normal entry should not be NULLENTRY")
+	if NewEntryID(NewConjID(1, 0, 0), true).IsEnd() {
+		t.Error("normal entry should not be EndEntryID")
 	}
 }
 
@@ -196,7 +196,7 @@ func TestEntries_Sort(t *testing.T) {
 	if entries[0].IsInclude() {
 		t.Error("First sorted entry should be Exclude")
 	}
-	if entries[0].GetConjID() != conjID1 {
+	if entries[0].ConjID() != conjID1 {
 		t.Error("First sorted entry should have conjID1")
 	}
 }
@@ -214,13 +214,13 @@ func TestEntries_DocString(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// LiveDocs
+// DocVisibilityMask
 // ---------------------------------------------------------------------------
 
-func TestLiveDocs_Basic(t *testing.T) {
-	ld := NewLiveDocs()
+func TestDocVisibilityMask_Basic(t *testing.T) {
+	ld := NewDocVisibilityMask()
 
-	if !ld.IsAlive(1) {
+	if !ld.IsVisible(1) {
 		t.Error("DocID 1 should be alive initially")
 	}
 	if ld.HasDeletions() {
@@ -230,11 +230,11 @@ func TestLiveDocs_Basic(t *testing.T) {
 		t.Errorf("DeletedCount should be 0 initially, got %d", ld.DeletedCount())
 	}
 
-	ld.MarkDeleted(1)
-	if ld.IsAlive(1) {
-		t.Error("DocID 1 should be dead after MarkDeleted")
+	ld.Hide(1)
+	if ld.IsVisible(1) {
+		t.Error("DocID 1 should be dead after Hide")
 	}
-	if ld.IsAlive(2) {
+	if ld.IsVisible(2) {
 		// Doc 2 should still be alive
 	}
 	if !ld.HasDeletions() {
@@ -245,38 +245,38 @@ func TestLiveDocs_Basic(t *testing.T) {
 	}
 }
 
-func TestLiveDocs_MultipleDeletions(t *testing.T) {
-	ld := NewLiveDocs()
+func TestDocVisibilityMask_MultipleDeletions(t *testing.T) {
+	ld := NewDocVisibilityMask()
 	deleted := []DocID{10, 20, 30, 100, 200}
 	for _, id := range deleted {
-		ld.MarkDeleted(id)
+		ld.Hide(id)
 	}
 	if int(ld.DeletedCount()) != len(deleted) {
 		t.Errorf("DeletedCount=%d, want %d", ld.DeletedCount(), len(deleted))
 	}
 	for _, id := range deleted {
-		if ld.IsAlive(id) {
+		if ld.IsVisible(id) {
 			t.Errorf("DocID %d should be dead", id)
 		}
 	}
 	// DocID 0 was not deleted
-	if !ld.IsAlive(0) {
+	if !ld.IsVisible(0) {
 		t.Error("DocID 0 should be alive")
 	}
 }
 
-func TestLiveDocs_SerializeDeserialize(t *testing.T) {
-	ld := NewLiveDocs()
-	ld.MarkDeleted(5)
-	ld.MarkDeleted(10)
-	ld.MarkDeleted(100)
+func TestDocVisibilityMask_SerializeDeserialize(t *testing.T) {
+	ld := NewDocVisibilityMask()
+	ld.Hide(5)
+	ld.Hide(10)
+	ld.Hide(100)
 
 	data, err := ld.Serialize()
 	if err != nil {
 		t.Fatalf("Serialize failed: %v", err)
 	}
 
-	ld2 := NewLiveDocs()
+	ld2 := NewDocVisibilityMask()
 	if err := ld2.Deserialize(data); err != nil {
 		t.Fatalf("Deserialize failed: %v", err)
 	}
@@ -284,31 +284,31 @@ func TestLiveDocs_SerializeDeserialize(t *testing.T) {
 	if ld2.DeletedCount() != 3 {
 		t.Errorf("DeletedCount mismatch after deserialize: %d", ld2.DeletedCount())
 	}
-	if !ld2.IsAlive(1) {
+	if !ld2.IsVisible(1) {
 		t.Error("DocID 1 should still be alive")
 	}
-	if ld2.IsAlive(5) {
+	if ld2.IsVisible(5) {
 		t.Error("DocID 5 should be dead after deserialize")
 	}
-	if ld2.IsAlive(100) {
+	if ld2.IsVisible(100) {
 		t.Error("DocID 100 should be dead after deserialize")
 	}
 }
-func TestLiveDocs_Clone(t *testing.T) {
-	ld := NewLiveDocs()
-	ld.MarkDeleted(42)
+func TestDocVisibilityMask_Clone(t *testing.T) {
+	ld := NewDocVisibilityMask()
+	ld.Hide(42)
 
 	clone := ld.Clone()
-	if !clone.IsAlive(1) {
+	if !clone.IsVisible(1) {
 		t.Error("Clone: DocID 1 should be alive")
 	}
-	if clone.IsAlive(42) {
+	if clone.IsVisible(42) {
 		t.Error("Clone: DocID 42 should be dead")
 	}
 
 	// Verify clone has independent state
-	clone.MarkDeleted(99)
-	if !ld.IsAlive(99) {
+	clone.Hide(99)
+	if !ld.IsVisible(99) {
 		t.Error("Clone mutation should not affect original")
 	}
 	// ---------------------------------------------------------------------------
@@ -375,13 +375,13 @@ func TestDocIDCollector_Empty(t *testing.T) {
 	}
 }
 
-func TestDocIDCollector_WithLiveDocs(t *testing.T) {
-	ld := NewLiveDocs()
-	ld.MarkDeleted(2)
-	ld.MarkDeleted(3)
+func TestDocIDCollector_WithDocVisibilityMask(t *testing.T) {
+	ld := NewDocVisibilityMask()
+	ld.Hide(2)
+	ld.Hide(3)
 
 	c := NewDocIDCollector()
-	c.SetLiveDocs(ld)
+	c.SetDocVisibilityMask(ld)
 
 	c.Add(1) // alive
 	c.Add(2) // dead → filtered
@@ -462,15 +462,15 @@ func TestSliceIterator_SkipTo(t *testing.T) {
 	// SkipTo past end
 	pastEnd := NewEntryID(NewConjID(100, 0, 1), true)
 	got = it.SkipTo(pastEnd)
-	if !got.IsNULLEntry() {
-		t.Errorf("SkipTo past end should return NULLENTRY, got %d", got)
+	if !got.IsEnd() {
+		t.Errorf("SkipTo past end should return EndEntryID, got %d", got)
 	}
 }
 
 func TestSliceIterator_Empty(t *testing.T) {
 	it := NewSliceIterator(NewTerm("x", 0), nil)
-	if !it.Current().IsNULLEntry() {
-		t.Error("Empty iterator should return NULLENTRY from Current()")
+	if !it.Current().IsEnd() {
+		t.Error("Empty iterator should return EndEntryID from Current()")
 	}
 }
 
@@ -507,7 +507,7 @@ func TestFieldCursor_Basic(t *testing.T) {
 
 	fc := NewFieldCursor(it1, it2)
 	// After sort, the smaller EntryID should be first (exclude entry = smaller)
-	first := fc.GetCurEntryID()
+	first := fc.Current()
 	if first != entries2[0] {
 		t.Errorf("Smallest cursor should be first: got=%d want=%d", first, entries2[0])
 	}
@@ -529,8 +529,8 @@ func TestFieldCursor_SkipTo(t *testing.T) {
 
 	// Skip past end
 	got = fc.SkipTo(NewEntryID(NewConjID(100, 0, 1), true))
-	if !got.IsNULLEntry() {
-		t.Errorf("SkipTo past end should return NULLENTRY, got %d", got)
+	if !got.IsEnd() {
+		t.Errorf("SkipTo past end should return EndEntryID, got %d", got)
 	}
 }
 
@@ -548,40 +548,40 @@ func TestFieldCursor_MultipleIterators(t *testing.T) {
 
 	fc := NewFieldCursor(a, b)
 	// After sort: a points to 1 (smallest)
-	if got := fc.GetCurEntryID(); got != NewEntryID(NewConjID(1, 0, 1), true) {
+	if got := fc.Current(); got != NewEntryID(NewConjID(1, 0, 1), true) {
 		t.Errorf("Expected entry for conjID=1")
 	}
 
 	// Skip past 1
 	fc.SkipTo(NewEntryID(NewConjID(2, 0, 1), true))
 	// Now a points to 5, b points to 3 → smallest is 3
-	if got := fc.GetCurEntryID(); got != NewEntryID(NewConjID(3, 0, 1), true) {
+	if got := fc.Current(); got != NewEntryID(NewConjID(3, 0, 1), true) {
 		t.Errorf("Expected entry for conjID=3")
 	}
 	// After SkipTo(cj2): fc sorted as [b(cj3), a(cj5)]. Iters[0]=b at cj3.
 	// Advance past cj3: SkipTo(cj4) → b.SkipTo(cj4) → b moves from cj3 to cj7
-	// Sort: a(cj5), b(cj7) → Iters[0]=a at cj5 → GetCurEntryID returns cj5
+	// Sort: a(cj5), b(cj7) → Iters[0]=a at cj5 → Current returns cj5
 	fc.SkipTo(NewEntryID(NewConjID(4, 0, 1), true))
-	if got := fc.GetCurEntryID(); got != NewEntryID(NewConjID(5, 0, 1), true) {
+	if got := fc.Current(); got != NewEntryID(NewConjID(5, 0, 1), true) {
 		t.Errorf("Expected entry for conjID=5")
 	}
 
 	// Advance past cj5: SkipTo(cj6) → a.SkipTo(cj6) → a moves from cj5 to... wait, a has [cj1, cj5], after cj5 it reaches NULL
 	// Wait, a has [cj1, cj5]. After SkipTo(6), a is at NULL.
-	// Sort: b(cj7), a(NULL) → Iters[0]=b at cj7 → GetCurEntryID returns cj7
+	// Sort: b(cj7), a(NULL) → Iters[0]=b at cj7 → Current returns cj7
 	fc.SkipTo(NewEntryID(NewConjID(6, 0, 1), true))
-	if got := fc.GetCurEntryID(); got != NewEntryID(NewConjID(7, 0, 1), true) {
+	if got := fc.Current(); got != NewEntryID(NewConjID(7, 0, 1), true) {
 		t.Errorf("Expected entry for conjID=7")
 	}
 }
 
 func TestFieldCursor_Empty(t *testing.T) {
 	fc := NewFieldCursor()
-	if !fc.GetCurEntryID().IsNULLEntry() {
-		t.Error("Empty FieldCursor should return NULLENTRY")
+	if !fc.Current().IsEnd() {
+		t.Error("Empty FieldCursor should return EndEntryID")
 	}
-	if !fc.SkipTo(NewEntryID(NewConjID(1, 0, 1), true)).IsNULLEntry() {
-		t.Error("Empty FieldCursor SkipTo should return NULLENTRY")
+	if !fc.SkipTo(NewEntryID(NewConjID(1, 0, 1), true)).IsEnd() {
+		t.Error("Empty FieldCursor SkipTo should return EndEntryID")
 	}
 }
 
@@ -623,11 +623,11 @@ func TestConjunction_Builders(t *testing.T) {
 	conj.In("age", 25)
 	conj.In("city", "sh")
 
-	if conj.PredicateCount() != 2 {
-		t.Errorf("Should have 2 predicates, got %d", conj.PredicateCount())
+	if conj.FieldCount() != 2 {
+		t.Errorf("Should have 2 predicates, got %d", conj.FieldCount())
 	}
 
-	if size := conj.CalcConjSize(); size != 2 {
+	if size := conj.IncludeCount(); size != 2 {
 		t.Errorf("ConjSize should be 2 (both Include), got %d", size)
 	}
 }
@@ -637,7 +637,7 @@ func TestConjunction_InAndNotIn(t *testing.T) {
 	conj.In("age", 25).NotIn("city", "bj")
 
 	// Verify
-	if size := conj.CalcConjSize(); size != 1 {
+	if size := conj.IncludeCount(); size != 1 {
 		t.Errorf("ConjSize=1 (only 1 Include), got %d", size)
 	}
 }
@@ -645,7 +645,7 @@ func TestConjunction_InAndNotIn(t *testing.T) {
 func TestConjunction_Exclude(t *testing.T) {
 	conj := NewConjunction()
 	conj.Exclude("age", 30) // equivalent to NotIn
-	preds := conj.Predicates["age"]
+	preds := conj.Constraints["age"]
 	if len(preds) != 1 {
 		t.Fatalf("Should have 1 predicate for age")
 	}
@@ -657,7 +657,7 @@ func TestConjunction_Exclude(t *testing.T) {
 func TestConjunction_Include(t *testing.T) {
 	conj := NewConjunction()
 	conj.Include("tag", "vip")
-	preds := conj.Predicates["tag"]
+	preds := conj.Constraints["tag"]
 	if len(preds) != 1 {
 		t.Fatalf("Should have 1 predicate for tag")
 	}
@@ -669,11 +669,11 @@ func TestConjunction_Include(t *testing.T) {
 func TestConjunction_GreaterThan(t *testing.T) {
 	conj := NewConjunction()
 	conj.GreaterThan("age", 18)
-	preds := conj.Predicates["age"]
+	preds := conj.Constraints["age"]
 	if len(preds) != 1 {
 		t.Fatalf("Should have 1 predicate for age")
 	}
-	if preds[0].Operator != ValueOptGT {
+	if preds[0].Operator != ValueOpGT {
 		t.Errorf("Operator should be GT, got %v", preds[0].Operator)
 	}
 	if preds[0].Incl != true {
@@ -684,11 +684,11 @@ func TestConjunction_GreaterThan(t *testing.T) {
 func TestConjunction_LessThan(t *testing.T) {
 	conj := NewConjunction()
 	conj.LessThan("age", 60)
-	preds := conj.Predicates["age"]
+	preds := conj.Constraints["age"]
 	if len(preds) != 1 {
 		t.Fatalf("Should have 1 predicate for age")
 	}
-	if preds[0].Operator != ValueOptLT {
+	if preds[0].Operator != ValueOpLT {
 		t.Errorf("Operator should be LT, got %v", preds[0].Operator)
 	}
 
@@ -696,11 +696,11 @@ func TestConjunction_LessThan(t *testing.T) {
 func TestConjunction_Between(t *testing.T) {
 	conj := NewConjunction()
 	conj.Between("age", 18, 60)
-	preds := conj.Predicates["age"]
+	preds := conj.Constraints["age"]
 	if len(preds) != 1 {
 		t.Fatalf("Between should create 1 predicate, got %d", len(preds))
 	}
-	if preds[0].Operator != ValueOptBetween {
+	if preds[0].Operator != ValueOpBetween {
 		t.Errorf("Operator should be Between")
 	}
 	if preds[0].Incl != true {
@@ -710,7 +710,7 @@ func TestConjunction_Between(t *testing.T) {
 func TestConjunction_MultipleValues(t *testing.T) {
 	conj := NewConjunction()
 	conj.In("age", NewIntValues(18, 25, 30))
-	preds := conj.Predicates["age"]
+	preds := conj.Constraints["age"]
 	if len(preds) != 1 {
 		t.Fatalf("Should have 1 predicate for age")
 	}
@@ -723,32 +723,32 @@ func TestConjunction_SameFieldAddedTwice(t *testing.T) {
 	// Adding the same field again should be OK when one is Include and one is Exclude
 	conj.NotIn("age", 25)
 
-	if conj.PredicateCount() != 1 {
-		t.Errorf("Should still have 1 field entry, got %d", conj.PredicateCount())
+	if conj.FieldCount() != 1 {
+		t.Errorf("Should still have 1 field entry, got %d", conj.FieldCount())
 	}
-	preds := conj.Predicates["age"]
+	preds := conj.Constraints["age"]
 	if len(preds) != 2 {
 		t.Fatalf("Should have 2 ValueExprs for age, got %d", len(preds))
 	}
 }
 
-func TestConjunction_CalcConjSize_ExcludeOnly(t *testing.T) {
+func TestConjunction_IncludeCount_ExcludeOnly(t *testing.T) {
 	conj := NewConjunction()
 	conj.NotIn("age", 18)
 	conj.NotIn("city", "bj")
 
-	if size := conj.CalcConjSize(); size != 0 {
+	if size := conj.IncludeCount(); size != 0 {
 		t.Errorf("Pure exclude conjunction should have K=0, got %d", size)
 	}
 }
 
-func TestConjunction_CalcConjSize_Mixed(t *testing.T) {
+func TestConjunction_IncludeCount_Mixed(t *testing.T) {
 	conj := NewConjunction()
 	conj.In("age", 25)       // include → counts
 	conj.NotIn("city", "bj") // exclude → doesn't count
 	conj.In("tag", "vip")    // include → counts
 
-	if size := conj.CalcConjSize(); size != 2 {
+	if size := conj.IncludeCount(); size != 2 {
 		t.Errorf("Should have K=2, got %d", size)
 	}
 }
@@ -813,7 +813,7 @@ func TestDocIDList_Sort(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// RetrieveContext & IndexOpt
+// RetrieveContext & QueryOption
 // ---------------------------------------------------------------------------
 
 func TestNewRetrieveCtx(t *testing.T) {
@@ -836,7 +836,7 @@ func TestRetrieveCtx_WithObserver(t *testing.T) {
 		c.Observer = obs
 	})
 	if ctx.Observer != obs {
-		t.Error("Observer should be set via IndexOpt")
+		t.Error("Observer should be set via QueryOption")
 	}
 }
 
@@ -848,11 +848,11 @@ type testObserver struct {
 	cursorInit int
 }
 
-func (o *testObserver) OnRetrieveStart(ctx *RetrieveContext) { o.startCount++ }
-func (o *testObserver) OnRetrieveEnd(ctx *RetrieveContext)   { o.endCount++ }
-func (o *testObserver) OnMatch(docID DocID, conjID ConjID)   { o.matchCount++ }
-func (o *testObserver) OnExcludeSkip(docID DocID)            { o.exclCount++ }
-func (o *testObserver) OnCursorInit(fieldCount int)          { o.cursorInit++ }
+func (o *testObserver) OnRetrieveStart(ctx *RetrieveContext)          { o.startCount++ }
+func (o *testObserver) OnRetrieveEnd(ctx *RetrieveContext)            { o.endCount++ }
+func (o *testObserver) OnConjunctionMatch(docID DocID, conjID ConjID) { o.matchCount++ }
+func (o *testObserver) OnExcludeSkip(docID DocID)                     { o.exclCount++ }
+func (o *testObserver) OnCursorInit(fieldCount int)                   { o.cursorInit++ }
 
 // ---------------------------------------------------------------------------
 // Schema & FieldOption
@@ -876,18 +876,18 @@ func TestSchema(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// ValueExpr & Predicate
+// Constraint & Predicate
 // ---------------------------------------------------------------------------
 
-func TestNewValueExpr(t *testing.T) {
-	expr := NewValueExpr(ValueOptEQ, 42, true)
+func TestNewConstraint(t *testing.T) {
+	expr := NewConstraint(ValueOpEQ, 42, true)
 	if expr.Value != 42 {
 		t.Errorf("Value should be 42")
 	}
 	if expr.Incl != true {
 		t.Error("Incl should be true")
 	}
-	if expr.Operator != ValueOptEQ {
+	if expr.Operator != ValueOpEQ {
 		t.Error("Operator should be EQ")
 	}
 }
@@ -933,16 +933,16 @@ func TestTerm_String(t *testing.T) {
 // Write/Read roundtrip for various types
 // ---------------------------------------------------------------------------
 
-func TestValueExpr_JSONString(t *testing.T) {
-	expr := NewValueExpr(ValueOptEQ, 25, true)
+func TestConstraint_JSONString(t *testing.T) {
+	expr := NewConstraint(ValueOpEQ, 25, true)
 	s := expr.JSONString()
 	if len(s) == 0 {
 		t.Error("JSONString should not be empty")
 	}
 }
 
-func TestValueExpr_String(t *testing.T) {
-	expr := NewValueExpr(ValueOptEQ, 25, true)
+func TestConstraint_String(t *testing.T) {
+	expr := NewConstraint(ValueOpEQ, 25, true)
 	s := expr.String()
 	if len(s) == 0 {
 		t.Error("String should not be empty")
@@ -981,52 +981,52 @@ func TestNewStrValues(t *testing.T) {
 	}
 }
 
-func TestNewPredicateWithExpr(t *testing.T) {
-	expr := NewValueExpr(ValueOptGT, 18, true)
-	p := NewPredicateWithExpr("age", expr)
-	if p.Field != "age" || p.Operator != ValueOptGT {
+func TestNewPredicateWithConstraint(t *testing.T) {
+	expr := NewConstraint(ValueOpGT, 18, true)
+	p := NewPredicateWithConstraint("age", expr)
+	if p.Field != "age" || p.Operator != ValueOpGT {
 		t.Errorf("NewPredicate2 not correct: %+v", p)
 	}
 }
 
-func TestNewGTValueExpr(t *testing.T) {
-	expr := NewGTValueExpr(18)
-	if expr.Operator != ValueOptGT || expr.Incl != true || expr.Value != int64(18) {
-		t.Errorf("NewGTValueExpr not correct: %+v", expr)
+func TestNewGTConstraint(t *testing.T) {
+	expr := NewGTConstraint(18)
+	if expr.Operator != ValueOpGT || expr.Incl != true || expr.Value != int64(18) {
+		t.Errorf("NewGTConstraint not correct: %+v", expr)
 	}
 }
 
-func TestNewLTValueExpr(t *testing.T) {
-	expr := NewLTValueExpr(60)
-	if expr.Operator != ValueOptLT || expr.Incl != true || expr.Value != int64(60) {
-		t.Errorf("NewLTValueExpr not correct: %+v", expr)
+func TestNewLTConstraint(t *testing.T) {
+	expr := NewLTConstraint(60)
+	if expr.Operator != ValueOpLT || expr.Incl != true || expr.Value != int64(60) {
+		t.Errorf("NewLTConstraint not correct: %+v", expr)
 	}
 }
 
-func TestValueExpr_BooleanToken(t *testing.T) {
-	incl := NewValueExpr(ValueOptEQ, 1, true)
+func TestConstraint_BooleanToken(t *testing.T) {
+	incl := NewConstraint(ValueOpEQ, 1, true)
 	if tok := incl.BooleanToken(); tok != "in" {
 		t.Errorf("Include token should be 'in', got '%s'", tok)
 	}
 
-	excl := NewValueExpr(ValueOptEQ, 1, false)
+	excl := NewConstraint(ValueOpEQ, 1, false)
 	if tok := excl.BooleanToken(); tok != "not" {
 		t.Errorf("Exclude token should be 'not', got '%s'", tok)
 	}
 }
-func TestValueExpr_OperatorName(t *testing.T) {
+func TestConstraint_OperatorName(t *testing.T) {
 	// OperatorName returns "" for EQ (default case)
-	eq := NewValueExpr(ValueOptEQ, 1, true)
+	eq := NewConstraint(ValueOpEQ, 1, true)
 	if name := eq.OperatorName(); name != "" {
 		t.Errorf("EQ operator name should be '', got '%s'", name)
 	}
 
-	gt := NewValueExpr(ValueOptGT, 1, true)
+	gt := NewConstraint(ValueOpGT, 1, true)
 	if name := gt.OperatorName(); name != ">" {
 		t.Errorf("GT operator name should be '>', got '%s'", name)
 	}
 
-	lt := NewValueExpr(ValueOptLT, 1, true)
+	lt := NewConstraint(ValueOpLT, 1, true)
 	if name := lt.OperatorName(); name != "<" {
 		t.Errorf("LT operator name should be '<', got '%s'", name)
 	}
@@ -1062,8 +1062,8 @@ func TestEntries_LenSwapLess(t *testing.T) {
 func TestConjID_BitLayout(t *testing.T) {
 	// Verify size occupies bits [59:52] (8 bits)
 	cj := NewConjID(1, 0, 0xFF) // size = 255
-	if cj.Size() != 255 {
-		t.Errorf("Size should be 255, got %d", cj.Size())
+	if cj.IncludeCount() != 255 {
+		t.Errorf("Size should be 255, got %d", cj.IncludeCount())
 	}
 
 	// Verify index occupies bits [51:44] (8 bits)
@@ -1085,9 +1085,9 @@ func TestConjID_SortedByEntryID(t *testing.T) {
 		t.Error("Exclude entry should be less than Include entry for the same ConjID")
 	}
 
-	// GetConjID should strip the include/exclude bit
-	if incl.GetConjID() != excl.GetConjID() {
-		t.Error("GetConjID should be the same for both entries")
+	// ConjID should strip the include/exclude bit
+	if incl.ConjID() != excl.ConjID() {
+		t.Error("ConjID should be the same for both entries")
 	}
 }
 
@@ -1112,46 +1112,46 @@ func bitmapToSlice(b *BitmapDocSet) DocIDList {
 }
 
 // ---------------------------------------------------------------------------
-// LiveDocs serialization edge cases
+// DocVisibilityMask serialization edge cases
 // ---------------------------------------------------------------------------
 
-func TestLiveDocs_DeserializeEmpty(t *testing.T) {
+func TestDocVisibilityMask_DeserializeEmpty(t *testing.T) {
 	// Invalid data should fail
-	ld := NewLiveDocs()
+	ld := NewDocVisibilityMask()
 	if err := ld.Deserialize([]byte{0, 1, 2}); err == nil {
 		t.Error("Should fail on invalid data")
 	}
 }
 
-func TestLiveDocs_SerializeDeserialize_Empty(t *testing.T) {
-	ld := NewLiveDocs()
+func TestDocVisibilityMask_SerializeDeserialize_Empty(t *testing.T) {
+	ld := NewDocVisibilityMask()
 	data, err := ld.Serialize()
 	if err != nil {
 		t.Fatalf("Serialize failed: %v", err)
 	}
 
-	ld2 := NewLiveDocs()
+	ld2 := NewDocVisibilityMask()
 	if err := ld2.Deserialize(data); err != nil {
 		t.Fatalf("Deserialize failed: %v", err)
 	}
 	if ld2.DeletedCount() != 0 {
-		t.Errorf("Empty LiveDocs should have 0 deletions")
+		t.Errorf("Empty DocVisibilityMask should have 0 deletions")
 	}
 }
 
-func TestValueExpr_OperatorNameAll(t *testing.T) {
+func TestConstraint_OperatorNameAll(t *testing.T) {
 
 	ops := []struct {
-		op   ValueOpt
+		op   ValueOp
 		want string
 	}{
-		{ValueOptEQ, ""},
-		{ValueOptGT, ">"},
-		{ValueOptLT, "<"},
-		{ValueOptBetween, "between"},
+		{ValueOpEQ, ""},
+		{ValueOpGT, ">"},
+		{ValueOpLT, "<"},
+		{ValueOpBetween, "between"},
 	}
 	for _, tc := range ops {
-		expr := ValueExpr{Operator: tc.op}
+		expr := Constraint{Operator: tc.op}
 		if name := expr.OperatorName(); name != tc.want {
 			t.Errorf("OperatorName(%d) = '%s', want '%s'", tc.op, name, tc.want)
 		}
@@ -1181,8 +1181,8 @@ func TestDocIDCollector_ResetThenReuse(t *testing.T) {
 
 func TestFieldCursor_NilIterators(t *testing.T) {
 	fc := NewFieldCursor(nil)
-	if !fc.GetCurEntryID().IsNULLEntry() {
-		t.Error("Nil iterator should produce NULLENTRY")
+	if !fc.Current().IsEnd() {
+		t.Error("Nil iterator should produce EndEntryID")
 	}
 }
 
@@ -1222,14 +1222,14 @@ func TestConjunction_AddPredicates(t *testing.T) {
 	p1 := NewPredicate("age", true, 25)
 	p2 := NewPredicate("city", true, "bj")
 	conj := NewConjunction().AddPredicates(p1, p2)
-	if conj.PredicateCount() != 2 {
-		t.Errorf("Should have 2 predicate fields, got %d", conj.PredicateCount())
+	if conj.FieldCount() != 2 {
+		t.Errorf("Should have 2 predicate fields, got %d", conj.FieldCount())
 	}
 }
 
 func TestConjunction_AddPredicateValues(t *testing.T) {
 	conj := NewConjunction().AddPredicateValues("age", true, NewIntValues(18, 25))
-	preds := conj.Predicates["age"]
+	preds := conj.Constraints["age"]
 	if len(preds) != 1 {
 		t.Fatalf("Should have 1 predicate, got %d", len(preds))
 	}
@@ -1251,7 +1251,7 @@ func TestFieldCursor_DumpInfo(t *testing.T) {
 
 func TestIndexerSettings(t *testing.T) {
 	s := IndexerSettings{
-		FieldConfig: map[BEField]FieldOption{
+		FieldConfig: map[FieldName]FieldOption{
 			"age": {Encoder: "number"},
 		},
 	}
@@ -1285,12 +1285,12 @@ func TestSentinelErrors(t *testing.T) {
 
 func TestSliceIterator_SkipToEmpty(t *testing.T) {
 	it := NewSliceIterator(NewTerm("x", 0), nil)
-	if !it.Current().IsNULLEntry() {
-		t.Error("Empty iterator should return NULLENTRY")
+	if !it.Current().IsEnd() {
+		t.Error("Empty iterator should return EndEntryID")
 	}
 	got := it.SkipTo(NewEntryID(NewConjID(1, 0, 0), true))
-	if !got.IsNULLEntry() {
-		t.Error("SkipTo on empty iterator should return NULLENTRY")
+	if !got.IsEnd() {
+		t.Error("SkipTo on empty iterator should return EndEntryID")
 	}
 }
 
@@ -1363,7 +1363,7 @@ func TestFieldCursor_FiltersNilIterators(t *testing.T) {
 		NewEntryID(NewConjID(1, 0, 0), true),
 	})
 	fc := NewFieldCursor(nil, realIter)
-	if fc.GetCurEntryID() != NewEntryID(NewConjID(1, 0, 0), true) {
+	if fc.Current() != NewEntryID(NewConjID(1, 0, 0), true) {
 		t.Error("Nil iterators should be filtered out")
 	}
 	if len(fc.Iters) != 1 {
@@ -1428,7 +1428,7 @@ func TestKStartEntryID_RangePartition(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Phase 1: K-Group Elimination — ReachEnd & CompactLast
+// Phase 1: K-Group Elimination — ReachEnd & RemoveExhausted
 // ---------------------------------------------------------------------------
 
 func TestSliceIterator_ReachEnd(t *testing.T) {
@@ -1474,7 +1474,7 @@ func TestFieldCursor_ReachEnd(t *testing.T) {
 	}
 }
 
-func TestFieldCursors_CompactLast(t *testing.T) {
+func TestFieldCursors_RemoveExhausted(t *testing.T) {
 	eids1 := []EntryID{NewEntryID(NewConjID(1, 0, 1), true)}
 	eids2 := []EntryID{NewEntryID(NewConjID(5, 0, 1), true)}
 
@@ -1486,9 +1486,9 @@ func TestFieldCursors_CompactLast(t *testing.T) {
 	fcs.Append(fc2)
 
 	// Both cursors alive
-	fcs.CompactLast()
+	fcs.RemoveExhausted()
 	if fcs.Len() != 2 {
-		t.Errorf("CompactLast should keep both cursors, got %d", fcs.Len())
+		t.Errorf("RemoveExhausted should keep both cursors, got %d", fcs.Len())
 	}
 
 	// Exhaust fc1
@@ -1498,9 +1498,9 @@ func TestFieldCursors_CompactLast(t *testing.T) {
 	fcs2.Append(fc1)
 	fcs2.Append(fc2)
 	fcs2.Sort()
-	fcs2.CompactLast()
+	fcs2.RemoveExhausted()
 	if fcs2.Len() != 1 {
-		t.Errorf("CompactLast should remove exhausted fc1, got %d", fcs2.Len())
+		t.Errorf("RemoveExhausted should remove exhausted fc1, got %d", fcs2.Len())
 	}
 	// Remaining cursor should be fc2
 	if fcs2.Peek() != eids2[0] {
@@ -1508,7 +1508,7 @@ func TestFieldCursors_CompactLast(t *testing.T) {
 	}
 }
 
-func TestFieldCursors_CompactLast_AllExhausted(t *testing.T) {
+func TestFieldCursors_RemoveExhausted_AllExhausted(t *testing.T) {
 	eids := []EntryID{NewEntryID(NewConjID(1, 0, 1), true)}
 	fc := NewFieldCursor(NewSliceIterator(NewTerm("x", 0), eids))
 	fc.SkipTo(NewEntryID(NewConjID(10, 0, 1), true))
@@ -1516,10 +1516,10 @@ func TestFieldCursors_CompactLast_AllExhausted(t *testing.T) {
 	fcs := NewFieldCursors(1)
 	fcs.Append(fc)
 	fcs.Sort()
-	fcs.CompactLast()
+	fcs.RemoveExhausted()
 
 	if fcs.Len() != 0 {
-		t.Error("CompactLast should clear all exhausted cursors")
+		t.Error("RemoveExhausted should clear all exhausted cursors")
 	}
 }
 

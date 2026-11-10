@@ -8,7 +8,7 @@ import (
 // merge layer.
 //
 // It deliberately lives above BooleanEngine: a single BooleanEngine-level
-// LiveDocs filter cannot represent update/recreate semantics across full and
+// DocVisibilityMask filter cannot represent update/recreate semantics across full and
 // delta indexes, because it would filter the same DocID in both layers.
 type BitmapDocSet struct {
 	bits *roaring64.Bitmap

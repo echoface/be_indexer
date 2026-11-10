@@ -20,8 +20,8 @@ import (
 
 func buildCodes(t *testing.T, p geo.GeoParam) []string {
 	t.Helper()
-	expr := core.NewValueExpr(core.ValueOptEQ, p, true) // returns core.ValueExpr by value (core/boolean_expr.go:97)
-	postings, err := geo.Encoder{}.Build(&expr)
+	expr := core.NewConstraint(core.ValueOpEQ, p, true) // returns core.Constraint by value (core/predicate.go:97)
+	postings, err := geo.Encoder{}.EncodeConstraint(&expr)
 	if err != nil {
 		t.Fatalf("Build(%+v): %v", p, err)
 	}
@@ -100,10 +100,10 @@ func TestEncoderBuild(t *testing.T) {
 
 	convey.Convey("build rejects bad input", t, func() {
 		enc := geo.Encoder{}
-		badTypeExpr := core.NewValueExpr(core.ValueOptEQ, "not-a-geoparam", true)
-		_, err := enc.Build(&badTypeExpr)
+		badTypeExpr := core.NewConstraint(core.ValueOpEQ, "not-a-geoparam", true)
+		_, err := enc.EncodeConstraint(&badTypeExpr)
 		convey.So(err, convey.ShouldNotBeNil)
-		_, err = enc.Build(nil)
+		_, err = enc.EncodeConstraint(nil)
 		convey.So(err, convey.ShouldNotBeNil)
 
 		bad := []geo.GeoParam{
@@ -115,8 +115,8 @@ func TestEncoderBuild(t *testing.T) {
 			{Lat: math.NaN(), Lng: 116.4, Radius: 100},
 		}
 		for _, p := range bad {
-			expr := core.NewValueExpr(core.ValueOptEQ, p, true)
-			_, err := enc.Build(&expr)
+			expr := core.NewConstraint(core.ValueOpEQ, p, true)
+			_, err := enc.EncodeConstraint(&expr)
 			convey.So(err, convey.ShouldNotBeNil)
 		}
 	})
@@ -124,7 +124,7 @@ func TestEncoderBuild(t *testing.T) {
 
 func TestEncoderQuery(t *testing.T) {
 	convey.Convey("query expands to prefixes 3..8", t, func() {
-		out, err := geo.Encoder{}.Query(geo.GeoQuery{Lat: 39.9042, Lng: 116.4074})
+		out, err := geo.Encoder{}.EncodeAssignment(geo.GeoQuery{Lat: 39.9042, Lng: 116.4074})
 		convey.So(err, convey.ShouldBeNil)
 		convey.So(len(out), convey.ShouldEqual, 6)
 
@@ -135,9 +135,9 @@ func TestEncoderQuery(t *testing.T) {
 	})
 
 	convey.Convey("query rejects bad input", t, func() {
-		_, err := geo.Encoder{}.Query("nope")
+		_, err := geo.Encoder{}.EncodeAssignment("nope")
 		convey.So(err, convey.ShouldNotBeNil)
-		_, err = geo.Encoder{}.Query(geo.GeoQuery{Lat: math.NaN(), Lng: 0})
+		_, err = geo.Encoder{}.EncodeAssignment(geo.GeoQuery{Lat: math.NaN(), Lng: 0})
 		convey.So(err, convey.ShouldNotBeNil)
 	})
 }

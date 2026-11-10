@@ -28,7 +28,7 @@ type MPHBuilder struct {
 
 func NewMPHBuilder(env segment.BuilderEnv) *MPHBuilder {
 	return &MPHBuilder{
-		merger: segment.NewSortedPostingMerger(env.MaxPostingsInMemory, env.TmpDir),
+		merger: segment.NewSortedPostingMerger(env.MaxDistinctKeysInMemory, env.TmpDir),
 	}
 }
 

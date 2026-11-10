@@ -19,7 +19,7 @@ import (
 // for test-sized inputs) overflow error.
 func mustWritePL(t *testing.T, entries core.Entries) []byte {
 	t.Helper()
-	b, err := segment.WriteFlatPostingList(entries)
+	b, err := segment.EncodeFlatPostingList(entries)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +70,7 @@ func TestContainerRoundTrip(t *testing.T) {
 			cr, err := mph.NewMPHReader(blob)
 			convey.So(err, convey.ShouldBeNil)
 
-			iters, err := cr.MatchQuery(segment.BlockContext{Pl: pl}, "field", "hello")
+			iters, err := cr.MatchQuery(segment.BlockContext{PostingBlock: pl}, "field", "hello")
 			convey.So(err, convey.ShouldBeNil)
 			convey.So(len(iters), convey.ShouldEqual, 1)
 			convey.So(iters[0].Current(), convey.ShouldEqual, eid)
@@ -100,19 +100,19 @@ func TestContainerRoundTrip(t *testing.T) {
 			convey.So(err, convey.ShouldBeNil)
 
 			convey.Convey("hit alpha", func() {
-				iters, err := cr.MatchQuery(segment.BlockContext{Pl: postingBlock}, "f", "alpha")
+				iters, err := cr.MatchQuery(segment.BlockContext{PostingBlock: postingBlock}, "f", "alpha")
 				convey.So(err, convey.ShouldBeNil)
 				convey.So(len(iters), convey.ShouldEqual, 1)
 				convey.So(iters[0].Current(), convey.ShouldEqual, eidA)
 			})
 			convey.Convey("hit gamma", func() {
-				iters, err := cr.MatchQuery(segment.BlockContext{Pl: postingBlock}, "f", "gamma")
+				iters, err := cr.MatchQuery(segment.BlockContext{PostingBlock: postingBlock}, "f", "gamma")
 				convey.So(err, convey.ShouldBeNil)
 				convey.So(len(iters), convey.ShouldEqual, 1)
 				convey.So(iters[0].Current(), convey.ShouldEqual, eidC)
 			})
 			convey.Convey("miss", func() {
-				iters, err := cr.MatchQuery(segment.BlockContext{Pl: postingBlock}, "f", "delta")
+				iters, err := cr.MatchQuery(segment.BlockContext{PostingBlock: postingBlock}, "f", "delta")
 				convey.So(err, convey.ShouldBeNil)
 				convey.So(len(iters), convey.ShouldEqual, 0)
 			})
@@ -159,6 +159,8 @@ func TestContainerRoundTrip(t *testing.T) {
 			cb := mph.NewMPHBuilder(segment.BuilderEnv{})
 			for i := 0; i < size; i++ {
 				term := fmt.Sprintf("term_%06d", i)
+				eid := core.NewEntryID(core.NewConjID(core.DocID(i), 0, 1), true)
+				copy(usePosting[int(off):], mustWritePL(t, core.Entries{eid}))
 				ref := segment.PostingRef{Offset: off, Count: 1}
 				off += uint64(perEntry)
 				cb.AddPosting(string(term), ref)
@@ -172,12 +174,12 @@ func TestContainerRoundTrip(t *testing.T) {
 
 			for i := 0; i < size; i++ {
 				term := fmt.Sprintf("term_%06d", i)
-				iters, err := cr.MatchQuery(segment.BlockContext{Pl: usePosting}, "f", term)
+				iters, err := cr.MatchQuery(segment.BlockContext{PostingBlock: usePosting}, "f", term)
 				convey.So(err, convey.ShouldBeNil)
 				convey.So(len(iters), convey.ShouldEqual, 1)
 			}
 
-			iters, err := cr.MatchQuery(segment.BlockContext{Pl: usePosting}, "f", "not_a_term")
+			iters, err := cr.MatchQuery(segment.BlockContext{PostingBlock: usePosting}, "f", "not_a_term")
 			convey.So(err, convey.ShouldBeNil)
 			convey.So(len(iters), convey.ShouldEqual, 0)
 		})
@@ -367,11 +369,11 @@ func BenchmarkMPH_Find(b *testing.B) {
 				case 0:
 					term := keys[size/2]
 					for i := 0; i < b.N; i++ {
-						_, _ = cr.MatchQuery(segment.BlockContext{Pl: usePosting}, "f", term)
+						_, _ = cr.MatchQuery(segment.BlockContext{PostingBlock: usePosting}, "f", term)
 					}
 				case 1:
 					for i := 0; i < b.N; i++ {
-						_, _ = cr.MatchQuery(segment.BlockContext{Pl: usePosting}, "f", "zzzz_nonexistent")
+						_, _ = cr.MatchQuery(segment.BlockContext{PostingBlock: usePosting}, "f", "zzzz_nonexistent")
 					}
 				case 2:
 					idx := make([]string, b.N)
@@ -384,7 +386,7 @@ func BenchmarkMPH_Find(b *testing.B) {
 					}
 					b.ResetTimer()
 					for i := 0; i < b.N; i++ {
-						_, _ = cr.MatchQuery(segment.BlockContext{Pl: usePosting}, "f", idx[i])
+						_, _ = cr.MatchQuery(segment.BlockContext{PostingBlock: usePosting}, "f", idx[i])
 					}
 				}
 			})
@@ -441,14 +443,14 @@ func TestMPHQueryZeroAlloc(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reader: %v", err)
 	}
-	ctx := segment.BlockContext{Pl: pl}
+	ctx := segment.BlockContext{PostingBlock: pl}
 
 	// Warm up (first call may lazily allocate reader-internal state).
 	if _, err := cr.MatchQuery(ctx, "field", "hello"); err != nil {
 		t.Fatalf("warmup: %v", err)
 	}
 
-	// A hit returns one cursor: WriteFlatPostingList cursor construction is the
+	// A hit returns one cursor: EncodeFlatPostingList cursor construction is the
 	// only permitted allocation. Assert the term->[]byte conversion adds none by
 	// comparing hit vs miss: a miss returns nil and must be fully zero-alloc.
 	missAllocs := testing.AllocsPerRun(200, func() {

@@ -44,7 +44,7 @@ func NewACBuilder(env BuilderEnv) *ACBuilder {
 		outputs: make([][]uint32, 1, 1024),
 		symOf:   make(map[rune]uint32),
 		syms:    []rune{0},
-		merger:  NewSortedPostingMerger(env.MaxPostingsInMemory, env.TmpDir),
+		merger:  NewSortedPostingMerger(env.MaxDistinctKeysInMemory, env.TmpDir),
 	}
 	return builder
 }

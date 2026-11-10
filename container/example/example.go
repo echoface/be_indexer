@@ -3,7 +3,7 @@
 // WITHOUT touching engine/segment/builder code:
 //
 //  1. Implement parser.PredicateEncoder: translate business predicates into
-//     EncodedPosting (build) and EncodedQuery (query).
+//     EncodedRecord (build) and EncodedQuery (query).
 //  2. Implement segment.IndexBuilder/IndexReader: serialize the
 //     per-field term→PostingRef table into a byte block and answer queries
 //     against it with zero-copy posting cursors.
@@ -12,10 +12,10 @@
 //
 // Data flow:
 //
-//	Build:  doc_exporter → sink.AddRecord(field, record, entries)
+//	Build:  BuildSegmentFromDocs → EncodeConstraint → sink.AddRecord(field, record, entries)
 //	        → segment writer → IndexBuilder.AddRecord(record, entries) → block bytes
-//	Query:  engine initCursors
-//	        → SegmentReader.IndexQuery(field, containerName, Value)
+//	Query:  EncodeAssignment → engine initCursors
+//	        → ResolvedField.MatchQuery(Value)
 //	        → IndexReader.MatchQuery → PostingIterators → K-Groups merge
 //
 // The demo semantic: stored terms are path prefixes; a query string matches
@@ -47,13 +47,13 @@ type Encoder struct{}
 
 var _ parser.PredicateEncoder = Encoder{}
 
-// Build emits one posting per distinct prefix pattern. The segment writer
+// EncodeConstraint emits one record per distinct prefix pattern. The segment writer
 // hands every (term, PostingRef) of the field to our IndexBuilder.
-func (Encoder) Build(expr *core.ValueExpr) ([]parser.EncodedPosting, error) {
+func (Encoder) EncodeConstraint(expr *core.Constraint) ([]parser.EncodedRecord, error) {
 	if expr == nil {
 		return nil, fmt.Errorf("example: nil value expression")
 	}
-	if expr.Operator != core.ValueOptEQ {
+	if expr.Operator != core.ValueOpEQ {
 		return nil, fmt.Errorf("%w: example encoder only supports EQ, got %d", core.ErrUnsupportedPredicate, expr.Operator)
 	}
 	patterns, err := parser.ValuesToStrings(expr.Value)
@@ -62,7 +62,7 @@ func (Encoder) Build(expr *core.ValueExpr) ([]parser.EncodedPosting, error) {
 	}
 	patterns = util.DistinctString(patterns)
 	sort.Strings(patterns)
-	out := make([]parser.EncodedPosting, 0, len(patterns))
+	out := make([]parser.EncodedRecord, 0, len(patterns))
 	for _, p := range patterns {
 		if p == "" {
 			return nil, fmt.Errorf("example: empty prefix pattern")
@@ -70,14 +70,14 @@ func (Encoder) Build(expr *core.ValueExpr) ([]parser.EncodedPosting, error) {
 		if len(p) > 255 {
 			return nil, fmt.Errorf("example: pattern longer than 255 bytes")
 		}
-		out = append(out, parser.EncodedPosting{Record: p})
+		out = append(out, parser.EncodedRecord{Record: p})
 	}
 	return out, nil
 }
 
-// Query emits one container lookup per assignment string. The engine routes
+// EncodeAssignment emits one container lookup per assignment string. The engine routes
 // via the field's schema IndexType, so the encoder only produces values.
-func (Encoder) Query(value interface{}) ([]parser.EncodedQuery, error) {
+func (Encoder) EncodeAssignment(value interface{}) ([]parser.EncodedQuery, error) {
 	texts, err := parser.ValuesToStrings(value)
 	if err != nil {
 		return nil, err
@@ -104,7 +104,7 @@ type termRef struct {
 
 func NewPrefixBuilder(env segment.BuilderEnv) *PrefixBuilder {
 	return &PrefixBuilder{
-		merger: segment.NewSortedPostingMerger(env.MaxPostingsInMemory, env.TmpDir),
+		merger: segment.NewSortedPostingMerger(env.MaxDistinctKeysInMemory, env.TmpDir),
 	}
 }
 
@@ -197,7 +197,7 @@ func NewPrefixReader(b []byte) (segment.IndexReader, error) {
 // MatchQuery returns posting cursors for every stored prefix that prefixes the
 // query string. Linear scan keeps the template simple; production containers
 // should exploit their layout (binary search, trie, interval tree...).
-func (r *PrefixIndex) MatchQuery(ctx segment.BlockContext, field core.BEField, query interface{}) ([]core.PostingIterator, error) {
+func (r *PrefixIndex) MatchQuery(ctx segment.BlockContext, field core.FieldName, query interface{}) ([]core.PostingIterator, error) {
 	q, ok := query.(string)
 	if !ok {
 		return nil, fmt.Errorf("example: query must be string, got %T", query)
@@ -207,7 +207,7 @@ func (r *PrefixIndex) MatchQuery(ctx segment.BlockContext, field core.BEField, q
 		if !strings.HasPrefix(q, e.term) {
 			continue
 		}
-		pl, err := segment.NewPostingListAt(ctx.Pl, e.ref)
+		pl, err := segment.NewPostingListAt(ctx.PostingBlock, e.ref)
 		if err != nil {
 			return nil, fmt.Errorf("example: term %q posting: %w", e.term, err)
 		}
@@ -217,7 +217,7 @@ func (r *PrefixIndex) MatchQuery(ctx segment.BlockContext, field core.BEField, q
 }
 
 func init() {
-	parser.RegisterPredicateEncoder(IndexName, func(core.BEField, core.FieldOption) (parser.PredicateEncoder, error) {
+	parser.RegisterPredicateEncoder(IndexName, func(core.FieldName, core.FieldOption) (parser.PredicateEncoder, error) {
 		return Encoder{}, nil
 	})
 	segment.RegisterIndex(IndexName, segment.IndexDef{

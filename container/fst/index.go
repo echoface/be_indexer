@@ -81,7 +81,7 @@ func stringToBytes(s string) []byte {
 // posting list, or an empty result if the term is not indexed. The posting count
 // is read from the FlatPostingList header at the resolved offset, so the FST
 // value carries only the offset.
-func (r *FSTIndex) MatchQuery(ctx segment.BlockContext, field core.BEField, query interface{}) ([]core.PostingIterator, error) {
+func (r *FSTIndex) MatchQuery(ctx segment.BlockContext, field core.FieldName, query interface{}) ([]core.PostingIterator, error) {
 	term, ok := query.(string)
 	if !ok {
 		return nil, fmt.Errorf("fst: query must be string, got %T", query)
@@ -96,10 +96,10 @@ func (r *FSTIndex) MatchQuery(ctx segment.BlockContext, field core.BEField, quer
 	if !exists {
 		return nil, nil
 	}
-	if off > uint64(len(ctx.Pl)) {
-		return nil, fmt.Errorf("fst: term %q offset %d out of range (block=%d)", term, off, len(ctx.Pl))
+	if off > uint64(len(ctx.PostingBlock)) {
+		return nil, fmt.Errorf("fst: term %q offset %d out of range (block=%d)", term, off, len(ctx.PostingBlock))
 	}
-	pl, err := segment.NewFlatPostingList(ctx.Pl[off:])
+	pl, err := segment.NewFlatPostingList(ctx.PostingBlock[off:])
 	if err != nil {
 		return nil, fmt.Errorf("fst: term %q posting: %w", term, err)
 	}

@@ -148,7 +148,11 @@ func buildElementaryBounds(points []int64) []int64 {
 	bounds := make([]int64, 0, 2*len(points)+1)
 	bounds = append(bounds, math.MinInt64)
 	for i, p := range points {
-		bounds = append(bounds, p)
+		// MinInt64 is already the first bound; duplicating it creates an empty
+		// leaf and makes leafCovers subtract one from MinInt64.
+		if p != bounds[len(bounds)-1] {
+			bounds = append(bounds, p)
+		}
 		if i+1 < len(points) {
 			if p+1 <= points[i+1]-1 {
 				bounds = append(bounds, p+1)
@@ -228,7 +232,7 @@ func (pe *postingEmitter) emit(entries []core.EntryID) (uint32, error) {
 	if err != nil {
 		return 0, err
 	}
-	pl, err := WriteFlatPostingList(entries)
+	pl, err := EncodeFlatPostingList(entries)
 	if err != nil {
 		return 0, err
 	}
@@ -386,25 +390,29 @@ func NewRangeReader(b []byte) (*RangeIndex, error) {
 	nodeCount := binary.LittleEndian.Uint32(b[8:12])
 	pointCount := binary.LittleEndian.Uint32(b[12:16])
 	if nodeCount == 0 && pointCount == 0 {
+		if len(b) != 16 {
+			return nil, fmt.Errorf("invalid empty range index")
+		}
 		return &RangeIndex{}, nil
 	}
 
-	headerSize := 16
-	nodesSize := int(nodeCount) * rangeNodeRecordSize
-	pointsSize := int(pointCount)*8 + int(pointCount)*4
-	prefix := headerSize + nodesSize + pointsSize
-	if pad := (8 - prefix%8) % 8; pad != 0 {
-		prefix += pad
-	}
-	if len(b) < prefix {
+	const headerSize = 16
+	// Validate in uint64 before converting offsets to int on 32-bit hosts.
+	prefixSize := uint64(headerSize) + uint64(nodeCount)*rangeNodeRecordSize + uint64(pointCount)*12
+	prefixSize = (prefixSize + 7) &^ 7
+	if uint64(len(b)) < prefixSize {
 		return nil, fmt.Errorf("truncated range index body")
 	}
+	prefix := int(prefixSize)
 
 	off := headerSize
 	var nodes []nodeRecord
 	if nodeCount > 0 {
 		nodes = make([]nodeRecord, nodeCount)
 		for i := range nodes {
+			if binary.LittleEndian.Uint32(b[off+20:off+24]) != 0 {
+				return nil, fmt.Errorf("range node %d has nonzero padding", i)
+			}
 			nodes[i] = nodeRecord{
 				split:   int64(binary.LittleEndian.Uint64(b[off : off+8])),
 				left:    int32(binary.LittleEndian.Uint32(b[off+8 : off+12])),
@@ -430,13 +438,17 @@ func NewRangeReader(b []byte) (*RangeIndex, error) {
 		}
 	}
 
-	return &RangeIndex{
+	ri := &RangeIndex{
 		nodeCount: nodeCount,
 		nodes:     nodes,
 		pointKeys: pointKeys,
 		pointOff:  pointOff,
 		postings:  b[prefix:],
-	}, nil
+	}
+	if err := ri.validate(); err != nil {
+		return nil, err
+	}
+	return ri, nil
 }
 
 // findPoint returns the posting offset+1 for exact key q, or 0 if q is not a
@@ -462,7 +474,7 @@ func (ri *RangeIndex) findPoint(q int64) uint32 {
 // Stab returns posting iterators for every interval that contains q, unioning
 // the point index (equality hits at exactly q) and the segment tree (ranges
 // covering q). Iterators are zero-copy views into the mapped posting region.
-func (ri *RangeIndex) Stab(field core.BEField, q int64) ([]core.PostingIterator, error) {
+func (ri *RangeIndex) Stab(field core.FieldName, q int64) ([]core.PostingIterator, error) {
 	var iters []core.PostingIterator
 
 	// Point index: exact equality entries at q.
@@ -502,7 +514,7 @@ func (ri *RangeIndex) Stab(field core.BEField, q int64) ([]core.PostingIterator,
 
 // MatchQuery implements IndexReader by performing a stabbing query on the hybrid
 // container, returning posting cursors.
-func (ri *RangeIndex) MatchQuery(ctx BlockContext, field core.BEField, query interface{}) ([]core.PostingIterator, error) {
+func (ri *RangeIndex) MatchQuery(ctx BlockContext, field core.FieldName, query interface{}) ([]core.PostingIterator, error) {
 	point, ok := query.(int64)
 	if !ok {
 		return nil, fmt.Errorf("range container expects int64 query, got %T", query)

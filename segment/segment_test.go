@@ -86,12 +86,12 @@ func TestBuilderRangeRoundTrip(t *testing.T) {
 		buf := new(bytes.Buffer)
 		var sink interface {
 			SetDocCount(int)
-			AddField(core.BEField, core.FieldOption) error
+			AddField(core.FieldName, core.FieldOption) error
 			AddRecord(field string, record any, entries []core.EntryID) error
 			Write() error
 		}
 		if spill {
-			sink = mustSegmentBuilder(t, buf, SegmentBuilderOptions{MaxPostingsInMemory: 1, TmpDir: t.TempDir()})
+			sink = mustSegmentBuilder(t, buf, SegmentBuilderOptions{MaxDistinctKeysInMemory: 1, TmpDir: t.TempDir()})
 		} else {
 			sink = NewInMemorySegmentBuilder(buf)
 		}
@@ -125,7 +125,7 @@ func TestBuilderRangeRoundTrip(t *testing.T) {
 		}
 		var out []core.EntryID
 		for _, it := range iters {
-			for e := it.Current(); !e.IsNULLEntry(); e = it.SkipTo(e + 1) {
+			for e := it.Current(); !e.IsEnd(); e = it.SkipTo(e + 1) {
 				out = append(out, e)
 			}
 		}
@@ -369,7 +369,7 @@ func corruptSegmentWithBlock(block BlockDef) []byte {
 	badMeta := MetaBlock{
 		Version:  SegmentVersionV5,
 		DocCount: 1,
-		Fields:   []FieldMetaDump{{Name: "age", IndexType: core.IndexNameDefault, Encoder: core.IndexNameDefault}},
+		Fields:   []FieldMetadata{{Name: "age", IndexType: core.IndexNameDefault, Encoder: core.IndexNameDefault}},
 		BlockIndex: map[string]BlockDef{
 			"k1_age_dict": block,
 		},
@@ -380,19 +380,6 @@ func corruptSegmentWithBlock(block BlockDef) []byte {
 	}
 	bad := append([]byte{}, MagicNumber...)
 	bad = append(bad, metaBytes...)
-	footer := make([]byte, 8)
-	binaryLittleEndianPutUint64(footer, metaOffset)
-	bad = append(bad, footer...)
+	bad = binary.LittleEndian.AppendUint64(bad, metaOffset)
 	return bad
-}
-
-func binaryLittleEndianPutUint64(b []byte, v uint64) {
-	b[0] = byte(v)
-	b[1] = byte(v >> 8)
-	b[2] = byte(v >> 16)
-	b[3] = byte(v >> 24)
-	b[4] = byte(v >> 32)
-	b[5] = byte(v >> 40)
-	b[6] = byte(v >> 48)
-	b[7] = byte(v >> 56)
 }

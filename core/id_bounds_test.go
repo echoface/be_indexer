@@ -21,7 +21,7 @@ func TestConjIDEncodingBounds(t *testing.T) {
 	}
 
 	cid := core.NewConjID(core.DocID(core.MaxDocID), 255, 255)
-	if cid.DocID() != core.DocID(core.MaxDocID) || cid.Index() != 255 || cid.Size() != 255 {
+	if cid.DocID() != core.DocID(core.MaxDocID) || cid.Index() != 255 || cid.IncludeCount() != 255 {
 		t.Fatalf("unexpected decoded conj id: %s", cid.String())
 	}
 }

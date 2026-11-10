@@ -10,23 +10,23 @@ import (
 func TestParseRangeExpr(t *testing.T) {
 	cases := []struct {
 		name string
-		op   core.ValueOpt
+		op   core.ValueOp
 		val  interface{}
 		want []IntInterval
 		err  bool
 	}{
-		{"eq single", core.ValueOptEQ, 5, []IntInterval{{5, 5}}, false},
-		{"eq multi", core.ValueOptEQ, []int{1, 2, 3}, []IntInterval{{1, 1}, {2, 2}, {3, 3}}, false},
-		{"gt", core.ValueOptGT, 18, []IntInterval{{19, math.MaxInt64}}, false},
-		{"gt max", core.ValueOptGT, int64(math.MaxInt64), nil, false},
-		{"lt", core.ValueOptLT, 22, []IntInterval{{math.MinInt64, 21}}, false},
-		{"lt min", core.ValueOptLT, int64(math.MinInt64), nil, false},
-		{"between", core.ValueOptBetween, []int64{10, 20}, []IntInterval{{10, 20}}, false},
-		{"between single point", core.ValueOptBetween, []int64{7, 7}, []IntInterval{{7, 7}}, false},
-		{"between out of order", core.ValueOptBetween, []int64{20, 10}, nil, true},
-		{"between wrong arity", core.ValueOptBetween, []int64{1, 2, 3}, nil, true},
-		{"gt wrong arity", core.ValueOptGT, []int64{1, 2}, nil, true},
-		{"bad op", core.ValueOpt(99), 1, nil, true},
+		{"eq single", core.ValueOpEQ, 5, []IntInterval{{5, 5}}, false},
+		{"eq multi", core.ValueOpEQ, []int{1, 2, 3}, []IntInterval{{1, 1}, {2, 2}, {3, 3}}, false},
+		{"gt", core.ValueOpGT, 18, []IntInterval{{19, math.MaxInt64}}, false},
+		{"gt max", core.ValueOpGT, int64(math.MaxInt64), nil, false},
+		{"lt", core.ValueOpLT, 22, []IntInterval{{math.MinInt64, 21}}, false},
+		{"lt min", core.ValueOpLT, int64(math.MinInt64), nil, false},
+		{"between", core.ValueOpBetween, []int64{10, 20}, []IntInterval{{10, 20}}, false},
+		{"between single point", core.ValueOpBetween, []int64{7, 7}, []IntInterval{{7, 7}}, false},
+		{"between out of order", core.ValueOpBetween, []int64{20, 10}, nil, true},
+		{"between wrong arity", core.ValueOpBetween, []int64{1, 2, 3}, nil, true},
+		{"gt wrong arity", core.ValueOpGT, []int64{1, 2}, nil, true},
+		{"bad op", core.ValueOp(99), 1, nil, true},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

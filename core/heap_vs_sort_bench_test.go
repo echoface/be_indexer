@@ -34,7 +34,7 @@ type fieldCursorSort_ struct {
 
 func newFieldCursorSort_(iters []PostingIterator) fieldCursorSort_ {
 	for i := 0; i < len(iters); i++ {
-		if iters[i] == nil || iters[i].Current().IsNULLEntry() {
+		if iters[i] == nil || iters[i].Current().IsEnd() {
 			iters = append(iters[:i], iters[i+1:]...)
 			i--
 		}
@@ -48,7 +48,7 @@ func newFieldCursorSort_(iters []PostingIterator) fieldCursorSort_ {
 
 func (f *fieldCursorSort_) skipToSort(id EntryID) EntryID {
 	if len(f.Iters) == 0 {
-		return NULLENTRY
+		return EndEntryID
 	}
 	res := f.Iters[0].SkipTo(id)
 	sort.Slice(f.Iters, func(i, j int) bool {

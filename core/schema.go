@@ -12,7 +12,7 @@ import (
 const schemaHashDomain = "be_indexer/schema/v1"
 
 // NormalizeFieldOption returns the canonical indexing configuration for a field.
-func NormalizeFieldOption(field BEField, option FieldOption) (FieldOption, error) {
+func NormalizeFieldOption(field FieldName, option FieldOption) (FieldOption, error) {
 	if field == "" {
 		return FieldOption{}, fmt.Errorf("field name is required")
 	}
@@ -29,7 +29,7 @@ func NormalizeFieldOption(field BEField, option FieldOption) (FieldOption, error
 }
 
 type SchemaField struct {
-	Field  BEField
+	Field  FieldName
 	Option FieldOption
 }
 

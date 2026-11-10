@@ -31,26 +31,26 @@ func TestDocument_Prepare(t *testing.T) {
 		convey.So(doc.ID, convey.ShouldEqual, 12)
 		convey.So(len(doc.Cons), convey.ShouldEqual, 1)
 
-		convey.So(doc.Cons[0].CalcConjSize(), convey.ShouldEqual, 1)
+		convey.So(doc.Cons[0].IncludeCount(), convey.ShouldEqual, 1)
 	})
 }
 
 func TestConjunction_AddBoolExpr(t *testing.T) {
 	convey.Convey("test expressions", t, func() {
 		conj := core.NewConjunction().NotIn("age", core.NewIntValues(12, 14))
-		convey.So(len(conj.Predicates), convey.ShouldEqual, 1)
-		convey.So(conj.Predicates["age"][0].Incl, convey.ShouldBeFalse)
+		convey.So(len(conj.Constraints), convey.ShouldEqual, 1)
+		convey.So(conj.Constraints["age"][0].Incl, convey.ShouldBeFalse)
 
 		conj.In("tag", core.NewStrValues("tag1"))
-		convey.So(len(conj.Predicates), convey.ShouldEqual, 2)
-		convey.So(conj.Predicates["tag"][0].Incl, convey.ShouldBeTrue)
+		convey.So(len(conj.Constraints), convey.ShouldEqual, 2)
+		convey.So(conj.Constraints["tag"][0].Incl, convey.ShouldBeTrue)
 
-		convey.So(conj.CalcConjSize(), convey.ShouldEqual, 1)
+		convey.So(conj.IncludeCount(), convey.ShouldEqual, 1)
 
 		conj.AddPredicates(core.NewPredicate("ip", true, core.NewStrValues("localhost", "127.0.0.1")))
-		convey.So(len(conj.Predicates), convey.ShouldEqual, 3)
+		convey.So(len(conj.Constraints), convey.ShouldEqual, 3)
 
-		convey.So(conj.CalcConjSize(), convey.ShouldEqual, 2)
+		convey.So(conj.IncludeCount(), convey.ShouldEqual, 2)
 
 		convey.So(func() {
 			conj.In("age", 1)
@@ -78,22 +78,22 @@ func TestDocument_AddConjunctions(t *testing.T) {
 		conj := core.NewConjunction().
 			In("age", []int{20, 30, 40}).NotIn("age", []int{30, 50}).
 			NotIn("city", core.NewStrValues("bj", "sh"))
-		convey.So(conj.CalcConjSize(), convey.ShouldEqual, 1)
+		convey.So(conj.IncludeCount(), convey.ShouldEqual, 1)
 
 		conj = core.NewConjunction().
 			In("age", []int{20, 30, 40}).In("age", []int{30, 50}).
 			NotIn("city", core.NewStrValues("bj", "sh"))
-		convey.So(conj.CalcConjSize(), convey.ShouldEqual, 1)
+		convey.So(conj.IncludeCount(), convey.ShouldEqual, 1)
 
 		conj = core.NewConjunction().
 			In("age", []int{20, 30, 40}).In("age", []int{30, 50}).
 			In("city", core.NewStrValues("bj", "sh"))
-		convey.So(conj.CalcConjSize(), convey.ShouldEqual, 2)
+		convey.So(conj.IncludeCount(), convey.ShouldEqual, 2)
 
 		conj = core.NewConjunction().
 			NotIn("age", []int{20, 30, 40}).In("age", []int{30, 50}).
 			In("city", core.NewStrValues("bj", "sh"))
-		convey.So(conj.CalcConjSize(), convey.ShouldEqual, 2)
+		convey.So(conj.IncludeCount(), convey.ShouldEqual, 2)
 	})
 
 }

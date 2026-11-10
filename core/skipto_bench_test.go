@@ -7,7 +7,7 @@ import (
 
 // SkipTo Optimization: Galloping Search
 //
-// The mergeCursors loop advances wildcard/field cursors through sorted
+// The matchConjunctions loop advances wildcard/field cursors through sorted
 // EntryID arrays. ~90% of SkipTo calls are "seq +1" — the next target
 // is the immediate next entry.
 //

@@ -235,7 +235,7 @@ func verify(root string) {
 }
 
 func assertQuery(ce interface {
-	Retrieve(core.Assignments, ...core.IndexOpt) (*core.BitmapDocSet, error)
+	Retrieve(core.Assignments, ...core.QueryOption) (*core.BitmapDocSet, error)
 }, q core.Assignments, want ...core.DocID) {
 	b, err := ce.Retrieve(q)
 	if err != nil {

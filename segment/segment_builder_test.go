@@ -34,14 +34,14 @@ func TestSegmentBuilderSpillMatchesInMemory(t *testing.T) {
 		buf := new(bytes.Buffer)
 		var sink interface {
 			SetDocCount(int)
-			AddField(core.BEField, core.FieldOption) error
+			AddField(core.FieldName, core.FieldOption) error
 			AddRecord(string, any, []core.EntryID) error
 			Write() error
 		}
 		if spill {
 			sink = mustSegmentBuilder(t, buf, SegmentBuilderOptions{
-				MaxPostingsInMemory: 2,
-				TmpDir:              t.TempDir(),
+				MaxDistinctKeysInMemory: 2,
+				TmpDir:                  t.TempDir(),
 			})
 		} else {
 			sink = NewInMemorySegmentBuilder(buf)
@@ -98,7 +98,7 @@ func TestSegmentBuilderSpillMatchesInMemory(t *testing.T) {
 
 func TestSegmentBuilderACMatcherAcrossRuns(t *testing.T) {
 	buf := new(bytes.Buffer)
-	b := mustSegmentBuilder(t, buf, SegmentBuilderOptions{MaxPostingsInMemory: 1, TmpDir: t.TempDir()})
+	b := mustSegmentBuilder(t, buf, SegmentBuilderOptions{MaxDistinctKeysInMemory: 1, TmpDir: t.TempDir()})
 	b.SetDocCount(4)
 	b.AddField("keyword", core.FieldOption{IndexType: core.IndexNameACMatcher, Encoder: core.IndexNameACMatcher})
 	postings := []struct {
@@ -130,7 +130,7 @@ func TestSegmentBuilderACMatcherAcrossRuns(t *testing.T) {
 	// "apple"->2, "app"->1, "banana"->3 all occur in the text.
 	got := make([]core.EntryID, 0, len(iters))
 	for _, iter := range iters {
-		for e := iter.Current(); !e.IsNULLEntry(); e = iter.SkipTo(e + 1) {
+		for e := iter.Current(); !e.IsEnd(); e = iter.SkipTo(e + 1) {
 			got = append(got, e)
 		}
 	}
@@ -149,9 +149,9 @@ func TestSegmentBuilderACMatcherAcrossRuns(t *testing.T) {
 func TestSegmentBuilderV5EmbedsWildcards(t *testing.T) {
 	buf := new(bytes.Buffer)
 	b := mustSegmentBuilder(t, buf, SegmentBuilderOptions{
-		MaxPostingsInMemory: 1,
-		TmpDir:              t.TempDir(),
-		Wildcards:           core.Entries{30, 10},
+		MaxDistinctKeysInMemory: 1,
+		TmpDir:                  t.TempDir(),
+		Wildcards:               core.Entries{30, 10},
 	})
 	b.SetDocCount(2)
 	b.AddField("a", core.FieldOption{Encoder: "number"})
@@ -188,12 +188,12 @@ func TestSegmentBuilderSpillMatchesInMemoryWildcards(t *testing.T) {
 		var sink interface {
 			SetDocCount(int)
 			SetWildcards(core.Entries)
-			AddField(core.BEField, core.FieldOption) error
+			AddField(core.FieldName, core.FieldOption) error
 			AddRecord(string, any, []core.EntryID) error
 			Write() error
 		}
 		if spill {
-			sink = mustSegmentBuilder(t, buf, SegmentBuilderOptions{MaxPostingsInMemory: 1, TmpDir: t.TempDir()})
+			sink = mustSegmentBuilder(t, buf, SegmentBuilderOptions{MaxDistinctKeysInMemory: 1, TmpDir: t.TempDir()})
 		} else {
 			sink = NewInMemorySegmentBuilder(buf)
 		}
@@ -238,7 +238,7 @@ func TestSegmentBuilderWildcardStreamingMatchesBuffered(t *testing.T) {
 	build := func(useBlockFile bool) []byte {
 		buf := new(bytes.Buffer)
 		tmp := t.TempDir()
-		b := mustSegmentBuilder(t, buf, SegmentBuilderOptions{MaxPostingsInMemory: 1, TmpDir: tmp})
+		b := mustSegmentBuilder(t, buf, SegmentBuilderOptions{MaxDistinctKeysInMemory: 1, TmpDir: tmp})
 		b.SetDocCount(2)
 		if err := b.AddField("a", core.FieldOption{Encoder: "number"}); err != nil {
 			t.Fatal(err)
@@ -292,8 +292,8 @@ func TestSegmentBuilderSpillsAndCleansRuns(t *testing.T) {
 	runsDir := filepath.Join(t.TempDir(), "runs")
 	buf := new(bytes.Buffer)
 	b := mustSegmentBuilder(t, buf, SegmentBuilderOptions{
-		MaxPostingsInMemory: 1,
-		TmpDir:              runsDir,
+		MaxDistinctKeysInMemory: 1,
+		TmpDir:                  runsDir,
 	})
 	b.SetDocCount(2)
 	if err := b.AddField("a", core.FieldOption{Encoder: "number"}); err != nil {
@@ -315,8 +315,8 @@ func TestSegmentBuilderSpillsAndCleansRuns(t *testing.T) {
 	if err := b.Write(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(runsDir); !os.IsNotExist(err) {
-		t.Fatalf("expected spill dir to be removed after Write, stat err=%v", err)
+	if remaining, err := os.ReadDir(runsDir); err != nil || len(remaining) != 0 {
+		t.Fatalf("expected empty preserved spill parent after Write, remaining=%v err=%v", remaining, err)
 	}
 
 	// The segment must still be valid and complete.
@@ -329,10 +329,10 @@ func TestSegmentBuilderSpillsAndCleansRuns(t *testing.T) {
 // enabling spill without a temp dir is a configuration error, not a silent
 // fallback to unbounded in-memory accumulation.
 func TestNewSegmentBuilderRejectsSpillWithoutTmpDir(t *testing.T) {
-	if _, err := NewSegmentBuilder(new(bytes.Buffer), SegmentBuilderOptions{MaxPostingsInMemory: 1}); err == nil {
+	if _, err := NewSegmentBuilder(new(bytes.Buffer), SegmentBuilderOptions{MaxDistinctKeysInMemory: 1}); err == nil {
 		t.Fatal("expected error for spill enabled without TmpDir")
 	}
-	if _, err := NewSegmentBuilder(new(bytes.Buffer), SegmentBuilderOptions{MaxPostingsInMemory: 0}); err != nil {
+	if _, err := NewSegmentBuilder(new(bytes.Buffer), SegmentBuilderOptions{MaxDistinctKeysInMemory: 0}); err != nil {
 		t.Fatalf("zero-value options must not fail: %v", err)
 	}
 }

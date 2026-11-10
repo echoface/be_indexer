@@ -56,7 +56,7 @@ func stringToBytes(s string) []byte {
 	return unsafe.Slice(unsafe.StringData(s), len(s))
 }
 
-func (r *MPHIndex) MatchQuery(ctx segment.BlockContext, field core.BEField, query interface{}) ([]core.PostingIterator, error) {
+func (r *MPHIndex) MatchQuery(ctx segment.BlockContext, field core.FieldName, query interface{}) ([]core.PostingIterator, error) {
 	term, ok := query.(string)
 	if !ok {
 		return nil, fmt.Errorf("mph: query must be string, got %T", query)
@@ -69,7 +69,7 @@ func (r *MPHIndex) MatchQuery(ctx segment.BlockContext, field core.BEField, quer
 	if err != nil {
 		return nil, err
 	}
-	pl, err := segment.NewPostingListAt(ctx.Pl, ref)
+	pl, err := segment.NewPostingListAt(ctx.PostingBlock, ref)
 	if err != nil {
 		return nil, fmt.Errorf("mph: term %q posting: %w", term, err)
 	}

@@ -133,11 +133,11 @@ type testObserver struct {
 	cursorInit int
 }
 
-func (o *testObserver) OnRetrieveStart(*core.RetrieveContext)   { o.startCount++ }
-func (o *testObserver) OnRetrieveEnd(*core.RetrieveContext)     { o.endCount++ }
-func (o *testObserver) OnMatch(docID core.DocID, _ core.ConjID) { o.matchCount++ }
-func (o *testObserver) OnExcludeSkip(core.DocID)                { o.exclCount++ }
-func (o *testObserver) OnCursorInit(int)                        { o.cursorInit++ }
+func (o *testObserver) OnRetrieveStart(*core.RetrieveContext)              { o.startCount++ }
+func (o *testObserver) OnRetrieveEnd(*core.RetrieveContext)                { o.endCount++ }
+func (o *testObserver) OnConjunctionMatch(docID core.DocID, _ core.ConjID) { o.matchCount++ }
+func (o *testObserver) OnExcludeSkip(core.DocID)                           { o.exclCount++ }
+func (o *testObserver) OnCursorInit(int)                                   { o.cursorInit++ }
 
 // ==========================================================================
 func TestEngine_BasicQuery(t *testing.T) {
@@ -374,15 +374,15 @@ func TestEngine_ObserverMatchCount(t *testing.T) {
 		t.Errorf("expected 2 results, got %v", res)
 	}
 	if obs.matchCount != 2 {
-		t.Errorf("OnMatch called %d times, want 2", obs.matchCount)
+		t.Errorf("OnConjunctionMatch called %d times, want 2", obs.matchCount)
 	}
 }
 
 // ==========================================================================
-// 6. LiveDocs filtering
+// 6. DocVisibilityMask filtering
 // ==========================================================================
 
-func TestEngine_LiveDocs(t *testing.T) {
+func TestEngine_DocVisibilityMask(t *testing.T) {
 	fields := simpleFields()
 	docs := []*core.Document{
 		core.NewDocument(1).AddConjunction(core.NewConjunction().In("a", 25)),
@@ -394,17 +394,17 @@ func TestEngine_LiveDocs(t *testing.T) {
 	res, _ := eng.Retrieve(core.Assignments{"a": 25})
 	resSlice := bitmapToSlice(res)
 	if len(resSlice) != 3 {
-		t.Fatalf("without LiveDocs: want 3, got %v", resSlice)
+		t.Fatalf("without DocVisibilityMask: want 3, got %v", resSlice)
 	}
 
-	ld := core.NewLiveDocs()
-	ld.MarkDeleted(2)
-	eng.SetLiveDocs(ld)
+	ld := core.NewDocVisibilityMask()
+	ld.Hide(2)
+	eng.SetDocVisibilityMask(ld)
 
 	res, _ = eng.Retrieve(core.Assignments{"a": 25})
 	resSlice = bitmapToSlice(res)
 	if len(resSlice) != 2 {
-		t.Fatalf("with LiveDocs: want 2, got %v", resSlice)
+		t.Fatalf("with DocVisibilityMask: want 2, got %v", resSlice)
 	}
 	for _, id := range resSlice {
 		if id == 2 {
@@ -413,16 +413,16 @@ func TestEngine_LiveDocs(t *testing.T) {
 	}
 }
 
-func TestEngine_LiveDocsAllDeleted(t *testing.T) {
+func TestEngine_DocVisibilityMaskAllDeleted(t *testing.T) {
 	fields := simpleFields()
 	docs := []*core.Document{
 		core.NewDocument(1).AddConjunction(core.NewConjunction().In("a", 25)),
 	}
 	eng := buildSingleEngine(t, fields, docs)
 
-	ld := core.NewLiveDocs()
-	ld.MarkDeleted(1)
-	eng.SetLiveDocs(ld)
+	ld := core.NewDocVisibilityMask()
+	ld.Hide(1)
+	eng.SetDocVisibilityMask(ld)
 
 	res, _ := eng.Retrieve(core.Assignments{"a": 25})
 	resSlice := bitmapToSlice(res)
@@ -491,7 +491,7 @@ func TestEngine_TopKEarlyStop(t *testing.T) {
 		t.Fatalf("want %d docs, got %v", k, got)
 	}
 	if matchObs.matchCount != k {
-		t.Fatalf("early stop failed: OnMatch fired %d times, want %d", matchObs.matchCount, k)
+		t.Fatalf("early stop failed: OnConjunctionMatch fired %d times, want %d", matchObs.matchCount, k)
 	}
 }
 

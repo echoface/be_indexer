@@ -7,15 +7,17 @@ import (
 const (
 	MaxDocID = 0x7FFFFFFFFFF
 
-	NULLENTRY EntryID = 0xFFFFFFFFFFFFFFFF
+	// EndEntryID marks an exhausted cursor and sorts after every valid entry.
+	EndEntryID EntryID = 0xFFFFFFFFFFFFFFFF
 )
 
 type (
-	// ConjID bits layout
-	// [ reserved(4bit) | size(8bit) | index(8bit)  | negSign(1bit) | docID(43bit) ]
+	// ConjID identifies a conjunction by DocID and index and encodes its K.
+	// [ reserved(4bit) | K(8bit) | index(8bit) | negSign(1bit) | docID(43bit) ]
 	ConjID uint64
 
-	// EntryID
+	// EntryID is a sorting key for a conjunction and its Include/Exclude polarity.
+	// The same key can occur in different posting lists; it does not encode a term.
 	// [--ConjID(60bit)--|--empty(3bit)--|--incl/excl(1bit)--]
 	EntryID uint64
 
@@ -31,8 +33,8 @@ func ValidIdxOrSize(v int) bool {
 	return v >= 0 && v < 256
 }
 
-// NewConjID:
-// [ reserved(4bit) | size(8bit) | index(8bit)  | negSign(1bit) | docID(43bit) ]
+// NewConjID encodes a document, conjunction index, and Include count (size = K).
+// [ reserved(4bit) | K(8bit) | index(8bit) | negSign(1bit) | docID(43bit) ]
 func NewConjID(docID DocID, index, size int) ConjID {
 	if !ValidDocID(docID) || !ValidIdxOrSize(index) || !ValidIdxOrSize(size) {
 		panic(fmt.Errorf("id overflow, id:%d, idx:%d size:%d", docID, index, size))
@@ -45,7 +47,8 @@ func NewConjID(docID DocID, index, size int) ConjID {
 	return ConjID((uint64(size) << 52) | (uint64(index) << 44) | (negSign << 43) | (uint64(docID)))
 }
 
-func (id ConjID) Size() int {
+// IncludeCount decodes K from bits 52-59, without reading the original rule.
+func (id ConjID) IncludeCount() int {
 	return int((id >> 52) & 0xFF)
 }
 
@@ -63,7 +66,7 @@ func (id ConjID) DocID() DocID {
 }
 
 func (id ConjID) String() string {
-	return fmt.Sprintf("<%d,%d,%d>", id.DocID(), id.Index(), id.Size())
+	return fmt.Sprintf("<%d,%d,%d>", id.DocID(), id.Index(), id.IncludeCount())
 }
 
 // NewEntryID encode entry id
@@ -83,19 +86,21 @@ func (entry EntryID) IsInclude() bool {
 	return entry&0x01 > 0
 }
 
-func (entry EntryID) GetConjID() ConjID {
+// ConjID removes the reserved bits and Include/Exclude bit to recover the ID.
+func (entry EntryID) ConjID() ConjID {
 	return ConjID(entry >> 4)
 }
 
-func (entry EntryID) IsNULLEntry() bool {
-	return entry == NULLENTRY
+// IsEnd reports whether entry is the exhausted-cursor sentinel.
+func (entry EntryID) IsEnd() bool {
+	return entry == EndEntryID
 }
 
 func (entry EntryID) DocString() string {
-	if entry.IsNULLEntry() {
+	if entry.IsEnd() {
 		return "nil"
 	}
-	return fmt.Sprintf("%d#%d", entry.GetConjID().DocID(), entry&0x01)
+	return fmt.Sprintf("%d#%d", entry.ConjID().DocID(), entry&0x01)
 }
 
 // Len Entries sort API

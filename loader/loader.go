@@ -197,9 +197,9 @@ func loadDeltas(root string, fields core.Schema, schemaHash string, deltas []man
 				return nil, nil, nil, err
 			}
 			if laterChangedDocs.Cardinality() > 0 {
-				ld := core.NewLiveDocs()
-				laterChangedDocs.ForEach(func(id core.DocID) { ld.MarkDeleted(id) })
-				deltaEngine.SetLiveDocs(ld)
+				ld := core.NewDocVisibilityMask()
+				laterChangedDocs.ForEach(func(id core.DocID) { ld.Hide(id) })
+				deltaEngine.SetDocVisibilityMask(ld)
 			}
 			deltaEngines = append(deltaEngines, deltaEngine)
 		}

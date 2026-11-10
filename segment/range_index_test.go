@@ -31,7 +31,7 @@ func stabResult(t *testing.T, ri *RangeIndex, q int64) []core.EntryID {
 	}
 	var got []core.EntryID
 	for _, it := range iters {
-		for e := it.Current(); !e.IsNULLEntry(); {
+		for e := it.Current(); !e.IsEnd(); {
 			got = append(got, e)
 			e = it.SkipTo(e + 1)
 		}
@@ -385,14 +385,14 @@ func (w *captureBlockWriter) WriteBlock(kind string, data []byte) error {
 
 // TestRangeBuilderSpillParity verifies that the RangeBuilder produces
 // query-identical output whether it holds everything in memory or spills sorted
-// runs to disk (MaxPostingsInMemory small enough to force multiple flushes).
+// runs to disk (MaxDistinctKeysInMemory small enough to force multiple flushes).
 // This guards the SortedPostingMerger routing added for large-field builds.
 func TestRangeBuilderSpillParity(t *testing.T) {
 	rng := rand.New(rand.NewSource(7))
 	intervals := pointHeavyIntervals(rng, 5000)
 
-	inMem := collectRangeBlock(t, BuilderEnv{MaxPostingsInMemory: 0, TmpDir: ""}, intervals)
-	spilled := collectRangeBlock(t, BuilderEnv{MaxPostingsInMemory: 128, TmpDir: t.TempDir()}, intervals)
+	inMem := collectRangeBlock(t, BuilderEnv{MaxDistinctKeysInMemory: 0, TmpDir: ""}, intervals)
+	spilled := collectRangeBlock(t, BuilderEnv{MaxDistinctKeysInMemory: 128, TmpDir: t.TempDir()}, intervals)
 
 	riMem, err := NewRangeReader(inMem)
 	if err != nil {

@@ -10,7 +10,7 @@ var tokenizerFactory = map[string]func() ValueTokenizer{}
 
 func init() {
 	RegisterValueTokenizer("default", func() ValueTokenizer { return NewDefaultTokenizer() })
-	RegisterValueTokenizer("number", func() ValueTokenizer { return NewNumberParser() })
+	RegisterValueTokenizer("number", func() ValueTokenizer { return NewNumberTokenizer() })
 	RegisterValueTokenizer("geohash", func() ValueTokenizer { return NewGeoHashParser(nil) })
 }
 

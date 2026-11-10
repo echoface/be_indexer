@@ -73,9 +73,9 @@ var precisionTable = []struct {
 // PrecisionForRadius picks the coarsest precision whose cell width is at most
 // radius/2, so the over-coverage error (~half cell diagonal) stays a bounded
 // fraction of the radius. Falls back to the finest precision for tiny radii.
-// Callers must validate the radius first (Build enforces (0, maxRadiusMeters]);
+// Callers must validate the radius first (EncodeConstraint enforces (0, maxRadiusMeters]);
 // out-of-range input falls back to the finest precision without error.
-// Reference points (matching docs/geo-design-v3.md §5.1):
+// Reference points (matching docs/history/geo/geo-design-v3.md §5.1):
 // 50km→5, 5km→6, 1km→7, 100m→8.
 func PrecisionForRadius(radiusMeters int) int {
 	half := float64(radiusMeters) / 2
@@ -92,11 +92,11 @@ type Encoder struct{}
 
 var _ parser.PredicateEncoder = Encoder{}
 
-// Build expands the circle into covering geohash cells and emits one plain
+// EncodeConstraint expands the circle into covering geohash cells and emits one plain
 // term posting per cell. Output is deduplicated and sorted so built segments
 // stay deterministic (CreateGeohash emits duplicates; CompressGeoHash
 // returns map-ordered codes).
-func (e Encoder) Build(expr *core.ValueExpr) ([]parser.EncodedPosting, error) {
+func (e Encoder) EncodeConstraint(expr *core.Constraint) ([]parser.EncodedRecord, error) {
 	if expr == nil {
 		return nil, fmt.Errorf("proximitygeo: nil value expression")
 	}
@@ -117,16 +117,16 @@ func (e Encoder) Build(expr *core.ValueExpr) ([]parser.EncodedPosting, error) {
 	codes = util.DistinctString(codes)
 	sort.Strings(codes)
 
-	out := make([]parser.EncodedPosting, 0, len(codes))
+	out := make([]parser.EncodedRecord, 0, len(codes))
 	for _, c := range codes {
-		out = append(out, parser.EncodedPosting{Record: c})
+		out = append(out, parser.EncodedRecord{Record: c})
 	}
 	return out, nil
 }
 
-// Query geohash-encodes the point at max precision and emits one term lookup
+// EncodeAssignment geohash-encodes the point at max precision and emits one term lookup
 // per prefix length in [minPrecision, maxQueryPrecision].
-func (e Encoder) Query(value interface{}) ([]parser.EncodedQuery, error) {
+func (e Encoder) EncodeAssignment(value interface{}) ([]parser.EncodedQuery, error) {
 	q, ok := value.(GeoQuery)
 	if !ok {
 		return nil, fmt.Errorf("proximitygeo: expected geo.GeoQuery, got %T", value)
@@ -151,7 +151,7 @@ func validateLatLng(lat, lng float64) error {
 }
 
 func init() {
-	parser.RegisterPredicateEncoder(EncoderName, func(core.BEField, core.FieldOption) (parser.PredicateEncoder, error) {
+	parser.RegisterPredicateEncoder(EncoderName, func(core.FieldName, core.FieldOption) (parser.PredicateEncoder, error) {
 		return Encoder{}, nil
 	})
 }

@@ -3,7 +3,6 @@ package segment
 import (
 	"encoding/binary"
 	"fmt"
-	"unsafe"
 
 	"github.com/echoface/be_indexer/core"
 )
@@ -33,8 +32,7 @@ const postingHeaderSize = 8
 // PostingRef locates a posting list inside a posting block: Offset is the byte
 // offset of the list's header within the block, Count is the number of EntryIDs.
 // It is the single physical handle shared by the dictionary (FlatDict) and the
-// AC automaton output, so neither has to re-parse the posting header or do a
-// second dictionary lookup on the query hot path.
+// AC automaton output, so neither needs a second dictionary lookup.
 type PostingRef struct {
 	Offset uint64
 	Count  uint32
@@ -45,19 +43,11 @@ type FlatPostingList struct {
 	data  []core.EntryID
 }
 
-// NewPostingListAt maps the posting list of `count` EntryIDs whose header starts
-// at block-relative `offset` inside `block`. It trusts the count carried by the
-// caller (dict/AC ref), skipping the on-block count header read while still
-// validating bounds.
+// NewPostingListAt maps a referenced posting list after checking bounds, count
+// agreement and padding. Aligned little-endian input is borrowed without copying.
 func NewPostingListAt(block []byte, ref PostingRef) (*FlatPostingList, error) {
-	if ref.Count == 0 {
-		return &FlatPostingList{count: 0}, nil
-	}
-	// Compare via subtraction so Offset near MaxUint64 cannot wrap past the
-	// bound check through Offset+header overflow.
-	blockLen := uint64(len(block))
-	if ref.Offset > blockLen || blockLen-ref.Offset < postingHeaderSize+uint64(ref.Count)*8 {
-		return nil, fmt.Errorf("posting ref out of range: offset=%d count=%d block=%d", ref.Offset, ref.Count, len(block))
+	if err := validatePostingRef(block, ref); err != nil {
+		return nil, err
 	}
 	start := ref.Offset + postingHeaderSize
 	data := mapEntryIDs(block[start:start+uint64(ref.Count)*8], ref.Count)
@@ -70,13 +60,12 @@ func NewFlatPostingList(b []byte) (*FlatPostingList, error) {
 		return nil, fmt.Errorf("invalid flat posting list size: %d", len(b))
 	}
 	count := binary.LittleEndian.Uint32(b[0:4])
-	if count == 0 {
-		return &FlatPostingList{count: 0}, nil
-	}
-
-	expectedLen := postingHeaderSize + int(count)*8
-	if len(b) < expectedLen {
+	expectedLen := postingHeaderSize + uint64(count)*8
+	if uint64(len(b)) < expectedLen {
 		return nil, fmt.Errorf("truncated posting list: expected %d bytes, got %d", expectedLen, len(b))
+	}
+	if binary.LittleEndian.Uint32(b[4:8]) != 0 {
+		return nil, fmt.Errorf("invalid posting padding")
 	}
 
 	data := mapEntryIDs(b[postingHeaderSize:expectedLen], count)
@@ -87,21 +76,26 @@ func NewFlatPostingList(b []byte) (*FlatPostingList, error) {
 }
 
 // mapEntryIDs returns a []core.EntryID view over raw. It uses a zero-copy
-// unsafe mapping when the backing memory is 8-byte aligned (the normal path for
-// a correctly aligned segment), and falls back to a decoded copy otherwise so
-// that callers never construct a misaligned uint64 slice.
+// unsafe mapping on little-endian hosts when the backing memory is 8-byte aligned,
+// and falls back to explicit little-endian decoding otherwise.
 func mapEntryIDs(raw []byte, count uint32) []core.EntryID {
-	ptr := unsafe.Pointer(&raw[0])
-	if uintptr(ptr)&7 == 0 {
-		return unsafe.Slice((*core.EntryID)(ptr), count)
+	return mapLittleEndian[core.EntryID](raw, count, nativeLittleEndian)
+}
+
+// validatePostingRef verifies a cross-block reference without mapping or
+// scanning the EntryIDs. All arithmetic stays uint64 until bounds are proven.
+func validatePostingRef(block []byte, ref PostingRef) error {
+	if ref.Offset > uint64(len(block)) || uint64(len(block))-ref.Offset < postingHeaderSize+uint64(ref.Count)*8 {
+		return fmt.Errorf("posting ref out of range: offset=%d count=%d block=%d", ref.Offset, ref.Count, len(block))
 	}
-	// Misaligned fallback: decode explicitly. This allocates, but only triggers
-	// when a block was not written through the aligned writer path.
-	data := make([]core.EntryID, count)
-	for i := uint32(0); i < count; i++ {
-		data[i] = core.EntryID(binary.LittleEndian.Uint64(raw[i*8 : i*8+8]))
+	header := block[ref.Offset : ref.Offset+postingHeaderSize]
+	if binary.LittleEndian.Uint32(header[:4]) != ref.Count {
+		return fmt.Errorf("posting ref count mismatch at offset %d", ref.Offset)
 	}
-	return data
+	if binary.LittleEndian.Uint32(header[4:8]) != 0 {
+		return fmt.Errorf("invalid posting padding at offset %d", ref.Offset)
+	}
+	return nil
 }
 
 // NewPostingCursor creates an iterator over the mapped posting list.
@@ -113,12 +107,12 @@ func (pl *FlatPostingList) NewPostingCursor(term core.Term) core.PostingIterator
 	}
 }
 
-// WriteFlatPostingList serializes a slice of EntryIDs into flat bytes. It
+// EncodeFlatPostingList serializes a slice of EntryIDs into flat bytes. It
 // returns an error (instead of panicking) when the entry count would overflow
 // the uint32 count header or the required buffer would exceed the addressable
 // size, so an oversized posting list fails the build loudly rather than writing
 // a truncated, silently-corrupt block.
-func WriteFlatPostingList(entries []core.EntryID) ([]byte, error) {
+func EncodeFlatPostingList(entries []core.EntryID) ([]byte, error) {
 	if len(entries) > MaxPostingCount {
 		return nil, fmt.Errorf("posting list too large: %d entries exceeds uint32 count limit %d", len(entries), MaxPostingCount)
 	}
@@ -146,14 +140,14 @@ type flatPostingCursor struct {
 
 func (c *flatPostingCursor) Current() core.EntryID {
 	if c.idx >= c.pl.count {
-		return core.NULLENTRY
+		return core.EndEntryID
 	}
 	return c.pl.data[c.idx]
 }
 
 func (c *flatPostingCursor) SkipTo(target core.EntryID) core.EntryID {
 	if c.idx >= c.pl.count {
-		return core.NULLENTRY
+		return core.EndEntryID
 	}
 
 	// Galloping search: exponential probe for sequential-dominant patterns.
@@ -187,7 +181,7 @@ func (c *flatPostingCursor) SkipTo(target core.EntryID) core.EntryID {
 
 	c.idx = left
 	if c.idx >= c.pl.count {
-		return core.NULLENTRY
+		return core.EndEntryID
 	}
 	return c.pl.data[c.idx]
 }

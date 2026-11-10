@@ -25,7 +25,7 @@ func (s *SliceIterator) Term() Term {
 
 func (s *SliceIterator) Current() EntryID {
 	if s.cursor >= len(s.EIDs) {
-		return NULLENTRY
+		return EndEntryID
 	}
 	return s.EIDs[s.cursor]
 }
@@ -33,11 +33,11 @@ func (s *SliceIterator) Current() EntryID {
 func (s *SliceIterator) SkipTo(target EntryID) EntryID {
 	n := len(s.EIDs)
 	if s.cursor >= n {
-		return NULLENTRY
+		return EndEntryID
 	}
 	// Galloping search: exponential probe to locate a narrow search window,
 	// then binary search within that window. Collapses to a single check
-	// for sequential advances (the dominant pattern in mergeCursors).
+	// for sequential advances (the dominant pattern in matchConjunctions).
 	lo := s.cursor
 	if s.EIDs[lo] >= target {
 		return s.EIDs[lo]
@@ -94,7 +94,7 @@ type FieldCursor struct {
 func NewFieldCursor(iters ...PostingIterator) FieldCursor {
 	fc := FieldCursor{Iters: make(iterHeap, 0, len(iters))}
 	for _, it := range iters {
-		if it != nil && !it.Current().IsNULLEntry() {
+		if it != nil && !it.Current().IsEnd() {
 			fc.Iters = append(fc.Iters, it)
 		}
 	}
@@ -110,16 +110,17 @@ func (f *FieldCursor) Reset(iters ...PostingIterator) {
 	}
 	f.Iters = f.Iters[:0]
 	for _, it := range iters {
-		if it != nil && !it.Current().IsNULLEntry() {
+		if it != nil && !it.Current().IsEnd() {
 			f.Iters = append(f.Iters, it)
 		}
 	}
 	heap.Init(&f.Iters)
 }
 
-func (f *FieldCursor) GetCurEntryID() EntryID {
+// Current returns the smallest current EntryID, or EndEntryID when exhausted.
+func (f *FieldCursor) Current() EntryID {
 	if len(f.Iters) == 0 {
-		return NULLENTRY
+		return EndEntryID
 	}
 	return f.Iters[0].Current()
 }
@@ -131,12 +132,12 @@ func (f *FieldCursor) SkipTo(id EntryID) EntryID {
 		}
 		it := heap.Pop(&f.Iters).(PostingIterator)
 		it.SkipTo(id)
-		if it.Current().IsNULLEntry() {
+		if it.Current().IsEnd() {
 			continue // exhausted iterator permanently leaves the heap
 		}
 		heap.Push(&f.Iters, it)
 	}
-	return NULLENTRY
+	return EndEntryID
 }
 
 // ReachEnd reports whether all iterators in this cursor have exhausted.
@@ -156,7 +157,7 @@ func (f *FieldCursor) ReachEnd() bool {
 func (f *FieldCursor) DumpInfo() []string {
 	var res []string
 	for _, it := range f.Iters {
-		if it == nil || it.Current().IsNULLEntry() {
+		if it == nil || it.Current().IsEnd() {
 			continue
 		}
 		res = append(res, it.Current().DocString())
@@ -165,7 +166,7 @@ func (f *FieldCursor) DumpInfo() []string {
 }
 
 // FieldCursors is a wrapper over []FieldCursor ordered by current EntryID.
-// It uses insertion sort instead of sort.Slice: mergeCursors re-sorts every
+// It uses insertion sort instead of sort.Slice: matchConjunctions re-sorts every
 // iteration, and the slice is almost-sorted at that point (only the first k
 // elements changed), while sort.Slice's reflect-based Swapper allocates on
 // every call.
@@ -221,9 +222,9 @@ func (fcs *FieldCursors) ClearRecycled() {
 func (fcs *FieldCursors) Sort() {
 	for i := 1; i < len(fcs.items); i++ {
 		item := fcs.items[i]
-		key := item.GetCurEntryID()
+		key := item.Current()
 		j := i - 1
-		for j >= 0 && fcs.items[j].GetCurEntryID() > key {
+		for j >= 0 && fcs.items[j].Current() > key {
 			fcs.items[j+1] = fcs.items[j]
 			j--
 		}
@@ -234,17 +235,17 @@ func (fcs *FieldCursors) Sort() {
 // Peek returns the smallest EntryID among all FieldCursors.
 func (fcs *FieldCursors) Peek() EntryID {
 	if len(fcs.items) == 0 {
-		return NULLENTRY
+		return EndEntryID
 	}
-	return fcs.items[0].GetCurEntryID()
+	return fcs.items[0].Current()
 }
 
 // PeekAt returns the k-th smallest EntryID (0-indexed).
 func (fcs *FieldCursors) PeekAt(k int) EntryID {
 	if k < 0 || k >= len(fcs.items) {
-		return NULLENTRY
+		return EndEntryID
 	}
-	return fcs.items[k].GetCurEntryID()
+	return fcs.items[k].Current()
 }
 
 // AdvanceFirst advances the first k elements past nextID, then re-sorts.
@@ -261,7 +262,7 @@ func (fcs *FieldCursors) AdvanceFirst(k int, nextID EntryID) {
 // ShortCircuitAfter conditionally advances all elements after the first k
 // whose current EntryID is less than nextID, then re-sorts.
 //
-// This optimizes the exclude path of mergeCursors: when the first k cursors
+// This optimizes the exclude path of matchConjunctions: when the first k cursors
 // match an exclude EntryID, all remaining cursors that still point to a
 // position before the current conjunction are skipped forward. Without this
 // optimization they would stall on stale positions and cause false matches
@@ -272,17 +273,17 @@ func (fcs *FieldCursors) ShortCircuitAfter(k int, nextID EntryID) {
 		return
 	}
 	for i := k; i < n; i++ {
-		if fcs.items[i].GetCurEntryID() < nextID {
+		if fcs.items[i].Current() < nextID {
 			fcs.items[i].SkipTo(nextID)
 		}
 	}
 	fcs.Sort()
 }
 
-// CompactLast removes exhausted cursors from the end of the list.
-// After Sort(), exhausted cursors (those with only NULLENTRY entries)
-// naturally move to the right end. Call Sort() before CompactLast().
-func (fcs *FieldCursors) CompactLast() {
+// RemoveExhausted removes exhausted cursors from the end of the list.
+// After Sort(), exhausted cursors (those with only EndEntryID entries)
+// naturally move to the right end. Call Sort() before RemoveExhausted().
+func (fcs *FieldCursors) RemoveExhausted() {
 	for fcs.Len() > 0 {
 		last := fcs.Len() - 1
 		if fcs.items[last].ReachEnd() {

@@ -20,9 +20,9 @@ func TestFieldCursorSkipTo_DuplicateHeads(t *testing.T) {
 
 	for _, target := range []EntryID{0, 10, 11, 30, 31, 50, 51, 100, 101} {
 		got := fc.SkipTo(target)
-		want := NULLENTRY
+		want := EndEntryID
 		for _, it := range iters {
-			if cur := it.SkipTo(target); cur != NULLENTRY && (want == NULLENTRY || cur < want) {
+			if cur := it.SkipTo(target); cur != EndEntryID && (want == EndEntryID || cur < want) {
 				want = cur
 			}
 		}

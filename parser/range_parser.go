@@ -16,7 +16,7 @@ type IntInterval struct {
 // ParseRangeExpr converts a boolean range predicate (operator + value) into one
 // or more closed integer intervals that the ext_range segment-tree container
 // indexes. It is the build-side counterpart that finally honours
-// core.ValueExpr.Operator, which the EQ-only tokenizer path ignores.
+// core.Constraint.Operator, which the EQ-only tokenizer path ignores.
 //
 // Semantics (all clamped to the int64 domain):
 //
@@ -27,9 +27,9 @@ type IntInterval struct {
 //
 // GT(MaxInt64) and LT(MinInt64) yield the empty set (no interval), which is the
 // correct degenerate semantics (nothing is strictly greater than the max).
-func ParseRangeExpr(op core.ValueOpt, value interface{}) ([]IntInterval, error) {
+func ParseRangeExpr(op core.ValueOp, value interface{}) ([]IntInterval, error) {
 	switch op {
-	case core.ValueOptEQ:
+	case core.ValueOpEQ:
 		vals, err := ParseIntegers(value, true)
 		if err != nil {
 			return nil, err
@@ -40,7 +40,7 @@ func ParseRangeExpr(op core.ValueOpt, value interface{}) ([]IntInterval, error) 
 		}
 		return intervals, nil
 
-	case core.ValueOptGT:
+	case core.ValueOpGT:
 		v, err := singleInt(value)
 		if err != nil {
 			return nil, err
@@ -50,7 +50,7 @@ func ParseRangeExpr(op core.ValueOpt, value interface{}) ([]IntInterval, error) 
 		}
 		return []IntInterval{{Lo: v + 1, Hi: math.MaxInt64}}, nil
 
-	case core.ValueOptLT:
+	case core.ValueOpLT:
 		v, err := singleInt(value)
 		if err != nil {
 			return nil, err
@@ -60,7 +60,7 @@ func ParseRangeExpr(op core.ValueOpt, value interface{}) ([]IntInterval, error) 
 		}
 		return []IntInterval{{Lo: math.MinInt64, Hi: v - 1}}, nil
 
-	case core.ValueOptBetween:
+	case core.ValueOpBetween:
 		lo, hi, err := pairInt(value)
 		if err != nil {
 			return nil, err

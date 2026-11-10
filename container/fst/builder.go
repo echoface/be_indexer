@@ -20,7 +20,7 @@ func newBuilderFactory(env segment.BuilderEnv) segment.IndexBuilder {
 // offset of its posting list within that block.
 //
 // Like the dict/mph/ac builders, every (term, entries) pair is funneled through
-// a SortedPostingMerger so accumulation past BuilderEnv.MaxPostingsInMemory
+// a SortedPostingMerger so accumulation past BuilderEnv.MaxDistinctKeysInMemory
 // spills sorted runs to disk instead of holding the whole field in RAM. The
 // merger's k-way merge also yields records in strict lexicographic key order,
 // which is exactly the order vellum.Builder.Insert requires.
@@ -40,7 +40,7 @@ type termOffset struct {
 // NewFSTBuilder creates a fresh FSTBuilder honoring the spill environment.
 func NewFSTBuilder(env segment.BuilderEnv) *FSTBuilder {
 	return &FSTBuilder{
-		merger: segment.NewSortedPostingMerger(env.MaxPostingsInMemory, env.TmpDir),
+		merger: segment.NewSortedPostingMerger(env.MaxDistinctKeysInMemory, env.TmpDir),
 	}
 }
 

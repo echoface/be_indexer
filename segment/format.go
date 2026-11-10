@@ -41,21 +41,22 @@ type MetaBlock struct {
 	Version        int                 `json:"version"`
 	DocCount       int                 `json:"doc_count"`
 	SchemaHash     string              `json:"schema_hash,omitempty"`
-	Fields         []FieldMetaDump     `json:"fields"`
+	Fields         []FieldMetadata     `json:"fields"`
 	BlockIndex     map[string]BlockDef `json:"block_index"`
 	WildcardsBlock string              `json:"wildcards_block,omitempty"`
 }
 
-type FieldMetaDump struct {
+// FieldMetadata records a field's name, container, and encoder in the segment footer.
+type FieldMetadata struct {
 	Name      string `json:"name"`
 	IndexType string `json:"index_type"`
 	Encoder   string `json:"encoder"`
 }
 
-func schemaHashFromFieldDumps(fields []FieldMetaDump) (string, error) {
+func schemaHashFromFieldDumps(fields []FieldMetadata) (string, error) {
 	schema := make(core.Schema, len(fields))
 	for _, field := range fields {
-		name := core.BEField(field.Name)
+		name := core.FieldName(field.Name)
 		if _, exists := schema[name]; exists {
 			return "", fmt.Errorf("duplicate field %s", name)
 		}

@@ -4,7 +4,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"unicode/utf8"
-	"unsafe"
 
 	"github.com/echoface/be_indexer/core"
 )
@@ -32,6 +31,9 @@ func NewACReader(b []byte) (*ACIndex, error) {
 		return nil, fmt.Errorf("invalid AC reserved header: %d", reserved)
 	}
 	if stateCount == 0 {
+		if symCount != 0 || len(b) != headerSize {
+			return nil, fmt.Errorf("invalid empty AC index")
+		}
 		return &ACIndex{}, nil
 	}
 
@@ -84,18 +86,10 @@ func NewACReader(b []byte) (*ACIndex, error) {
 }
 
 // mapUint32s returns a []uint32 view over raw. It uses a zero-copy unsafe
-// mapping when the backing memory is 4-byte aligned and falls back to a decoded
-// copy otherwise, so callers never construct a misaligned uint32 slice.
+// mapping on little-endian hosts with 4-byte aligned memory, and explicit
+// little-endian decoding otherwise.
 func mapUint32s(raw []byte, count uint32) []uint32 {
-	ptr := unsafe.Pointer(&raw[0])
-	if uintptr(ptr)&3 == 0 {
-		return unsafe.Slice((*uint32)(ptr), count)
-	}
-	vals := make([]uint32, count)
-	for i := uint32(0); i < count; i++ {
-		vals[i] = binary.LittleEndian.Uint32(raw[int(i)*4 : int(i)*4+4])
-	}
-	return vals
+	return mapLittleEndian[uint32](raw, count, nativeLittleEndian)
 }
 
 // validateInvariants checks every array reference the query path will ever
@@ -155,6 +149,30 @@ func (ac *ACIndex) validateFailTrees() error {
 		}
 		for _, s := range path {
 			marks[s] = 2
+		}
+	}
+	return nil
+}
+
+// Validate runs after the segment has resolved the separate posting
+// block. Internal output payload bounds were established by NewACReader.
+func (ac *ACIndex) Validate(ctx BlockContext) error {
+	for _, ptr := range ac.outputPtrs {
+		if ptr == 0 {
+			continue
+		}
+		off := uint64(ptr - 1)
+		count := binary.LittleEndian.Uint16(ac.outputData[off : off+2])
+		off += 2
+		for i := uint16(0); i < count; i++ {
+			ref := PostingRef{
+				Offset: binary.LittleEndian.Uint64(ac.outputData[off : off+8]),
+				Count:  binary.LittleEndian.Uint32(ac.outputData[off+8 : off+12]),
+			}
+			if err := validatePostingRef(ctx.PostingBlock, ref); err != nil {
+				return err
+			}
+			off += 12
 		}
 	}
 	return nil
@@ -255,7 +273,7 @@ func (ac *ACIndex) readOutputs(offset uint32, dst []PostingRef) []PostingRef {
 
 // MatchQuery implements IndexReader by performing AC matching against the
 // query text and returning posting cursors into the posting block.
-func (ac *ACIndex) MatchQuery(ctx BlockContext, field core.BEField, query interface{}) ([]core.PostingIterator, error) {
+func (ac *ACIndex) MatchQuery(ctx BlockContext, field core.FieldName, query interface{}) ([]core.PostingIterator, error) {
 	text, ok := query.(string)
 	if !ok {
 		return nil, fmt.Errorf("ac container expects string query, got %T", query)
@@ -266,7 +284,7 @@ func (ac *ACIndex) MatchQuery(ctx BlockContext, field core.BEField, query interf
 	}
 	iters := make([]core.PostingIterator, 0, len(refs))
 	for _, ref := range refs {
-		pl, err := NewPostingListAt(ctx.Pl, ref)
+		pl, err := NewPostingListAt(ctx.PostingBlock, ref)
 		if err != nil {
 			return nil, fmt.Errorf("field %s: %w", field, err)
 		}

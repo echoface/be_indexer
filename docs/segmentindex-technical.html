@@ -1,0 +1,1553 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>segmentindex 技术文档</title>
+  <style>
+    :root {
+      --bg: #f6f8fb;
+      --card: #ffffff;
+      --ink: #172033;
+      --muted: #5b6575;
+      --line: #dce3ed;
+      --blue: #2864dc;
+      --blue-soft: #eaf1ff;
+      --green: #15803d;
+      --green-soft: #e9f8ee;
+      --orange: #b45309;
+      --orange-soft: #fff4df;
+      --purple: #6d28d9;
+      --purple-soft: #f1eafe;
+      --code-bg: #101827;
+      --code-ink: #e7edf7;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font: 16px/1.75 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+        "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    }
+    main { max-width: 1180px; margin: 0 auto; padding: 32px 22px 72px; }
+    h1, h2, h3 { line-height: 1.25; letter-spacing: 0; }
+    h1 { margin: 0 0 12px; font-size: 38px; }
+    h2 { margin: 46px 0 16px; font-size: 27px; }
+    h3 { margin: 28px 0 10px; font-size: 20px; }
+    p { margin: 10px 0; }
+    a { color: var(--blue); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    code, pre {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+    }
+    code {
+      padding: 2px 5px;
+      border-radius: 4px;
+      background: #eef2f7;
+      color: #1f2937;
+      font-size: 0.92em;
+    }
+    pre {
+      margin: 14px 0;
+      padding: 18px 20px;
+      overflow: auto;
+      border-radius: 8px;
+      background: var(--code-bg);
+      color: var(--code-ink);
+      font-size: 13px;
+      line-height: 1.65;
+    }
+    pre code { padding: 0; background: transparent; color: inherit; }
+    .hero {
+      padding: 32px 34px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: var(--card);
+      box-shadow: 0 8px 28px rgba(23, 32, 51, 0.06);
+    }
+    .eyebrow {
+      margin-bottom: 8px;
+      color: var(--blue);
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .lead { max-width: 880px; color: var(--muted); font-size: 18px; }
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 20px;
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 30px;
+      padding: 4px 10px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: #fbfcfe;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .toc {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 22px;
+    }
+    .toc a {
+      display: block;
+      padding: 11px 12px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: var(--card);
+      color: var(--ink);
+      font-size: 14px;
+    }
+    .toc a:hover { border-color: var(--blue); background: var(--blue-soft); text-decoration: none; }
+    .card {
+      margin: 18px 0;
+      padding: 22px 24px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--card);
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+    }
+    .callout {
+      margin: 18px 0;
+      padding: 16px 18px;
+      border-left: 4px solid var(--blue);
+      border-radius: 6px;
+      background: var(--blue-soft);
+    }
+    .callout.warn { border-left-color: var(--orange); background: var(--orange-soft); }
+    .callout.good { border-left-color: var(--green); background: var(--green-soft); }
+    .callout.purple { border-left-color: var(--purple); background: var(--purple-soft); }
+    .callout strong { display: block; margin-bottom: 5px; }
+    .diagram {
+      margin: 18px 0;
+      padding: 14px;
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcfe;
+    }
+    .diagram svg { display: block; width: 100%; min-width: 720px; height: auto; }
+    .diagram text {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif;
+      fill: var(--ink);
+    }
+    table {
+      width: 100%;
+      margin: 16px 0;
+      border-collapse: collapse;
+      background: var(--card);
+    }
+    th, td {
+      padding: 11px 12px;
+      border: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+    th { background: #f1f4f8; font-weight: 700; }
+    ul, ol { margin: 10px 0; padding-left: 24px; }
+    li { margin: 6px 0; }
+    .small { color: var(--muted); font-size: 14px; }
+    .kbd {
+      padding: 1px 6px;
+      border: 1px solid #c6ceda;
+      border-bottom-width: 2px;
+      border-radius: 4px;
+      background: #fff;
+      font-size: 12px;
+    }
+    .footer {
+      margin-top: 48px;
+      padding-top: 18px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 14px;
+    }
+    @media (max-width: 860px) {
+      main { padding: 22px 14px 52px; }
+      h1 { font-size: 31px; }
+      .hero { padding: 24px 20px; }
+      .toc, .grid { grid-template-columns: 1fr; }
+      .diagram svg { min-width: 680px; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <section class="hero">
+    <div class="eyebrow">be_indexer / segmentindex</div>
+    <h1>segmentindex 索引实现逻辑</h1>
+    <p class="lead">
+      这份文档面向第一次接触 <code>segmentindex</code> 的开发者。核心目标是把复杂名字拆成一条清晰的主线：
+      先把文档拆成 DNF 组，再编译成不可变倒排段，最后通过预计算索引快速回答查询。
+    </p>
+    <div class="meta">
+      <span class="pill">阅读对象：Go 开发者 / 检索方向新人</span>
+      <span class="pill">设计目标：查询快，构建可离线</span>
+      <span class="pill">核心特性：DNF、Immutable、Roaring、Range</span>
+      <span class="pill">源码范围：segmentindex/*.go</span>
+    </div>
+  </section>
+
+  <nav class="toc" aria-label="目录">
+    <a href="#summary">1. 五分钟总览</a>
+    <a href="#dnf">2. DNF 与分组</a>
+    <a href="#build">3. 构建流程</a>
+    <a href="#storage">4. 存储结构</a>
+    <a href="#query">5. 查询执行 / Group Query</a>
+    <a href="#data-demo">6. 数据演示</a>
+    <a href="#range">7. 数字区间</a>
+    <a href="#incremental">8. 增量与压缩</a>
+    <a href="#api">9. API 示例</a>
+    <a href="#pitfalls">10. 常见误区</a>
+    <a href="#files">11. 源码地图</a>
+    <a href="#theory-multi">12. 理论依据与多选值</a>
+    <a href="#mental-model">13. 最终心智模型</a>
+    <a href="#references">14. 参考入口</a>
+  </nav>
+
+  <section id="summary">
+    <h2>1. 五分钟总览</h2>
+    <div class="card">
+      <p><strong>一句话：</strong><code>segmentindex</code> 是一个面向查询优化的 DNF 倒排索引。</p>
+      <p>
+        它把每个文档中的每个 <code>Conjunction</code> 编译成一个独立、不可变的“组”。
+        查询时先用组级倒排和预计算结构快速排除不可能的组，再对少数候选组做精确布尔判断，最后合并 DocID。
+      </p>
+      <div class="grid">
+        <div>
+          <h3>它解决什么问题</h3>
+          <ul>
+            <li>一个文档可能有多个条件组合，多个组合之间是 OR。</li>
+            <li>同一个字段内多个查询值是 OR，不同字段之间是 AND。</li>
+            <li>排除条件不能和包含条件混在一个普通倒排里直接求交。</li>
+            <li>查询需要高性能，构建成本可以放到离线阶段。</li>
+          </ul>
+        </div>
+        <div>
+          <h3>它为什么快</h3>
+          <ul>
+            <li>组和 DocID 都映射到稠密 slot，倒排可以使用紧凑 bitmap。</li>
+            <li>单 DocID 组走专用快路径，避免创建大量临时 bitmap。</li>
+            <li>查询值只规范化一次，查询临时对象通过 <code>sync.Pool</code> 复用。</li>
+            <li>单位区间走点索引，宽区间走带 <code>maxRight</code> 的区间树。</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <div class="callout good">
+      <strong>最重要的概念</strong>
+      <code>Document</code> 是业务文档；<code>Conjunction</code> 是一个 AND 条件组合；
+      <code>Group/Segment</code> 是索引内部对该组合的编译结果。一个 Document 的多个 Conjunction 最后要做结果并集。
+    </div>
+  </section>
+
+  <section id="dnf">
+    <h2>2. DNF 与分组</h2>
+    <p>
+      DNF 是“析取范式”的简称，可以理解成若干个 AND 条件组之间做 OR。
+      <code>segmentindex</code> 不把多个 Conjunction 混成一个大倒排，而是给每个 Conjunction 建一个独立 group。
+      这样可以保证一个 group 内部的字段约束不会跨组串味。
+    </p>
+
+    <div class="diagram">
+      <svg viewBox="0 0 1040 330" role="img" aria-label="DNF 分组示意图">
+        <defs>
+          <marker id="arrow-a" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+            <path d="M0,0 L0,6 L9,3 z" fill="#2864dc"></path>
+          </marker>
+        </defs>
+        <rect x="35" y="112" width="180" height="82" rx="10" fill="#eaf1ff" stroke="#2864dc" stroke-width="2"></rect>
+        <text x="125" y="145" text-anchor="middle" font-size="20" font-weight="700">Document D</text>
+        <text x="125" y="174" text-anchor="middle" font-size="15">业务文档</text>
+
+        <path d="M215 153 L305 65" stroke="#2864dc" stroke-width="2" marker-end="url(#arrow-a)"></path>
+        <path d="M215 153 L305 153" stroke="#2864dc" stroke-width="2" marker-end="url(#arrow-a)"></path>
+        <path d="M215 153 L305 241" stroke="#2864dc" stroke-width="2" marker-end="url(#arrow-a)"></path>
+
+        <rect x="315" y="28" width="235" height="72" rx="8" fill="#fff" stroke="#dce3ed" stroke-width="2"></rect>
+        <text x="432" y="57" text-anchor="middle" font-size="17" font-weight="700">Conjunction C1</text>
+        <text x="432" y="82" text-anchor="middle" font-size="14">字段之间：AND</text>
+
+        <rect x="315" y="117" width="235" height="72" rx="8" fill="#fff" stroke="#dce3ed" stroke-width="2"></rect>
+        <text x="432" y="146" text-anchor="middle" font-size="17" font-weight="700">Conjunction C2</text>
+        <text x="432" y="171" text-anchor="middle" font-size="14">字段之间：AND</text>
+
+        <rect x="315" y="205" width="235" height="72" rx="8" fill="#fff" stroke="#dce3ed" stroke-width="2"></rect>
+        <text x="432" y="234" text-anchor="middle" font-size="17" font-weight="700">Conjunction C3</text>
+        <text x="432" y="259" text-anchor="middle" font-size="14">字段之间：AND</text>
+
+        <path d="M550 64 L655 116" stroke="#15803d" stroke-width="2" marker-end="url(#arrow-a)"></path>
+        <path d="M550 153 L655 153" stroke="#15803d" stroke-width="2" marker-end="url(#arrow-a)"></path>
+        <path d="M550 241 L655 190" stroke="#15803d" stroke-width="2" marker-end="url(#arrow-a)"></path>
+
+        <rect x="665" y="94" width="160" height="118" rx="10" fill="#e9f8ee" stroke="#15803d" stroke-width="2"></rect>
+        <text x="745" y="136" text-anchor="middle" font-size="18" font-weight="700">Group / Segment</text>
+        <text x="745" y="164" text-anchor="middle" font-size="15">G1 ∪ G2 ∪ G3</text>
+        <text x="745" y="191" text-anchor="middle" font-size="14">结果最终按 DocID 去重</text>
+
+        <path d="M825 153 L905 153" stroke="#6d28d9" stroke-width="2" marker-end="url(#arrow-a)"></path>
+        <rect x="915" y="112" width="90" height="82" rx="10" fill="#f1eafe" stroke="#6d28d9" stroke-width="2"></rect>
+        <text x="960" y="147" text-anchor="middle" font-size="16" font-weight="700">结果</text>
+        <text x="960" y="173" text-anchor="middle" font-size="14">DocIDs</text>
+      </svg>
+    </div>
+
+    <h3>布尔语义拆开看</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>层级</th>
+          <th>关系</th>
+          <th>例子</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>同一个字段的多个值</td>
+          <td>OR</td>
+          <td><code>city In ["bj", "sh"]</code></td>
+        </tr>
+        <tr>
+          <td>同一个 Conjunction 的多个字段</td>
+          <td>AND</td>
+          <td><code>city=北京 AND age=30</code></td>
+        </tr>
+        <tr>
+          <td>同一个 Document 的多个 Conjunction</td>
+          <td>OR</td>
+          <td><code>C1 OR C2 OR C3</code></td>
+        </tr>
+        <tr>
+          <td>包含与排除</td>
+          <td>先候选，再减去命中排除</td>
+          <td><code>include hit - exclude hit</code></td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="callout warn">
+      <strong>容易误解的地方</strong>
+      同一个 Document 可以有多个 Conjunction。每个 Conjunction 都独立编译成 group，
+      不能因为它们属于同一个 DocID 就提前合并，否则可能把“只要 C2 命中”误判成“整个 C1、C2 都必须命中”。
+    </div>
+  </section>
+
+  <section id="build">
+    <h2>3. 构建流程</h2>
+    <p>
+      构建阶段把结构化的 <code>Document</code> 变成两部分：倒排 term posting，以及无法表达成 exact term 的 range predicate。
+      每个 group 完成后会 seal 成不可变的 <code>storage.Segment</code>。
+    </p>
+
+    <div class="diagram">
+      <svg viewBox="0 0 1120 390" role="img" aria-label="segmentindex 构建流程">
+        <defs>
+          <marker id="arrow-b" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+            <path d="M0,0 L0,6 L9,3 z" fill="#2864dc"></path>
+          </marker>
+        </defs>
+        <rect x="28" y="35" width="175" height="78" rx="10" fill="#eaf1ff" stroke="#2864dc" stroke-width="2"></rect>
+        <text x="115" y="68" text-anchor="middle" font-size="18" font-weight="700">Document</text>
+        <text x="115" y="94" text-anchor="middle" font-size="14">Conjunction[]</text>
+
+        <path d="M203 74 L270 74" stroke="#2864dc" stroke-width="2" marker-end="url(#arrow-b)"></path>
+        <rect x="280" y="25" width="225" height="100" rx="10" fill="#fff" stroke="#dce3ed" stroke-width="2"></rect>
+        <text x="392" y="57" text-anchor="middle" font-size="17" font-weight="700">表达式解析</text>
+        <text x="392" y="84" text-anchor="middle" font-size="14">EQ term / range predicate</text>
+        <text x="392" y="108" text-anchor="middle" font-size="14">include / exclude shape</text>
+
+        <path d="M505 74 L570 74" stroke="#2864dc" stroke-width="2" marker-end="url(#arrow-b)"></path>
+        <rect x="580" y="25" width="245" height="100" rx="10" fill="#fff" stroke="#dce3ed" stroke-width="2"></rect>
+        <text x="702" y="57" text-anchor="middle" font-size="17" font-weight="700">groupBuilder</text>
+        <text x="702" y="84" text-anchor="middle" font-size="14">TermKey → DocIDs</text>
+        <text x="702" y="108" text-anchor="middle" font-size="14">liveDocs / seqs / ranges</text>
+
+        <path d="M825 74 L890 74" stroke="#2864dc" stroke-width="2" marker-end="url(#arrow-b)"></path>
+        <rect x="900" y="25" width="190" height="100" rx="10" fill="#e9f8ee" stroke="#15803d" stroke-width="2"></rect>
+        <text x="995" y="57" text-anchor="middle" font-size="17" font-weight="700">storage.Segment</text>
+        <text x="995" y="84" text-anchor="middle" font-size="14">不可变倒排段</text>
+        <text x="995" y="108" text-anchor="middle" font-size="14">sorted + sealed</text>
+
+        <path d="M392 125 L392 195" stroke="#6d28d9" stroke-width="2" marker-end="url(#arrow-b)"></path>
+        <rect x="250" y="205" width="285" height="132" rx="10" fill="#f1eafe" stroke="#6d28d9" stroke-width="2"></rect>
+        <text x="392" y="240" text-anchor="middle" font-size="18" font-weight="700">groupMeta</text>
+        <text x="392" y="269" text-anchor="middle" font-size="15">shapes：字段是否有 include/exclude</text>
+        <text x="392" y="296" text-anchor="middle" font-size="15">ranges：GT / LT / Between</text>
+        <text x="392" y="322" text-anchor="middle" font-size="15">seqs：版本和 tombstone 判断</text>
+
+        <path d="M702 125 L702 195" stroke="#6d28d9" stroke-width="2" marker-end="url(#arrow-b)"></path>
+        <rect x="575" y="205" width="305" height="132" rx="10" fill="#f1eafe" stroke="#6d28d9" stroke-width="2"></rect>
+        <text x="727" y="240" text-anchor="middle" font-size="18" font-weight="700">queryIndex</text>
+        <text x="727" y="269" text-anchor="middle" font-size="15">group / doc 的稠密 slot</text>
+        <text x="727" y="296" text-anchor="middle" font-size="15">term → slot posting</text>
+        <text x="727" y="322" text-anchor="middle" font-size="15">range point map / interval tree</text>
+      </svg>
+    </div>
+
+    <h3>3.1 Exact term 的编码</h3>
+    <p>
+      include 和 exclude 不能只靠 DocID list 区分，因此 term value 会带一个私有前缀。
+      这个前缀只存在于索引内部，业务查询值不需要手工添加。
+    </p>
+    <pre><code>include value       -> "\x01" + value
+exclude value       -> "\x02" + value
+exclude-only fallback -> "\x03"</code></pre>
+    <p>
+      <code>fieldShape</code> 记录某个字段是否使用过 include、是否使用过 exclude。
+      它既服务于查询时的 wildcard fallback，也是压缩时 group 是否可以合并的重要依据。
+    </p>
+
+    <h3>3.2 半开区间</h3>
+    <p>
+      所有数字 range predicate 最终都写成 <code>[left, right)</code>，也就是包含左边界、不包含右边界。
+      这样可以统一 GT、LT、Between 的语义，也能避免同一个值在边界处重复命中。
+    </p>
+    <table>
+      <thead>
+        <tr><th>原始表达式</th><th>内部区间</th><th>含义</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>GT v</code></td><td><code>[v+1, MaxInt64)</code></td><td>严格大于 v</td></tr>
+        <tr><td><code>LT v</code></td><td><code>[MinInt64, v)</code></td><td>严格小于 v</td></tr>
+        <tr><td><code>Between l,h</code></td><td><code>[l, h)</code></td><td>包含 l，不包含 h</td></tr>
+        <tr><td><code>Between l,l</code></td><td><code>[l, l+1)</code></td><td>等价于精确值 l</td></tr>
+      </tbody>
+    </table>
+    <div class="callout warn">
+      <strong>边界规则</strong>
+      浮点数会被拒绝，防止截断成整数后产生静默错误。区间只接受整数或整数字符串。
+    </div>
+  </section>
+
+  <section id="storage">
+    <h2>4. 存储结构</h2>
+    <p>
+      <code>storage.Segment</code> 负责倒排数据本体，<code>groupMeta</code> 负责 Segment 本身不容易表达的语义元数据。
+      两者合起来才是一个完整的 group。
+    </p>
+
+    <div class="diagram">
+      <svg viewBox="0 0 1120 330" role="img" aria-label="存储结构示意图">
+        <rect x="35" y="45" width="300" height="235" rx="10" fill="#fff" stroke="#2864dc" stroke-width="2"></rect>
+        <text x="185" y="80" text-anchor="middle" font-size="20" font-weight="700">storage.Segment</text>
+        <text x="65" y="122" font-size="16">fields</text>
+        <text x="65" y="153" font-size="16">term dictionary</text>
+        <text x="65" y="184" font-size="16">compressed postings</text>
+        <text x="65" y="215" font-size="16">live doc IDs</text>
+        <text x="65" y="246" font-size="16">field/value -> TermID</text>
+
+        <path d="M335 162 L425 162" stroke="#2864dc" stroke-width="2"></path>
+        <rect x="435" y="45" width="300" height="235" rx="10" fill="#f1eafe" stroke="#6d28d9" stroke-width="2"></rect>
+        <text x="585" y="80" text-anchor="middle" font-size="20" font-weight="700">groupMeta</text>
+        <text x="465" y="122" font-size="16">shapes</text>
+        <text x="465" y="153" font-size="16">rangePredicate[]</text>
+        <text x="465" y="184" font-size="16">docID -> add sequence</text>
+        <text x="465" y="215" font-size="16">sorted doc IDs</text>
+        <text x="465" y="246" font-size="16">DNF group boundary</text>
+
+        <path d="M735 162 L825 162" stroke="#15803d" stroke-width="2"></path>
+        <rect x="835" y="75" width="235" height="175" rx="10" fill="#e9f8ee" stroke="#15803d" stroke-width="2"></rect>
+        <text x="952" y="118" text-anchor="middle" font-size="20" font-weight="700">Index</text>
+        <text x="952" y="152" text-anchor="middle" font-size="16">immutable segments</text>
+        <text x="952" y="181" text-anchor="middle" font-size="16">groups + queryIndex</text>
+        <text x="952" y="210" text-anchor="middle" font-size="16">并发只读安全</text>
+      </svg>
+    </div>
+
+    <h3>4.1 为什么要有 queryIndex</h3>
+    <p>
+      如果只把数据交给普通倒排执行器，每个查询都要重新做很多临时对象分配、字符串比较和 bitmap 运算。
+      <code>queryIndex</code> 在 <code>newIndex</code> 阶段把常见查询模式提前算好。
+    </p>
+    <ul>
+      <li>每个 group 映射到连续的 <code>[slotStart, slotEnd)</code>，slot 再映射回 group 和 doc。</li>
+      <li>term posting 直接记录 slot，而不是查询时反复从 DocID 重新映射。</li>
+      <li>单 DocID group 的 posting 内联一个 slot，常见情况下不额外分配 slice 或 bitmap。</li>
+      <li>数字 term 同时保留字符串 map 和 int64 map，数字查询避免反复格式化。</li>
+    </ul>
+
+    <h3>4.2 queryPosting 的小优化</h3>
+    <pre><code>type queryPosting struct {
+    single uint64
+    slots  []uint64
+    count  int
+}</code></pre>
+    <p>
+      当一个 term 只命中一个 slot 时，直接保存 <code>single</code>；
+      只有命中多个 slot 才分配 <code>slots</code>。这是针对单文档 group 大量存在的常见场景做的微优化。
+    </p>
+  </section>
+
+  <section id="query">
+    <h2>5. 查询执行</h2>
+    <p>
+      推荐使用 <code>RetrieveAssignments</code> 或 <code>RetrieveAssignmentsInto</code>。
+      它们是完整的 DNF 查询入口，能够处理 exact term 和 GT/LT/Between。
+      <code>Retrieve(planner.Query)</code> 主要用于 exact-term 兼容路径，不适合包含 range 的完整文档语义。
+    </p>
+
+    <div class="diagram">
+      <svg viewBox="0 0 1120 475" role="img" aria-label="查询执行流程">
+        <defs>
+          <marker id="arrow-c" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+            <path d="M0,0 L0,6 L9,3 z" fill="#2864dc"></path>
+          </marker>
+        </defs>
+        <rect x="45" y="35" width="190" height="72" rx="10" fill="#eaf1ff" stroke="#2864dc" stroke-width="2"></rect>
+        <text x="140" y="66" text-anchor="middle" font-size="18" font-weight="700">Assignments</text>
+        <text x="140" y="91" text-anchor="middle" font-size="14">字段 -> 查询值</text>
+
+        <path d="M235 71 L305 71" stroke="#2864dc" stroke-width="2" marker-end="url(#arrow-c)"></path>
+        <rect x="315" y="35" width="190" height="72" rx="10" fill="#fff" stroke="#dce3ed" stroke-width="2"></rect>
+        <text x="410" y="66" text-anchor="middle" font-size="18" font-weight="700">prepareQuery</text>
+        <text x="410" y="91" text-anchor="middle" font-size="14">只规范化一次</text>
+
+        <path d="M505 71 L575 71" stroke="#2864dc" stroke-width="2" marker-end="url(#arrow-c)"></path>
+        <rect x="585" y="22" width="265" height="100" rx="10" fill="#fff" stroke="#dce3ed" stroke-width="2"></rect>
+        <text x="717" y="56" text-anchor="middle" font-size="18" font-weight="700">fast path?</text>
+        <text x="717" y="83" text-anchor="middle" font-size="14">全单 DocID group</text>
+        <text x="717" y="107" text-anchor="middle" font-size="14">且有可选中的 selective term</text>
+
+        <path d="M850 71 L930 71" stroke="#15803d" stroke-width="2" marker-end="url(#arrow-c)"></path>
+        <rect x="940" y="35" width="135" height="72" rx="10" fill="#e9f8ee" stroke="#15803d" stroke-width="2"></rect>
+        <text x="1007" y="66" text-anchor="middle" font-size="17" font-weight="700">直接出 DocID</text>
+        <text x="1007" y="91" text-anchor="middle" font-size="14">少分配</text>
+
+        <path d="M717 122 L717 176" stroke="#6d28d9" stroke-width="2" marker-end="url(#arrow-c)"></path>
+        <rect x="545" y="185" width="345" height="78" rx="10" fill="#f1eafe" stroke="#6d28d9" stroke-width="2"></rect>
+        <text x="717" y="218" text-anchor="middle" font-size="18" font-weight="700">matchGroups</text>
+        <text x="717" y="245" text-anchor="middle" font-size="14">先用 group 级 posting / range 排除</text>
+
+        <path d="M717 263 L717 317" stroke="#6d28d9" stroke-width="2" marker-end="url(#arrow-c)"></path>
+        <rect x="500" y="327" width="435" height="82" rx="10" fill="#fff" stroke="#dce3ed" stroke-width="2"></rect>
+        <text x="717" y="361" text-anchor="middle" font-size="18" font-weight="700">matchGroupSlots</text>
+        <text x="717" y="389" text-anchor="middle" font-size="14">多 DocID group 内部按 slot 精确判断</text>
+
+        <path d="M717 409 L717 448" stroke="#2864dc" stroke-width="2" marker-end="url(#arrow-c)"></path>
+        <rect x="515" y="430" width="405" height="32" rx="7" fill="#eaf1ff" stroke="#2864dc" stroke-width="2"></rect>
+        <text x="717" y="452" text-anchor="middle" font-size="15" font-weight="700">tombstone 过滤 -> sort / dedupe -> 复用 dst</text>
+      </svg>
+    </div>
+
+    <h3>5.1 查询语义</h3>
+    <ol>
+      <li><strong>字段内取并集：</strong><code>city In ["bj", "sh"]</code> 的两个值只要命中一个即可。</li>
+      <li><strong>字段间取交集：</strong><code>city</code> 和 <code>age</code> 都要满足。</li>
+      <li><strong>包含条件：</strong>include 命中是候选条件。</li>
+      <li><strong>排除条件：</strong>exclude 命中会从候选中减掉。</li>
+      <li><strong>未查询字段：</strong>查询里没传的字段不会限制当前 group。</li>
+      <li><strong>多个 Conjunction：</strong>每个 group 的结果最后取并集并按 DocID 去重。</li>
+    </ol>
+
+    <h3>5.2 Include / Exclude 示例</h3>
+    <pre><code>Conjunction:
+  city In ["bj", "sh"]
+  age  Between [20, 30)
+  city NotIn ["sh"]
+
+等价于：
+  (city in {bj, sh})
+  AND (age in [20, 30))
+  AND (city not in {sh})</code></pre>
+    <p>
+      执行时并不是把三个 posting 直接 AND。include 和 exclude 分开收集，
+      最终用“包含候选集合 - 排除命中集合”的方式判断。
+    </p>
+
+    <h3>5.3 为什么要区分单 DocID group 和多 DocID group</h3>
+    <p>
+      一个 group 如果只包含一个 DocID，那么 group 命中就等于 DocID 命中，可以直接返回。
+      如果一个 group 包含多个 DocID，就必须在 group 内部继续判断每个 slot，
+      否则 A 文档的 term 命中可能把同一 group 中的 B 文档也带出来。
+    </p>
+
+    <h3 id="group-query">5.4 Group Query：group 级筛选与 slot 级精判</h3>
+    <p>
+      Group Query 不是简单地把所有 DocID posting 直接求交。为了避免多个文档共处于一个
+      merged group 时发生“串组误匹配”，查询分成 group 级和 slot 级两层。
+    </p>
+    <div class="grid">
+      <div class="card">
+        <h3>Group 级：先缩小候选 group</h3>
+        <p>
+          对每个查询字段，把该字段所有查询值的 group posting 取并集，再把不同字段的
+          命中集合取交集。某个字段没有被文档限制时，该字段不会淘汰这个 group。
+        </p>
+        <pre><code>fieldHits(field, values)
+  = union(groupPosting[value] for value in values)
+
+candidates
+  = allGroups
+  candidates ∩= fieldHits(field1)
+  candidates ∩= fieldHits(field2)
+  ...</code></pre>
+      </div>
+      <div class="card">
+        <h3>Slot 级：再判断 group 内每个文档</h3>
+        <p>
+          多 DocID group 只能先保留候选，不能直接把 group 中所有文档都返回。
+          <code>matchGroupSlots</code> 在连续的 slot 区间上逐文档判断 include、exclude 和 range。
+        </p>
+        <pre><code>slots(group)
+  = [groupSlotStart[group], groupSlotEnd[group])
+
+resultSlots
+  = slots(group)
+  resultSlots ∩= includeHits(field1)
+  resultSlots ∩= includeHits(field2)
+  resultSlots -= excludeHits</code></pre>
+      </div>
+    </div>
+    <p>
+      例如 M1 包含 DocID <code>102, 103, 105, 108, 109, 110</code>。如果查询只命中
+      <code>105, 108</code>，group 级阶段可以保留 M1，但 slot 级阶段必须继续排除
+      <code>102, 103, 109, 110</code>，不能把 M1 的所有成员一起返回。
+    </p>
+    <table>
+      <thead>
+        <tr><th>规则</th><th>Group 级处理</th><th>Slot 级处理</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>include exact term / range</td>
+          <td>作为候选条件；多文档 group 可能被宽泛地保留</td>
+          <td>逐 slot 精确确认是否命中</td>
+        </tr>
+        <tr>
+          <td>exclude exact term / range</td>
+          <td>只对单 DocID group 安全地直接淘汰</td>
+          <td>多 DocID group 必须逐 slot 减掉 exclude 命中</td>
+        </tr>
+        <tr>
+          <td>查询未传的字段</td>
+          <td>不淘汰当前 group</td>
+          <td>不淘汰当前 slot</td>
+        </tr>
+        <tr>
+          <td>多个查询值</td>
+          <td>字段内先 union</td>
+          <td>同一 slot 命中任意一个值即可</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3>5.5 多选值在 Group Query 中的处理</h3>
+    <p>
+      多选值在同一个字段内部是 OR，在不同字段之间仍然是 AND。构建时每个值都会写入独立
+      term；查询时这些 term 的 posting 先做并集，再参与 group/slot 过滤。
+    </p>
+    <pre><code>Document:
+  city In {bj, gz}
+
+Query:
+  city In {bj, gz}
+
+字段内：
+  city=bj 的 posting
+  ∪ city=gz 的 posting
+
+字段间：
+  city 的候选
+  ∩ device 的候选
+  ∩ age 的候选</code></pre>
+    <div class="callout">
+      <strong>注意：</strong>
+      多选值不会自动展开成多个 Conjunction。它仍然属于同一个 group，因此不会破坏
+      DNF 边界；groupSignature 也不关心具体 term 值，只关心表达 shape 和 range 边界。
+    </div>
+
+    <h3>5.6 单 DocID group 快路径</h3>
+    <p>
+      如果索引中所有 group 都只包含一个 DocID，查询会尝试选择一个最 selective 的
+      required exact-term 字段作为入口，直接从 group posting 生成 DocID，不创建
+      group bitmap 或中间候选集合。
+    </p>
+    <ol>
+      <li>要求当前索引是 <code>allSingle</code>。</li>
+      <li>选择命中 group 数最少的 required exact-term 字段。</li>
+      <li>对该 posting 中的每个 group 调用 <code>groupMatches</code>。</li>
+      <li>最后统一过滤 tombstone，并对接收的 <code>dst</code> 做排序和去重。</li>
+    </ol>
+    <p>
+      如果存在宽泛 term、range-only 条件或索引中包含多 DocID group，则回退到
+      <code>matchGroups → matchGroupSlots</code> 的 bitmap 路径。
+    </p>
+
+    <h3>5.7 结果缓冲区</h3>
+    <p>
+      <code>RetrieveAssignmentsInto</code> 会把返回的 slice 复用起来。
+      对在线高频查询，这能显著减少每次查询的 <code>make([]DocID)</code> 分配。
+    </p>
+  </section>
+
+  <section id="data-demo">
+    <h2>6. 数据演示：10 条文档完整走一遍</h2>
+    <p>
+      下面用 10 条小数据，把前面的概念串起来。为了便于观察，假设每条文档只有一个 Conjunction，
+      年龄使用 <code>Between("age", row.Age, row.Age+1)</code> 表示一个精确年龄值。
+      其中多条文档故意使用多选值：同一个字段内多个值按 OR 处理，不同字段之间按 AND 处理。
+    </p>
+
+    <div class="card">
+      <h3>6.1 数据集</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>DocID</th>
+            <th>city（可多选）</th>
+            <th>device（可多选）</th>
+            <th>age</th>
+            <th>文档条件</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>101</td><td>{bj, sh}</td><td>{ios, android}</td><td>20</td><td><code>city∈{bj,sh} AND device∈{ios,android} AND age∈[20,21)</code></td></tr>
+          <tr><td>102</td><td>{bj, gz}</td><td>{android}</td><td>25</td><td><code>city∈{bj,gz} AND device=android AND age∈[25,26)</code></td></tr>
+          <tr><td>103</td><td>{sh}</td><td>{ios, android}</td><td>25</td><td><code>city=sh AND device∈{ios,android} AND age∈[25,26)</code></td></tr>
+          <tr><td>104</td><td>bj</td><td>ios</td><td>30</td><td><code>city=bj AND device=ios AND age∈[30,31)</code></td></tr>
+          <tr><td>105</td><td>{gz, cd}</td><td>{ios}</td><td>25</td><td><code>city∈{gz,cd} AND device=ios AND age∈[25,26)</code></td></tr>
+          <tr><td>106</td><td>bj</td><td>android</td><td>28</td><td><code>city=bj AND device=android AND age∈[28,29)</code></td></tr>
+          <tr><td>107</td><td>{sh}</td><td>NOT IN {android, tablet}</td><td>35</td><td><code>city=sh AND device∉{android,tablet} AND age∈[35,36)</code></td></tr>
+          <tr><td>108</td><td>{bj, sh}</td><td>{ios}</td><td>25</td><td><code>city∈{bj,sh} AND device=ios AND age∈[25,26)</code></td></tr>
+          <tr><td>109</td><td>cd</td><td>ios</td><td>25</td><td><code>city=cd AND device=ios AND age∈[25,26)</code></td></tr>
+          <tr><td>110</td><td>{bj}</td><td>{ios, android}</td><td>25</td><td><code>city=bj AND device∈{ios,android} AND age∈[25,26)</code></td></tr>
+        </tbody>
+      </table>
+      <p class="small">
+        107 的 <code>device</code> 是 exclude-only 条件：它没有要求 device 必须等于某个值，
+        只要求不能等于 <code>android</code> 或 <code>tablet</code>。这会触发 wildcard fallback。
+      </p>
+    </div>
+
+    <h3>6.2 步骤 A：构建 Document / Conjunction</h3>
+    <p>每条数据都编译成一个 Document，内部放一个 Conjunction。示意代码如下：</p>
+    <pre><code>type demoRow struct {
+    ID             int64
+    Cities         []string // 多选城市，字段内 OR
+    Devices        []string // 多选设备，字段内 OR
+    ExcludeDevices []string // exclude-only 设备
+    Age            int64
+}
+
+func demoValues(values []string) be.Values {
+    return be.NewStrValues(values[0], values[1:]...)
+}
+
+func demoDocument(row demoRow) *be.Document {
+    conj := be.NewConjunction().
+        In("city", demoValues(row.Cities)).
+        Between("age", row.Age, row.Age+1)
+
+    if len(row.Devices) &gt; 0 {
+        conj.In("device", demoValues(row.Devices))
+    }
+    if len(row.ExcludeDevices) &gt; 0 {
+        conj.NotIn("device", demoValues(row.ExcludeDevices))
+    }
+
+    return be.NewDocument(be.DocID(row.ID)).AddConjunction(conj)
+}</code></pre>
+    <p>
+      <code>demoValues(row.Cities)</code> 会把多个值编译进同一个 Conjunction 的同一个字段，
+      不会为每个 city 值创建新的 Conjunction。
+    </p>
+
+    <div class="diagram">
+      <svg viewBox="0 0 1120 330" role="img" aria-label="10 条文档构建为 group">
+        <defs>
+          <marker id="arrow-demo-a" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+            <path d="M0,0 L0,6 L9,3 z" fill="#2864dc"></path>
+          </marker>
+        </defs>
+        <rect x="35" y="112" width="180" height="82" rx="10" fill="#eaf1ff" stroke="#2864dc" stroke-width="2"></rect>
+        <text x="125" y="145" text-anchor="middle" font-size="19" font-weight="700">10 条 Document</text>
+        <text x="125" y="173" text-anchor="middle" font-size="14">每条 1 个 Conjunction</text>
+
+        <path d="M215 153 L315 153" stroke="#2864dc" stroke-width="2" marker-end="url(#arrow-demo-a)"></path>
+        <rect x="325" y="42" width="265" height="222" rx="10" fill="#fff" stroke="#dce3ed" stroke-width="2"></rect>
+        <text x="457" y="78" text-anchor="middle" font-size="19" font-weight="700">Builder.addDocument</text>
+        <text x="350" y="116" font-size="15">解析单选/多选 EQ term</text>
+        <text x="350" y="146" font-size="15">解析 Between range</text>
+        <text x="350" y="176" font-size="15">记录 include/exclude shape</text>
+        <text x="350" y="206" font-size="15">记录 add sequence</text>
+        <text x="350" y="236" font-size="15">每个 Conjunction 一个 groupBuilder</text>
+
+        <path d="M590 153 L690 153" stroke="#2864dc" stroke-width="2" marker-end="url(#arrow-demo-a)"></path>
+        <rect x="700" y="72" width="180" height="162" rx="10" fill="#f1eafe" stroke="#6d28d9" stroke-width="2"></rect>
+        <text x="790" y="111" text-anchor="middle" font-size="19" font-weight="700">G1 ... G10</text>
+        <text x="790" y="144" text-anchor="middle" font-size="15">10 个独立 group</text>
+        <text x="790" y="174" text-anchor="middle" font-size="15">每个 group 1 个 DocID</text>
+        <text x="790" y="204" text-anchor="middle" font-size="15">DNF 边界被保留</text>
+
+        <path d="M880 153 L975 153" stroke="#2864dc" stroke-width="2" marker-end="url(#arrow-demo-a)"></path>
+        <rect x="985" y="112" width="100" height="82" rx="10" fill="#e9f8ee" stroke="#15803d" stroke-width="2"></rect>
+        <text x="1035" y="147" text-anchor="middle" font-size="17" font-weight="700">Seal</text>
+        <text x="1035" y="173" text-anchor="middle" font-size="14">不可变</text>
+      </svg>
+    </div>
+
+    <h3>6.3 步骤 B：编码 term 和 range</h3>
+    <p>
+      构建时，exact term 会带私有前缀；多选值会拆成多个 term，但它们仍属于同一个
+      Conjunction/Group。range 则单独保存为半开区间。
+    </p>
+    <pre><code>doc 101:
+  city In {bj, sh}
+    -> (city,   "\x01bj") -> [101]
+    -> (city,   "\x01sh") -> [101]
+  device In {ios, android}
+    -> (device, "\x01ios")    -> [101]
+    -> (device, "\x01android")-> [101]
+
+doc 105:
+  city In {gz, cd}
+    -> (city, "\x01gz") -> [105]
+    -> (city, "\x01cd") -> [105]
+
+doc 107:
+  device NOT IN {android, tablet}
+    -> (device, "\x02android") -> [107]
+    -> (device, "\x02tablet")  -> [107]
+    -> (device, "\x03")        -> [107]  // exclude-only fallback
+
+age=25        -> range [25, 26)</code></pre>
+
+    <table>
+      <thead>
+        <tr><th>内部结构</th><th>本例中的内容</th><th>用途</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>include posting</td>
+          <td><code>city=\x01bj</code>、<code>city=\x01sh</code>、<code>device=\x01ios</code></td>
+          <td>找到满足包含条件的候选</td>
+        </tr>
+        <tr>
+          <td>exclude posting</td>
+          <td><code>device=\x02android</code>、<code>device=\x02tablet</code></td>
+          <td>把命中排除条件的候选减掉</td>
+        </tr>
+        <tr>
+          <td>wildcard</td>
+          <td><code>device=\x03</code></td>
+          <td>exclude-only 字段的默认候选</td>
+        </tr>
+        <tr>
+          <td>rangePredicate</td>
+          <td><code>[25,26)</code>、<code>[30,31)</code> ...</td>
+          <td>数字范围匹配</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3>6.4 步骤 C：Seal 后的内存结构</h3>
+    <p>
+      刚执行 <code>Seal()</code> 时，10 个 group 都还是单文档 group。
+      <code>queryIndex</code> 会把它们映射成连续 slot。
+    </p>
+
+    <table>
+      <thead>
+        <tr><th>Group</th><th>Slot</th><th>DocID</th><th>age range</th><th>device 条件类型</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>G1</td><td>0</td><td>101</td><td>[20,21)</td><td>include {ios, android}</td></tr>
+        <tr><td>G2</td><td>1</td><td>102</td><td>[25,26)</td><td>include android</td></tr>
+        <tr><td>G3</td><td>2</td><td>103</td><td>[25,26)</td><td>include {ios, android}</td></tr>
+        <tr><td>G4</td><td>3</td><td>104</td><td>[30,31)</td><td>include ios</td></tr>
+        <tr><td>G5</td><td>4</td><td>105</td><td>[25,26)</td><td>include ios</td></tr>
+        <tr><td>G6</td><td>5</td><td>106</td><td>[28,29)</td><td>include android</td></tr>
+        <tr><td>G7</td><td>6</td><td>107</td><td>[35,36)</td><td>exclude-only {android, tablet}</td></tr>
+        <tr><td>G8</td><td>7</td><td>108</td><td>[25,26)</td><td>include ios</td></tr>
+        <tr><td>G9</td><td>8</td><td>109</td><td>[25,26)</td><td>include ios</td></tr>
+        <tr><td>G10</td><td>9</td><td>110</td><td>[25,26)</td><td>include {ios, android}</td></tr>
+      </tbody>
+    </table>
+
+    <div class="grid">
+      <div class="card">
+        <h3>storage.Segment</h3>
+        <p>每个 group 保存自己的倒排和元数据：</p>
+        <pre><code>G8:
+  storage.Segment:
+    city:   "\x01bj" -> [108]
+    city:   "\x01sh" -> [108]   // 同一字段的另一个多选值
+    device: "\x01ios" -> [108]
+    live:             -> [108]
+  groupMeta:
+    age: [25,26)</code></pre>
+      </div>
+      <div class="card">
+        <h3>queryIndex</h3>
+        <p>查询层把 DocID 转成 slot：</p>
+        <pre><code>city "\x01bj" -> slots [0,1,3,5,7,9]
+city "\x01gz" -> slots [1,4]
+city query {bj,gz}
+              -> slots [0,1,3,4,5,7,9]   // 字段内 union
+
+device "\x01ios"
+              -> slots [0,2,3,4,6,7,8,9]
+age 25        -> slots [1,2,4,7,8,9]</code></pre>
+      </div>
+    </div>
+
+    <h3>6.5 步骤 D：Compact 后的内存结构</h3>
+    <p>
+      如果这些 delta 后续进入 <code>Store</code> 并执行压缩，G2、G3、G5、G8、G9、G10 的
+      <code>groupSignature</code> 相同，而且 DocID 不相交，因此可以合并成一个多文档 group。
+      即使它们的 city/device 多选值不同，也不会阻止合并，因为精确 term 值不属于 groupSignature。
+    </p>
+
+    <table>
+      <thead>
+        <tr><th>Compact 后 group</th><th>DocIDs</th><th>可合并原因</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>M1</td>
+          <td>102, 103, 105, 108, 109, 110</td>
+          <td>字段 shape 相同，age 都是 <code>[25,26)</code>，精确值可以不同，DocID 不相交</td>
+        </tr>
+        <tr><td>G1</td><td>101</td><td>age 是 <code>[20,21)</code>，保持独立</td></tr>
+        <tr><td>G4</td><td>104</td><td>age 是 <code>[30,31)</code>，保持独立</td></tr>
+        <tr><td>G6</td><td>106</td><td>age 是 <code>[28,29)</code>，保持独立</td></tr>
+        <tr><td>G7</td><td>107</td><td>exclude-only device 形状不同，保持独立</td></tr>
+      </tbody>
+    </table>
+
+    <p>
+      合并后，M1 的一个 slot range 覆盖 6 个 DocID。此时查询不仅要判断 group，
+      还要通过 <code>matchGroupSlots</code> 在 M1 内部逐 slot 过滤。
+    </p>
+
+    <h3>6.6 步骤 E：查询如何匹配</h3>
+    <p>查询条件故意让 city 使用多选值：</p>
+    <pre><code>city In {bj, gz}       // 字段内 OR
+device = "ios"
+age = 25</code></pre>
+
+    <div class="diagram">
+      <svg viewBox="0 0 1120 420" role="img" aria-label="10 条文档查询匹配流程">
+        <defs>
+          <marker id="arrow-demo-b" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+            <path d="M0,0 L0,6 L9,3 z" fill="#2864dc"></path>
+          </marker>
+        </defs>
+        <rect x="35" y="35" width="240" height="72" rx="10" fill="#eaf1ff" stroke="#2864dc" stroke-width="2"></rect>
+        <text x="155" y="66" text-anchor="middle" font-size="18" font-weight="700">query: {bj,gz} + ios + 25</text>
+        <text x="155" y="91" text-anchor="middle" font-size="14">Assignments</text>
+
+        <path d="M275 71 L355 71" stroke="#2864dc" stroke-width="2" marker-end="url(#arrow-demo-b)"></path>
+        <rect x="365" y="25" width="335" height="96" rx="10" fill="#fff" stroke="#dce3ed" stroke-width="2"></rect>
+        <text x="532" y="58" text-anchor="middle" font-size="18" font-weight="700">prepareQuery</text>
+        <text x="532" y="84" text-anchor="middle" font-size="14">{bj,gz} -> 字段内 posting union</text>
+        <text x="532" y="108" text-anchor="middle" font-size="14">ios -> string posting；25 -> range lookup</text>
+
+        <path d="M700 71 L785 71" stroke="#2864dc" stroke-width="2" marker-end="url(#arrow-demo-b)"></path>
+        <rect x="795" y="25" width="285" height="96" rx="10" fill="#f1eafe" stroke="#6d28d9" stroke-width="2"></rect>
+        <text x="937" y="58" text-anchor="middle" font-size="18" font-weight="700">candidate pruning</text>
+        <text x="937" y="84" text-anchor="middle" font-size="14">(city=bj ∪ city=gz) ∩ device ∩ age</text>
+        <text x="937" y="108" text-anchor="middle" font-size="14">候选收敛到 M1 内部 slot</text>
+
+        <path d="M937 121 L937 170" stroke="#6d28d9" stroke-width="2" marker-end="url(#arrow-demo-b)"></path>
+        <rect x="735" y="180" width="405" height="88" rx="10" fill="#fff" stroke="#dce3ed" stroke-width="2"></rect>
+        <text x="937" y="216" text-anchor="middle" font-size="18" font-weight="700">matchGroupSlots(M1)</text>
+        <text x="937" y="244" text-anchor="middle" font-size="14">在 102,103,105,108,109,110 中继续过滤 slot</text>
+
+        <path d="M937 268 L937 318" stroke="#15803d" stroke-width="2" marker-end="url(#arrow-demo-b)"></path>
+        <rect x="735" y="328" width="405" height="62" rx="10" fill="#e9f8ee" stroke="#15803d" stroke-width="2"></rect>
+        <text x="937" y="365" text-anchor="middle" font-size="18" font-weight="700">结果：DocID [105, 108, 110]</text>
+      </svg>
+    </div>
+
+    <h4>逐字段看集合</h4>
+    <pre><code>city = {bj, gz}
+  = {101, 102, 104, 106, 108, 110}   // city=bj
+  ∪ {102, 105}                        // city=gz
+  -> {101, 102, 104, 105, 106, 108, 110}
+
+device = ios
+  -> {101, 103, 104, 105, 107, 108, 109, 110}
+     // 107 的 device 是 exclude-only，查询 ios 不会被排除
+
+age = 25
+  -> {102, 103, 105, 108, 109, 110}
+
+三者交集
+  -> {105, 108, 110}</code></pre>
+
+    <div class="callout good">
+      <strong>关键结论</strong>
+      查询不是简单地“把三个 posting 求交”。它先把字段局部候选求并，再在同一个 Conjunction/Group 内求交，
+      最后把 exclude 命中减掉，并把多个 Group 的 DocID 合并去重。
+    </div>
+
+    <h3>6.7 再验证一个 Exclude 场景</h3>
+    <pre><code>query:
+  city = "sh"
+  device = "android"
+  age = 35
+
+G7 的文档条件：
+  city=sh
+  device NOT IN {android, tablet}
+  age∈[35,36)
+
+结果：[]</code></pre>
+    <p>
+      G7 在 city 和 age 上是候选，但 query 的 <code>device=android</code> 命中 G7 的 exclude posting，
+      所以 G7 被减掉。反过来，如果查询 <code>device=ios</code>，G7 可以通过 exclude-only wildcard 规则保留。
+    </p>
+  </section>
+
+  <section id="range">
+    <h2>7. 数字区间索引</h2>
+    <p>
+      range 查询不是普通的 exact term posting，因为一个区间可能覆盖很多值。
+      <code>queryRangeIndex</code> 采用两种结构：
+    </p>
+    <div class="grid">
+      <div class="card">
+        <h3>单位区间：点索引</h3>
+        <p>形如 <code>[x, x+1)</code> 的区间其实就是精确值 x。</p>
+        <pre><code>points[x] -> roaring bitmap(slot IDs)</code></pre>
+        <p>查询 x 时直接 map 查找，成本近似 O(1)。</p>
+      </div>
+      <div class="card">
+        <h3>宽区间：区间树</h3>
+        <p>形如 <code>[l, r)</code> 的区间保存在静态区间树中。</p>
+        <pre><code>node.maxRight = max(node.entries.right)
+
+query x:
+  prune if node.maxRight <= x
+       or node.leftBound > x</code></pre>
+        <p>用 maxRight 剪枝，避免扫描所有小于 x 的区间。</p>
+      </div>
+    </div>
+
+    <div class="diagram">
+      <svg viewBox="0 0 1120 300" role="img" aria-label="区间索引示意图">
+        <defs>
+          <marker id="arrow-d" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+            <path d="M0,0 L0,6 L9,3 z" fill="#2864dc"></path>
+          </marker>
+        </defs>
+        <text x="60" y="52" font-size="18" font-weight="700">区间数据</text>
+        <rect x="60" y="80" width="120" height="58" rx="8" fill="#fff" stroke="#dce3ed" stroke-width="2"></rect>
+        <text x="120" y="115" text-anchor="middle" font-size="16">[x, x+1)</text>
+        <rect x="210" y="80" width="160" height="58" rx="8" fill="#fff" stroke="#dce3ed" stroke-width="2"></rect>
+        <text x="290" y="115" text-anchor="middle" font-size="16">[l, r)</text>
+
+        <path d="M370 109 L455 109" stroke="#2864dc" stroke-width="2" marker-end="url(#arrow-d)"></path>
+        <rect x="465" y="42" width="220" height="132" rx="10" fill="#eaf1ff" stroke="#2864dc" stroke-width="2"></rect>
+        <text x="575" y="79" text-anchor="middle" font-size="18" font-weight="700">queryRangeIndex</text>
+        <text x="575" y="111" text-anchor="middle" font-size="15">point map</text>
+        <text x="575" y="139" text-anchor="middle" font-size="15">max-right interval tree</text>
+
+        <path d="M685 109 L775 109" stroke="#2864dc" stroke-width="2" marker-end="url(#arrow-d)"></path>
+        <rect x="785" y="42" width="275" height="132" rx="10" fill="#e9f8ee" stroke="#15803d" stroke-width="2"></rect>
+        <text x="922" y="79" text-anchor="middle" font-size="18" font-weight="700">point query x</text>
+        <text x="922" y="111" text-anchor="middle" font-size="15">map hit OR tree hit</text>
+        <text x="922" y="139" text-anchor="middle" font-size="15">返回 slot ranges</text>
+
+        <text x="60" y="225" font-size="16">查询命中条件：</text>
+        <text x="60" y="255" font-size="16"><tspan font-family="monospace">left &lt;= x &lt; right</tspan></text>
+      </svg>
+    </div>
+  </section>
+
+  <section id="incremental">
+    <h2>8. 增量更新、快照与压缩</h2>
+    <p>
+      如果需要在线写入，底层的 <code>Store</code> 不会直接修改已经发布的 <code>Index</code>。
+      它把变更累积成 delta，通过 tombstone 处理删除和更新，再用不可变快照保证查询稳定。
+    </p>
+
+    <div class="diagram">
+      <svg viewBox="0 0 1120 385" role="img" aria-label="增量存储和压缩流程">
+        <defs>
+          <marker id="arrow-e" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+            <path d="M0,0 L0,6 L9,3 z" fill="#2864dc"></path>
+          </marker>
+        </defs>
+        <rect x="35" y="38" width="175" height="72" rx="10" fill="#eaf1ff" stroke="#2864dc" stroke-width="2"></rect>
+        <text x="122" y="69" text-anchor="middle" font-size="18" font-weight="700">Add / Update</text>
+        <text x="122" y="94" text-anchor="middle" font-size="14">写入 pending</text>
+
+        <path d="M210 74 L285 74" stroke="#2864dc" stroke-width="2" marker-end="url(#arrow-e)"></path>
+        <rect x="295" y="38" width="175" height="72" rx="10" fill="#fff" stroke="#dce3ed" stroke-width="2"></rect>
+        <text x="382" y="69" text-anchor="middle" font-size="18" font-weight="700">Flush</text>
+        <text x="382" y="94" text-anchor="middle" font-size="14">生成 Delta</text>
+
+        <path d="M470 74 L545 74" stroke="#2864dc" stroke-width="2" marker-end="url(#arrow-e)"></path>
+        <rect x="555" y="25" width="225" height="98" rx="10" fill="#f1eafe" stroke="#6d28d9" stroke-width="2"></rect>
+        <text x="667" y="59" text-anchor="middle" font-size="18" font-weight="700">Delta + Tombstones</text>
+        <text x="667" y="86" text-anchor="middle" font-size="14">版本序列号判断存活</text>
+        <text x="667" y="110" text-anchor="middle" font-size="14">Update = Delete + Add</text>
+
+        <path d="M780 74 L855 74" stroke="#2864dc" stroke-width="2" marker-end="url(#arrow-e)"></path>
+        <rect x="865" y="25" width="205" height="98" rx="10" fill="#e9f8ee" stroke="#15803d" stroke-width="2"></rect>
+        <text x="967" y="59" text-anchor="middle" font-size="18" font-weight="700">StoreSnapshot</text>
+        <text x="967" y="86" text-anchor="middle" font-size="14">固定查询视图</text>
+        <text x="967" y="110" text-anchor="middle" font-size="14">写入不打断读取</text>
+
+        <path d="M667 123 L667 188" stroke="#b45309" stroke-width="2" marker-end="url(#arrow-e)"></path>
+        <rect x="475" y="198" width="385" height="82" rx="10" fill="#fff4df" stroke="#b45309" stroke-width="2"></rect>
+        <text x="667" y="232" text-anchor="middle" font-size="18" font-weight="700">Compact / mergeDeltas</text>
+        <text x="667" y="260" text-anchor="middle" font-size="14">清理 tombstone，合并兼容 group，发布新 Index</text>
+
+        <text x="100" y="338" font-size="16">正确性规则：</text>
+        <text x="275" y="338" font-size="16">相同 groupSignature + DocID 集合不相交，才允许合并。</text>
+      </svg>
+    </div>
+
+    <h3>7.1 Tombstone 如何判断版本</h3>
+    <pre><code>tombstone.dead(id, addSeq) == true
+when tombstoneSeq > addSeq</code></pre>
+    <p>
+      所以一次删除只杀死比删除序列更早的版本。之后重新 Add 的同 ID 文档拥有更大的 add sequence，仍然可见。
+    </p>
+
+    <h3>7.2 为什么压缩不能随意合并 group</h3>
+    <p>
+      <code>groupSignature</code> 包含每个字段的 include/exclude shape，以及 range predicate 的边界和方向。
+      exact term 的具体值不在签名里，因为它们可以通过 posting 合并。
+    </p>
+    <pre><code>same signature + disjoint doc IDs  -> 可以合并
+same signature + shared doc ID     -> 必须保持分开</code></pre>
+    <p>
+      共享 DocID 可能表示同一个文档的多个 Conjunction，也可能是同一个文档的不同版本。
+      随意合并会破坏 DNF 边界或 tombstone 的版本判断。
+    </p>
+    <div class="callout purple">
+      <strong>并发模型</strong>
+      已发布 Index 是不可变的。查询临时 bitmap 放在 query scratch 中，并通过 <code>sync.Pool</code> 复用；
+      Store 通过不可变 view 发布状态，快照 pin 住旧 view，压缩不会影响正在进行的查询。
+    </div>
+  </section>
+
+  <section id="api">
+    <h2>9. API 示例</h2>
+    <p>下面示例展示最常用的离线构建和查询方式。完整 benchmark 代码可参考 <code>benchmark/retrive_test.go</code>。</p>
+    <pre><code>package main
+
+import (
+    "fmt"
+
+    be "github.com/echoface/be_indexer"
+    "github.com/echoface/be_indexer/segmentindex"
+)
+
+func main() {
+    builder := segmentindex.NewBuilder()
+
+    doc := be.NewDocument(be.DocID(1001)).AddConjunction(
+        be.NewConjunction().
+            In("city", be.NewStrValues("bj")).
+            In("device", be.NewStrValues("ios")).
+            Between("age", 20, 30),
+    )
+
+    if err := builder.AddDocument(doc); err != nil {
+        panic(err)
+    }
+
+    index, err := builder.Seal()
+    if err != nil {
+        panic(err)
+    }
+
+    assignments := be.Assignments{
+        "city":   be.NewStrValues("bj"),
+        "device": be.NewStrValues("ios"),
+        "age":    be.NewInt64Values(25),
+    }
+
+    var dst []be.DocID
+    dst, err = index.RetrieveAssignmentsInto(dst, assignments)
+    if err != nil {
+        panic(err)
+    }
+    fmt.Println(dst)
+}</code></pre>
+
+    <h3>8.1 在线 Store 的最小写法</h3>
+    <pre><code>store := segmentindex.NewStore(segmentindex.StoreOptions{})
+if err := store.AddDocument(doc); err != nil {
+    return err
+}
+if err := store.Flush(); err != nil {
+    return err
+}
+
+snapshot := store.Snapshot()
+defer snapshot.Close()
+ids, err := snapshot.RetrieveAssignments(assignments)</code></pre>
+    <p class="small">
+      注：具体方法名以当前源码为准；核心模型是 <code>Store -> Delta -> Snapshot</code>，查询端读取的是固定快照。
+    </p>
+  </section>
+
+  <section id="pitfalls">
+    <h2>10. 常见误区</h2>
+    <div class="card">
+      <ul>
+        <li>
+          <strong>误区一：</strong>“segment 就是一个大倒排表”。<br>
+          实际上这里的 segment 更像一个 Conjunction 编译单元；一个 Document 可以产生多个 segment。
+        </li>
+        <li>
+          <strong>误区二：</strong>“include 和 exclude 可以直接对 DocID 求 AND”。<br>
+          exclude 应当从候选中减掉，并且 group 级排除只对单 DocID group 直接安全。
+        </li>
+        <li>
+          <strong>误区三：</strong>“range 可以用字符串 exact term 表示”。<br>
+          range 需要独立的半开区间结构，尤其是连续整数范围不能展开成海量 term。
+        </li>
+        <li>
+          <strong>误区四：</strong>“同 signature 的 group 都能合并”。<br>
+          还必须保证 DocID 集合不相交，否则会破坏 DNF 或版本边界。
+        </li>
+        <li>
+          <strong>误区五：</strong>“查询时再做一次字符串转换没关系”。<br>
+          高频查询应尽量使用 <code>RetrieveAssignmentsInto</code>、数字 int64 路径和可复用结果缓冲区。
+        </li>
+      </ul>
+    </div>
+  </section>
+
+  <section id="files">
+    <h2>11. 源码地图</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>文件</th>
+          <th>主要职责</th>
+          <th>新人阅读顺序</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><a href="../segmentindex/index.go">segmentindex/index.go</a></td>
+          <td>Document/Conjunction 到 groupBuilder、Segment、groupMeta、Index 的构建</td>
+          <td>1</td>
+        </tr>
+        <tr>
+          <td><a href="../segmentindex/boolean.go">segmentindex/boolean.go</a></td>
+          <td>完整 DNF 查询入口和兼容路径</td>
+          <td>2</td>
+        </tr>
+        <tr>
+          <td><a href="../segmentindex/query.go">segmentindex/query.go</a></td>
+          <td>queryIndex、slot、posting、bitmap 快路径、scratch pool</td>
+          <td>3</td>
+        </tr>
+        <tr>
+          <td><a href="../segmentindex/range.go">segmentindex/range.go</a></td>
+          <td>GT/LT/Between 到半开区间的转换</td>
+          <td>4</td>
+        </tr>
+        <tr>
+          <td><a href="../segmentindex/store.go">segmentindex/store.go</a></td>
+          <td>pending、Delta、Snapshot、Store 生命周期</td>
+          <td>5</td>
+        </tr>
+        <tr>
+          <td><a href="../segmentindex/version.go">segmentindex/version.go</a></td>
+          <td>tombstone 序列号和版本判断</td>
+          <td>6</td>
+        </tr>
+        <tr>
+          <td><a href="../segmentindex/merge.go">segmentindex/merge.go</a></td>
+          <td>压缩合并、groupSignature、合并安全条件</td>
+          <td>7</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="theory-multi">
+    <h2>12. 理论依据与多选值设计</h2>
+    <p>
+      这一章回答三个常见问题：<code>segmentindex</code> 是否有论文依据、当前是否支持多选值、
+      万级多选值是否应该换索引类型，以及 <code>ahoholder</code> 是否合适。
+    </p>
+
+    <h3>12.1 KGroups 与 segmentindex 的关系</h3>
+    <p>
+      <code>be_indexer_kgroups</code> 更接近论文中的 Boolean Expression Indexing / K-Groups 路线：
+      把布尔规则按条件组合编译成 posting，再按规则组进行匹配。
+      仓库 README 也明确说明，这套算法描述来源于
+      <a href="https://theory.stanford.edu/~sergei/papers/vldb09-indexing.pdf">Boolean expression indexing</a>。
+    </p>
+    <p>
+      <code>segmentindex</code> 不是另一篇论文算法的逐行复现，而是针对当前项目的查询优先目标重新组织的工程实现。
+      它保留了同一个问题模型：给定大量 DNF 规则，输入一个 assignment，找出满足条件的文档；
+      但物理执行层改成了“不可变倒排段 + 稠密 slot + bitmap 集合运算 + 区间索引 + 增量快照”。
+    </p>
+
+    <div class="diagram">
+      <svg viewBox="0 0 1120 310" role="img" aria-label="KGroups 与 segmentindex 的理论关系">
+        <defs>
+          <marker id="arrow-theory" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+            <path d="M0,0 L0,6 L9,3 z" fill="#2864dc"></path>
+          </marker>
+        </defs>
+        <rect x="35" y="45" width="260" height="92" rx="10" fill="#eaf1ff" stroke="#2864dc" stroke-width="2"></rect>
+        <text x="165" y="78" text-anchor="middle" font-size="19" font-weight="700">Boolean Expression</text>
+        <text x="165" y="106" text-anchor="middle" font-size="15">DNF / 规则匹配问题</text>
+
+        <path d="M295 91 L395 91" stroke="#2864dc" stroke-width="2" marker-end="url(#arrow-theory)"></path>
+        <rect x="405" y="25" width="300" height="132" rx="10" fill="#fff" stroke="#dce3ed" stroke-width="2"></rect>
+        <text x="555" y="61" text-anchor="middle" font-size="19" font-weight="700">理论基础</text>
+        <text x="435" y="91" font-size="15">K-Groups / posting list</text>
+        <text x="435" y="118" font-size="15">bitmap set algebra</text>
+        <text x="435" y="145" font-size="15">interval stabbing / LSM</text>
+
+        <path d="M705 72 L805 72" stroke="#2864dc" stroke-width="2" marker-end="url(#arrow-theory)"></path>
+        <path d="M705 125 L805 125" stroke="#2864dc" stroke-width="2" marker-end="url(#arrow-theory)"></path>
+        <rect x="815" y="25" width="275" height="72" rx="10" fill="#e9f8ee" stroke="#15803d" stroke-width="2"></rect>
+        <text x="952" y="57" text-anchor="middle" font-size="18" font-weight="700">KGroupsBEIndex</text>
+        <text x="952" y="82" text-anchor="middle" font-size="14">论文式规则匹配路线</text>
+        <rect x="815" y="117" width="275" height="72" rx="10" fill="#f1eafe" stroke="#6d28d9" stroke-width="2"></rect>
+        <text x="952" y="149" text-anchor="middle" font-size="18" font-weight="700">segmentindex</text>
+        <text x="952" y="174" text-anchor="middle" font-size="14">查询优化工程路线</text>
+
+        <text x="35" y="240" font-size="16">结论：</text>
+        <text x="105" y="240" font-size="16">同一类 DNF 布尔索引问题，不同的物理组织和查询执行策略。</text>
+      </svg>
+    </div>
+
+    <h3>12.2 segmentindex 的理论依据</h3>
+    <table>
+      <thead>
+        <tr><th>技术</th><th>在 segmentindex 中的作用</th><th>理论来源</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>DNF / Boolean Expression Indexing</td>
+          <td>把 Document 拆成 Conjunction group，保持 AND/OR 边界</td>
+          <td>Boolean expression indexing、规则索引</td>
+        </tr>
+        <tr>
+          <td>Inverted Index / Posting List</td>
+          <td>term 到 DocID 或 slot 的映射</td>
+          <td>倒排索引基础结构</td>
+        </tr>
+        <tr>
+          <td>Bitmap Set Algebra</td>
+          <td>候选求交、求并、排除、去重</td>
+          <td>Roaring bitmap / bitset 运算</td>
+        </tr>
+        <tr>
+          <td>Interval Stabbing Query</td>
+          <td>查询数值是否落入 <code>[left, right)</code></td>
+          <td>segment tree / interval tree</td>
+        </tr>
+        <tr>
+          <td>LSM / Delta / Snapshot</td>
+          <td>增量写入、不可变快照、后台 Compaction</td>
+          <td>LSM-tree、MVCC、immutable view</td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="callout">
+      <strong>更准确的说法</strong>
+      <code>segmentindex</code> 的理论依据不是一个单独命名的“segmentindex 算法”，而是把 DNF 规则索引、倒排索引、bitmap、区间查询和 LSM 增量思想组合成一个查询优先的实现。
+      如果需要引用论文，可以引用 Boolean Expression Indexing 作为问题和 K-Groups 的理论背景，但不要把 segmentindex 描述成论文算法的直接复刻。
+    </div>
+
+    <h3>12.3 当前是否支持多选值</h3>
+    <p>
+      支持。这里的“多选值”有两个方向，两者都由 <code>be.Values</code> 表达：
+    </p>
+    <table>
+      <thead>
+        <tr><th>场景</th><th>例子</th><th>当前语义</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>文档侧多值</td>
+          <td><code>In("tag", NewStrValues("a", "b", "c"))</code></td>
+          <td>一个字段的多个值是 OR，任一值命中即可</td>
+        </tr>
+        <tr>
+          <td>查询侧多值</td>
+          <td><code>"tag": NewStrValues("a", "b", "c")</code></td>
+          <td>多个 query value 的 posting 做 union</td>
+        </tr>
+        <tr>
+          <td>范围值</td>
+          <td><code>Between("age", 20, 30)</code></td>
+          <td>独立的 range predicate，不展开成枚举 term</td>
+        </tr>
+      </tbody>
+    </table>
+    <pre><code>// 文档：tag 可以是多个值
+doc := be.NewDocument(id).AddConjunction(
+    be.NewConjunction().In("tag", be.NewStrValues("a", "b", "c")),
+)
+
+// 查询：query 也可以传多个值，结果取 OR
+assignments := be.Assignments{
+    "tag": be.NewStrValues("a", "b", "c", "d"),
+}</code></pre>
+    <p>
+      当前实现会为每个 exact value 建立 term posting；查询时把多个 value 的 posting 合并。
+      因此“万级多选值”在语义上是支持的，但会带来 term 数量、查询规范化、posting 合并和去重成本。
+    </p>
+
+    <h3>12.4 多选值达到万级时怎么选</h3>
+    <table>
+      <thead>
+        <tr><th>工作负载</th><th>推荐结构</th><th>原因</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>精确 tag 集合，<code>tag In [10k values]</code></td>
+          <td>继续使用 inverted posting，但增加 value dictionary / int64 ID</td>
+          <td>避免每个查询值都走字符串格式化和字符串 map；用批量 Roaring union</td>
+        </tr>
+        <tr>
+          <td>查询值很多，且结果集合也很大</td>
+          <td>值 ID 化 + Roaring bitmap，或 bit-sliced bitmap</td>
+          <td>减少 per-value 分配，利用 bitmap 的 union/intersection/difference</td>
+        </tr>
+        <tr>
+          <td>低基数字段，查询经常要求大范围枚举</td>
+          <td>直接 bitmap matrix / 列式 bitset</td>
+          <td>所有值共享同一 DocID universe，集合运算更稳定</td>
+        </tr>
+        <tr>
+          <td>文本中包含任意关键词</td>
+          <td><code>ahoholder</code> 或其他多模式匹配结构</td>
+          <td>这是 substring/keyword matching，不是 exact set membership</td>
+        </tr>
+        <tr>
+          <td>连续数字区间</td>
+          <td>range index</td>
+          <td>不要把区间展开成上万个 exact term</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="callout good">
+      <strong>是否需要新建索引类型</strong>
+      如果“多选值”仍然是精确的 <code>In / NotIn</code>，不需要马上引入新的语义索引；
+      优先在现有 <code>segmentindex</code> 上增加 dictionary-backed multi-value fast path。
+      只有当工作负载变成“文本包含关键词”或“大量值的集合矩阵”时，才需要单独的 holder/index 类型。
+    </div>
+
+    <h3>12.5 ahoholder 是否合适</h3>
+    <p>
+      <code>ahoholder</code> 基于 Aho-Corasick 自动机，适合“一段文本是否包含多个关键词中的任意一个”。
+      它不是为精确多选集合匹配设计的。
+    </p>
+    <table>
+      <thead>
+        <tr><th>需求</th><th>ahoholder 是否合适</th><th>说明</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>tag In ["a", "b", "c"]</code></td>
+          <td>不合适</td>
+          <td>这是精确 term membership，应使用 inverted posting</td>
+        </tr>
+        <tr>
+          <td><code>content contains ["比特币", "以太坊"]</code></td>
+          <td>合适</td>
+          <td>这是多模式子串/关键词匹配</td>
+        </tr>
+        <tr>
+          <td>万级关键词扫描长文本</td>
+          <td>可能合适</td>
+          <td>适合一次扫描文本匹配多个 pattern，但要评估字典内存、重叠匹配和输出量</td>
+        </tr>
+        <tr>
+          <td>数值范围 <code>age Between [20, 30]</code></td>
+          <td>不合适</td>
+          <td>应使用 range index</td>
+        </tr>
+      </tbody>
+    </table>
+    <p>
+      当前 <code>ACEntriesHolder</code> 只接受 EQ 语义，并通过 <code>MultiPatternSearch</code> 在拼接后的查询内容中找关键词。
+      如果把它用于 tag 的万级 exact 多选，可能出现分隔符、子串和重叠 pattern 语义问题，性能也不如 hash map + inverted posting 直接。
+    </p>
+
+    <h3>12.6 推荐决策</h3>
+    <ol>
+      <li><strong>精确多选：</strong>保留 <code>segmentindex</code> / default holder，增加值字典和批量 bitmap union。</li>
+      <li><strong>文本关键词：</strong>使用 <code>ahoholder</code>，并明确“包含”而不是“等于”的语义。</li>
+      <li><strong>范围：</strong>保留 range index，不把连续范围物化为大量 exact term。</li>
+      <li><strong>混合字段：</strong>把 exact tag、文本关键词、数值范围拆成不同字段或不同 holder，避免一个索引承担多种物理语义。</li>
+    </ol>
+    <div class="callout purple">
+      <strong>一句话结论</strong>
+      <code>segmentindex</code> 的理论根基是 DNF 布尔索引和经典索引结构的组合；
+      多选值已经被支持，万级多选首先要优化 value ID 和 bitmap 合并，而不是直接换成 Aho-Corasick。
+    </div>
+    <p class="small">
+      相关源码：
+      <a href="../README.md">README.md</a>、
+      <a href="../static/design/vldb09_indexing.md">Boolean expression indexing 设计图</a>、
+      <a href="../holder/ahoholder/ahocorasick_holder.go">ahoholder 实现</a>、
+      <a href="../segmentindex/query.go">segmentindex/query.go</a>。
+    </p>
+  </section>
+
+  <section id="mental-model">
+    <h2>13. 最终心智模型</h2>
+    <div class="card">
+      <p>
+        把 <code>segmentindex</code> 想成一台“离线编译器 + 在线过滤器”：
+      </p>
+      <ol>
+        <li><strong>离线编译：</strong>把 Document 拆成 DNF group，把条件编码成 term、range、shape、sequence。</li>
+        <li><strong>预计算：</strong>把 group 和 DocID 映射成 slot，把 term 和 range 变成可快速定位的 posting。</li>
+        <li><strong>在线过滤：</strong>先把不可能的 group 剪掉，再只对少量候选做精确判断。</li>
+        <li><strong>结果收敛：</strong>处理 tombstone，合并多个 group 的 DocID，排序去重，复用结果缓冲区。</li>
+      </ol>
+      <div class="callout good">
+        <strong>记住这条线</strong>
+        <code>Document → Conjunction → Group/Segment → queryIndex → bitmap/slot → DocID</code>
+      </div>
+    </div>
+  </section>
+
+  <section id="references">
+    <h2>14. 参考入口</h2>
+    <ul>
+      <li><a href="../segmentindex/index.go">构建入口：Builder / Index / groupMeta</a></li>
+      <li><a href="../segmentindex/boolean.go">完整查询入口：RetrieveAssignments</a></li>
+      <li><a href="../segmentindex/query.go">查询加速结构：queryIndex / queryPosting / queryRangeIndex</a></li>
+      <li><a href="../segmentindex/store.go">增量存储：Store / Delta / Snapshot</a></li>
+      <li><a href="../segmentindex/merge.go">压缩合并：groupSignature / mergeDeltas</a></li>
+      <li><a href="../benchmark/retrive_test.go">端到端 benchmark 示例</a></li>
+    </ul>
+    <p class="small">
+      文档生成日期：2026-11-10。本文档描述的是当前工作区中 <code>segmentindex</code> 的实现模型，
+      具体 API 和性能特征以源码及测试为准。
+    </p>
+  </section>
+
+  <footer class="footer">
+    <strong>segmentindex 技术文档</strong><br>
+    设计重点：保持 DNF 边界、优先查询延迟、用不可变结构简化并发读取。
+  </footer>
+</main>
+</body>
+</html>

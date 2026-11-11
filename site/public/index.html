@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>be_indexer — 把布尔规则编译成一次归并</title>
   <meta name="description" content="be_indexer 是 Go 编写的高性能布尔表达式索引 SDK：离线把 DNF 规则编译成不可变 Segment，在线以 mmap 零拷贝与单次多路归并完成匹配。适用于广告定向、推荐过滤与规则引擎。">
-  <meta name="theme-color" content="#05080f">
+  <meta name="theme-color" content="#f6f1e7">
   <meta property="og:title" content="be_indexer — 把布尔规则编译成一次归并">
   <meta property="og:description" content="VLDB 09 布尔表达式索引的工程化实现：K 编码进 EntryID、单次多路归并、mmap 零拷贝、full + delta、精确 Top K。">
   <meta property="og:type" content="website">
@@ -24,11 +24,11 @@
     <div class="container nav-row">
       <a class="brand" href="./index.html" aria-label="be_indexer 首页">
         <svg class="brand-mark" viewBox="0 0 32 32" fill="none" aria-hidden="true">
-          <rect x="1.25" y="1.25" width="29.5" height="29.5" rx="8" stroke="url(#bm-g)" stroke-width="1.5"/>
-          <path d="M9 10.5h7.5M9 16h13M9 21.5h5.5" stroke="#93a4ba" stroke-width="1.6" stroke-linecap="round"/>
-          <circle cx="22.5" cy="10.5" r="2.1" fill="#22d3ee"/>
-          <circle cx="26.5" cy="21.5" r="2.1" fill="#818cf8"/>
-          <defs><linearGradient id="bm-g" x1="4" y1="2" x2="29" y2="30" gradientUnits="userSpaceOnUse"><stop stop-color="#818cf8"/><stop offset="1" stop-color="#22d3ee"/></linearGradient></defs>
+          <rect x="1.25" y="1.25" width="29.5" height="29.5" rx="8" stroke="#cfc1ab" stroke-width="1.5"/>
+          <path d="M9 10.5h7.5M9 16h13M9 21.5h5.5" stroke="#7a7164" stroke-width="1.6" stroke-linecap="round"/>
+          <circle cx="22.5" cy="10.5" r="2.1" fill="#9a3412"/>
+          <circle cx="26.5" cy="21.5" r="2.1" fill="#1f4e79"/>
+          <defs><linearGradient id="bm-g" x1="4" y1="2" x2="29" y2="30" gradientUnits="userSpaceOnUse"><stop stop-color="#1f4e79"/><stop offset="1" stop-color="#0f766e"/></linearGradient></defs>
         </svg>
         <span class="brand-name">be<span>_</span>indexer</span>
       </a>
@@ -226,20 +226,20 @@
             <svg class="diagram" viewBox="0 0 1120 520" role="img" aria-label="be_indexer 系统架构：离线构建 DNF 到 Segment，在线通过 mmap 加载并归并查询">
               <defs>
                 <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-                  <path d="M0 0 10 5 0 10z" fill="#64748b"/>
+                  <path d="M0 0 10 5 0 10z" fill="#8a8175"/>
                 </marker>
                 <marker id="arrow-c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-                  <path d="M0 0 10 5 0 10z" fill="#22d3ee"/>
+                  <path d="M0 0 10 5 0 10z" fill="#0f766e"/>
                 </marker>
                 <linearGradient id="lane-off" x1="0" y1="0" x2="1" y2="0">
-                  <stop stop-color="#818cf8" stop-opacity=".10"/><stop offset="1" stop-color="#22d3ee" stop-opacity=".03"/>
+                  <stop stop-color="#1f4e79" stop-opacity=".10"/><stop offset="1" stop-color="#0f766e" stop-opacity=".03"/>
                 </linearGradient>
                 <linearGradient id="lane-on" x1="0" y1="0" x2="1" y2="0">
-                  <stop stop-color="#22d3ee" stop-opacity=".08"/><stop offset="1" stop-color="#34d399" stop-opacity=".03"/>
+                  <stop stop-color="#0f766e" stop-opacity=".08"/><stop offset="1" stop-color="#4d7c0f" stop-opacity=".03"/>
                 </linearGradient>
               </defs>
 
-              <rect x="24" y="24" width="1072" height="208" rx="14" fill="url(#lane-off)" stroke="rgba(129,140,248,.18)"/>
+              <rect x="24" y="24" width="1072" height="208" rx="14" fill="url(#lane-off)" stroke="rgba(31,78,121,.18)"/>
               <text x="46" y="51" class="tc" letter-spacing="1.5">OFFLINE BUILD</text>
               <text x="1076" y="51" class="ts" text-anchor="end">不可变 · 可校验 · 可回滚</text>
 
@@ -274,7 +274,7 @@
               <text x="638" y="202" class="tc">mmap</text>
               <text x="638" y="217" class="ts">zero-copy</text>
 
-              <rect x="24" y="252" width="1072" height="244" rx="14" fill="url(#lane-on)" stroke="rgba(34,211,238,.16)"/>
+              <rect x="24" y="252" width="1072" height="244" rx="14" fill="url(#lane-on)" stroke="rgba(15,118,110,.16)"/>
               <text x="46" y="279" class="tc" letter-spacing="1.5">ONLINE SERVE</text>
               <text x="1076" y="279" class="ts" text-anchor="end">只读 · 并发安全 · 每查询固定快照</text>
 
@@ -317,9 +317,9 @@
         </figure>
 
         <div class="system-note reveal">
-          <span><i style="background:#818cf8"></i> 离线构建</span>
-          <span><i style="background:#22d3ee"></i> 在线只读</span>
-          <span><i style="background:#34d399"></i> 结果与快照</span>
+          <span><i style="background:#1f4e79"></i> 离线构建</span>
+          <span><i style="background:#0f766e"></i> 在线只读</span>
+          <span><i style="background:#4d7c0f"></i> 结果与快照</span>
           <span>数据来源：仓库 README 与 docs/architecture</span>
         </div>
       </div>
@@ -462,7 +462,7 @@ res, _ := engine.Retrieve(be_indexer.Assignments{
 
     <section class="section">
       <div class="container">
-        <div class="panel panel-pad reveal" style="padding:44px;background:radial-gradient(600px 240px at 20% 0%,rgba(129,140,248,.14),transparent 70%),rgba(7,12,22,.7)">
+        <div class="panel panel-pad reveal" style="padding:44px;background:#fffdf8">
           <div class="split" style="gap:32px;align-items:center">
             <div>
               <span class="kicker">Read the source</span>
@@ -485,10 +485,10 @@ res, _ := engine.Retrieve(be_indexer.Assignments{
         <div class="footer-brand">
           <a class="brand" href="./index.html">
             <svg class="brand-mark" viewBox="0 0 32 32" fill="none" aria-hidden="true">
-              <rect x="1.25" y="1.25" width="29.5" height="29.5" rx="8" stroke="#3d4b63" stroke-width="1.5"/>
-              <path d="M9 10.5h7.5M9 16h13M9 21.5h5.5" stroke="#93a4ba" stroke-width="1.6" stroke-linecap="round"/>
-              <circle cx="22.5" cy="10.5" r="2.1" fill="#22d3ee"/>
-              <circle cx="26.5" cy="21.5" r="2.1" fill="#818cf8"/>
+              <rect x="1.25" y="1.25" width="29.5" height="29.5" rx="8" stroke="#c9bfae" stroke-width="1.5"/>
+              <path d="M9 10.5h7.5M9 16h13M9 21.5h5.5" stroke="#7a7164" stroke-width="1.6" stroke-linecap="round"/>
+              <circle cx="22.5" cy="10.5" r="2.1" fill="#9a3412"/>
+              <circle cx="26.5" cy="21.5" r="2.1" fill="#1f4e79"/>
             </svg>
             <span class="brand-name">be<span>_</span>indexer</span>
           </a>

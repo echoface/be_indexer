@@ -124,6 +124,28 @@
   }
   document.querySelectorAll(".codeblock pre code").forEach(highlightCode);
 
+  /* ---------- overflow hint for wide diagrams ---------- */
+  var scrollHintTimer = null;
+  function updateScrollHints() {
+    document.querySelectorAll(".figure").forEach(function (fig) {
+      var body = fig.querySelector(".figure-body");
+      if (!body || !body.querySelector(".diagram")) return;
+      var hint = fig.querySelector(".scroll-hint");
+      if (!hint) {
+        hint = document.createElement("div");
+        hint.className = "scroll-hint";
+        hint.textContent = "← 横向滑动查看完整图 →";
+        body.parentNode.insertBefore(hint, body);
+      }
+      hint.classList.toggle("is-visible", body.scrollWidth > body.clientWidth + 4);
+    });
+  }
+  window.addEventListener("resize", function () {
+    if (scrollHintTimer) window.clearTimeout(scrollHintTimer);
+    scrollHintTimer = window.setTimeout(updateScrollHints, 120);
+  });
+  updateScrollHints();
+
   /* ---------- active TOC ---------- */
   var toc = document.querySelector("[data-toc]");
   if (toc && "IntersectionObserver" in window) {

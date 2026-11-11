@@ -1,6 +1,6 @@
 # be_indexer static site
 
-面向 [be_indexer](../README.md) 的静态宣传 + 技术深潜站。纯 HTML / CSS / 原生 JS，零运行时依赖、零构建步骤，可直接部署到 **Cloudflare Pages** 或 **Cloudflare Workers**（Static Assets）。
+面向 [be_indexer](../README.md) 的静态宣传 + 技术深潜站。纯 HTML / CSS / 原生 JS，零运行时依赖、零构建步骤，可直接部署到 **Cloudflare Pages** 或 **Cloudflare Workers**（Static Assets）。视觉采用暖纸色、衬线标题与低饱和墨蓝/铁锈红，避免暗色渐变与霓虹效果。参考了 Tufte / 学术出版物的纸面与衬线排版、Stripe / Linear Docs 的留白与低饱和标签、GitHub Docs 的代码与表格密度。
 
 ## 页面
 

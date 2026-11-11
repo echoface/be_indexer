@@ -13,7 +13,7 @@
   <meta property="og:type" content="website">
   <meta name="twitter:title" content="精确 Top K — be_indexer">
   <meta name="twitter:description" content="be_indexer 精确 Top K 设计：独立分数 sidecar、BlockMaxScoreTable 块上界、布尔 pivot 之后的分数剪枝、延迟建堆与缺失分数策略。">
-  <meta name="theme-color" content="#05080f">
+  <meta name="theme-color" content="#f6f1e7">
   <link rel="icon" href="./favicon.svg" type="image/svg+xml">
   <link rel="icon" href="./favicon.ico" sizes="any">
   <link rel="stylesheet" href="./assets/site.css">
@@ -25,7 +25,7 @@
   <header class="site-header">
     <div class="container nav-row">
       <a class="brand" href="./index.html" aria-label="be_indexer 首页">
-        <svg class="brand-mark" viewBox="0 0 32 32" fill="none" aria-hidden="true"><rect x="1.25" y="1.25" width="29.5" height="29.5" rx="8" stroke="url(#bm-g)" stroke-width="1.5"/><path d="M9 10.5h7.5M9 16h13M9 21.5h5.5" stroke="#93a4ba" stroke-width="1.6" stroke-linecap="round"/><circle cx="22.5" cy="10.5" r="2.1" fill="#22d3ee"/><circle cx="26.5" cy="21.5" r="2.1" fill="#818cf8"/><defs><linearGradient id="bm-g" x1="4" y1="2" x2="29" y2="30" gradientUnits="userSpaceOnUse"><stop stop-color="#818cf8"/><stop offset="1" stop-color="#22d3ee"/></linearGradient></defs></svg>
+        <svg class="brand-mark" viewBox="0 0 32 32" fill="none" aria-hidden="true"><rect x="1.25" y="1.25" width="29.5" height="29.5" rx="8" stroke="#cfc1ab" stroke-width="1.5"/><path d="M9 10.5h7.5M9 16h13M9 21.5h5.5" stroke="#7a7164" stroke-width="1.6" stroke-linecap="round"/><circle cx="22.5" cy="10.5" r="2.1" fill="#9a3412"/><circle cx="26.5" cy="21.5" r="2.1" fill="#1f4e79"/><defs><linearGradient id="bm-g" x1="4" y1="2" x2="29" y2="30" gradientUnits="userSpaceOnUse"><stop stop-color="#1f4e79"/><stop offset="1" stop-color="#0f766e"/></linearGradient></defs></svg>
         <span class="brand-name">be<span>_</span>indexer</span>
       </a>
       <nav class="main-nav" data-main-nav aria-label="主导航">
@@ -91,13 +91,13 @@
             <div class="figure-head"><span class="label">figure 12</span><span>two proofs, one cursor advance</span></div>
             <div class="figure-body flush">
               <svg class="diagram" viewBox="0 0 980 300" role="img" aria-label="TopK 剪枝：最小头部、布尔 pivot、分数 target 三段推进">
-                <defs><marker id="ar10" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 10 5 0 10z" fill="#64748b"/></marker></defs>
+                <defs><marker id="ar10" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 10 5 0 10z" fill="#8a8175"/></marker></defs>
                 <line x1="40" y1="150" x2="940" y2="150" class="line" stroke-width="1.5"/>
-                <circle cx="130" cy="150" r="6" fill="#22d3ee"/>
-                <circle cx="420" cy="150" r="6" fill="#fbbf24"/>
-                <circle cx="770" cy="150" r="6" fill="#34d399"/>
+                <circle cx="130" cy="150" r="6" fill="#0f766e"/>
+                <circle cx="420" cy="150" r="6" fill="#b45309"/>
+                <circle cx="770" cy="150" r="6" fill="#4d7c0f"/>
                 <text x="130" y="126" class="tc" text-anchor="middle">最小头部</text>
-                <text x="420" y="126" class="ta" fill="#fbbf24" text-anchor="middle" style="font-size:11px;font-family:var(--mono)">布尔 pivot</text>
+                <text x="420" y="126" class="ta" fill="#b45309" text-anchor="middle" style="font-size:11px;font-family:var(--mono)">布尔 pivot</text>
                 <text x="770" y="126" class="tg" text-anchor="middle">分数 target</text>
                 <text x="130" y="180" class="ts" text-anchor="middle">当前游标位置</text>
                 <text x="420" y="180" class="ts" text-anchor="middle">第 max(K,1) 个头部</text>
@@ -105,7 +105,7 @@
                 <rect x="160" y="62" width="190" height="36" rx="6" class="box box-c"/>
                 <text x="255" y="84" class="tc" text-anchor="middle">布尔证明：不足 K 个字段</text>
                 <rect x="470" y="62" width="220" height="36" rx="6" class="box box-a"/>
-                <text x="580" y="84" class="ts" text-anchor="middle" fill="#fbbf24">分数证明：上界 ≤ 阈值</text>
+                <text x="580" y="84" class="ts" text-anchor="middle" fill="#b45309">分数证明：上界 ≤ 阈值</text>
                 <path d="M255 98v38" class="line" marker-end="url(#ar10)"/>
                 <path d="M580 98v38" class="line" marker-end="url(#ar10)"/>
                 <text x="40" y="238" class="ts">一段 EntryID 区间若要被整体跳过，必须同时满足：</text>
@@ -189,7 +189,7 @@ ranked, err := holder.RetrieveTopK(assignments, 100, nil)</code></pre>
                 <path d="M720 148 790 192" class="line" marker-end="url(#ar11)"/>
                 <text x="40" y="278" class="ts">阈值 = 当前第 N 名的 (score, signed DocID)。上界 ≤ 阈值 → 整段不可能进入 Top N。</text>
                 <text x="40" y="300" class="tc">stored in sidecar, not in mmap segment format</text>
-                <defs><marker id="ar11" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 10 5 0 10z" fill="#64748b"/></marker></defs>
+                <defs><marker id="ar11" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 10 5 0 10z" fill="#8a8175"/></marker></defs>
               </svg>
             </div>
             <figcaption class="figure-caption">上界包含同分时的 signed DocID 排序，不能仅凭 <code>score ≤ threshold.score</code> 丢弃整个同分区间。</figcaption>
@@ -242,7 +242,7 @@ ranked, err := holder.RetrieveTopK(assignments, 100, nil)</code></pre>
                 <path d="M550 113h52" class="line" marker-end="url(#ar12)"/>
                 <text x="40" y="218" class="ts">重复 DocID、MissingScoreSkip 缺分文档不会触发建堆；被淘汰文档的分数在同一次查询中不会改变。</text>
                 <text x="40" y="240" class="tm">N &gt; M 时始终只追加，不建堆；最终仍可返回全部 M 项，但需要打分与最终排序。</text>
-                <defs><marker id="ar12" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 10 5 0 10z" fill="#64748b"/></marker></defs>
+                <defs><marker id="ar12" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 10 5 0 10z" fill="#8a8175"/></marker></defs>
               </svg>
             </div>
           </div>
@@ -379,7 +379,7 @@ ranked := collector.Scored() // 独立拥有的排序结果</code></pre>
   <footer class="site-footer">
     <div class="container">
       <div class="footer-main">
-        <div class="footer-brand"><a class="brand" href="./index.html"><svg class="brand-mark" viewBox="0 0 32 32" fill="none" aria-hidden="true"><rect x="1.25" y="1.25" width="29.5" height="29.5" rx="8" stroke="#3d4b63" stroke-width="1.5"/><path d="M9 10.5h7.5M9 16h13M9 21.5h5.5" stroke="#93a4ba" stroke-width="1.6" stroke-linecap="round"/><circle cx="22.5" cy="10.5" r="2.1" fill="#22d3ee"/><circle cx="26.5" cy="21.5" r="2.1" fill="#818cf8"/></svg><span class="brand-name">be<span>_</span>indexer</span></a><p>高性能布尔表达式索引 SDK。离线编译规则，在线只读归并。</p><div class="chips" style="margin-top:14px"><span class="chip">Go</span><span class="chip">MIT</span><span class="chip">mmap</span></div></div>
+        <div class="footer-brand"><a class="brand" href="./index.html"><svg class="brand-mark" viewBox="0 0 32 32" fill="none" aria-hidden="true"><rect x="1.25" y="1.25" width="29.5" height="29.5" rx="8" stroke="#c9bfae" stroke-width="1.5"/><path d="M9 10.5h7.5M9 16h13M9 21.5h5.5" stroke="#7a7164" stroke-width="1.6" stroke-linecap="round"/><circle cx="22.5" cy="10.5" r="2.1" fill="#9a3412"/><circle cx="26.5" cy="21.5" r="2.1" fill="#1f4e79"/></svg><span class="brand-name">be<span>_</span>indexer</span></a><p>高性能布尔表达式索引 SDK。离线编译规则，在线只读归并。</p><div class="chips" style="margin-top:14px"><span class="chip">Go</span><span class="chip">MIT</span><span class="chip">mmap</span></div></div>
         <div class="footer-col"><h4>原理</h4><a href="./architecture.html#entryid">EntryID 编码</a><a href="./architecture.html#kgroups">K-Groups 归并</a><a href="./architecture.html#segment">Segment v5</a><a href="./architecture.html#snapshot">full + delta</a></div>
         <div class="footer-col"><h4>深入</h4><a href="./containers.html">索引容器</a><a href="./topk.html">精确 Top K</a><a href="./performance.html">性能数据</a><a href="./start.html">快速上手</a></div>
         <div class="footer-col"><h4>资源</h4><a href="https://github.com/echoface/be_indexer" target="_blank" rel="noopener">GitHub</a><a href="https://github.com/echoface/be_indexer/blob/main/docs/README.md" target="_blank" rel="noopener">文档索引</a><a href="https://github.com/echoface/be_indexer/blob/main/README.md" target="_blank" rel="noopener">README</a><a href="https://github.com/echoface/be_indexer/blob/main/LICENSE" target="_blank" rel="noopener">License</a></div>

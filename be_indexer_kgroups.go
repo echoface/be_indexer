@@ -144,7 +144,6 @@ func (bi *KGroupsBEIndex) getKSizeEntries(k int) *EntriesContainer {
 }
 
 func (bi *KGroupsBEIndex) initCursors(ctx *retrieveContext, k int) (fCursors FieldCursors, err error) {
-
 	fCursors = make(FieldCursors, 0, len(bi.fieldsData))
 
 	if k == 0 && len(bi.wildcardEntries) > 0 {
@@ -220,10 +219,8 @@ func (bi *KGroupsBEIndex) retrieveK(ctx *retrieveContext, fieldCursors FieldCurs
 			nextID = NewEntryID(endEID.GetConjID(), true) + 1
 
 			if eid.IsInclude() {
-
 				ctx.collector.Add(conjID.DocID(), conjID)
-
-			} else { //exclude
+			} else { // exclude
 				for i := needMatchCnt; i < len(fieldCursors); i++ {
 					if fieldCursors[i].GetCurEntryID() < nextID {
 						fieldCursors[i].SkipTo(nextID)
@@ -244,8 +241,8 @@ func (bi *KGroupsBEIndex) retrieveK(ctx *retrieveContext, fieldCursors FieldCurs
 }
 
 func (bi *KGroupsBEIndex) Retrieve(
-	queries Assignments, opts ...IndexOpt) (result DocIDList, err error) {
-
+	queries Assignments, opts ...IndexOpt,
+) (result DocIDList, err error) {
 	collector := PickCollector()
 
 	defer PutCollector(collector)
@@ -260,8 +257,8 @@ func (bi *KGroupsBEIndex) Retrieve(
 }
 
 func (bi *KGroupsBEIndex) RetrieveWithCollector(
-	queries Assignments, collector ResultCollector, opts ...IndexOpt) (err error) {
-
+	queries Assignments, collector ResultCollector, opts ...IndexOpt,
+) (err error) {
 	ctx := newRetrieveCtx(queries, opts...)
 	util.PanicIf(ctx.collector != nil, "can't specify collector twice")
 
@@ -307,65 +304,4 @@ func (bi *KGroupsBEIndex) DumpIndexInfo(sb *strings.Builder) {
 		sb.WriteString("\n")
 	}
 	sb.WriteString("++++++++++++ size grouped index info end ++++++++++++++++++\n")
-}
-
-// be_indexer_kgroups_optimized.go
-func (bi *KGroupsBEIndex) retrieveK_HeapOptimized(
-    ctx *retrieveContext, 
-    fieldCursors FieldCursors, 
-    needMatchCnt int) {
-    
-    if len(fieldCursors) < needMatchCnt {
-        LogInfoIf(ctx.dumpStepInfo, "need match:%d but only:%d", needMatchCnt, len(fieldCursors))
-        return
-    }
-    
-    // ✅ 一次性初始化，O(m)
-    h := NewFieldCursorHeap(fieldCursors)
-    
-    for len(h.cursors) >= needMatchCnt {
-        
-        // ✅ O(1) 获取最小和第 needMatchCnt 个
-        minCursor := h.GetMin()
-        needCursor := h.GetNth(needMatchCnt - 1)
-        
-        minEID := minCursor.GetCurEntryID()
-        needEID := needCursor.GetCurEntryID()
-        
-        if ctx.dumpStepInfo {
-            Logger.Infof("round need match:%d continue docs:%v", needMatchCnt, ctx.collector.GetDocIDs())
-        }
-        
-        conjID := minEID.GetConjID()
-        needConjID := needEID.GetConjID()
-        
-        nextID := NewEntryID(needConjID, false)
-        
-        if conjID == needConjID {
-            nextID = NewEntryID(needConjID, true) + 1
-            
-            if minEID.IsInclude() {
-                ctx.collector.Add(conjID.DocID(), conjID)
-            } else {
-                // Exclude 逻辑也要 Fix
-                for i := needMatchCnt; i < len(h.cursors); i++ {
-                    if h.cursors[i].GetCurEntryID() < nextID {
-                        h.cursors[i].SkipTo(nextID)
-                        heap.Fix(h, i)  // ✅ 堆化
-                    }
-                }
-            }
-        }
-        
-        // ✅ 推进所有 needMatchCnt 个游标
-        for i := 0; i < needMatchCnt; i++ {
-            h.cursors[i].SkipTo(nextID)
-            heap.Fix(h, i)  // ✅ O(log m) 而不是 O(m²)
-        }
-        
-        // 移除已结束的游标
-        for len(h.cursors) > 0 && h.cursors[0].ReachEnd() {
-            heap.Pop(h)
-        }
-    }
 }

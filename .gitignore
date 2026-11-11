@@ -2,3 +2,4 @@ go.sum
 .idea
 .DS_Store
 example/playground.go
+static/testdata/bench_docs.json

@@ -1,6 +1,6 @@
 {
   "$schema": "https://unpkg.com/wrangler/config-schema.json",
-  "name": "be-indexer-site",
+  "name": "be_indexer",
   "compatibility_date": "2026-11-01",
   "assets": {
     "directory": "./public",

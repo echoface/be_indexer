@@ -51,7 +51,7 @@ python3 -m http.server 8788 --directory public
 
 ```bash
 cd site
-npx wrangler pages deploy public --project-name be-indexer-site
+npx wrangler pages deploy public --project-name be_indexer
 ```
 
 首次会要求登录 Cloudflare 并创建项目。

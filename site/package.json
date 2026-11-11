@@ -1,0 +1,11 @@
+{
+  "name": "be-indexer-site",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Static marketing + deep-dive site for be_indexer. Deployable to Cloudflare Pages or Workers.",
+  "scripts": {
+    "dev": "python3 -m http.server 8788 --directory public",
+    "preview": "npx wrangler dev",
+    "deploy": "npx wrangler deploy"
+  }
+}

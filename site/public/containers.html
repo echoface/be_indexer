@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>索引容器 — be_indexer</title>
+  <meta name="description" content="be_indexer 字段索引容器图例：FlatDict、MPH、FST、Aho-Corasick、ext_range 与 proximitygeo。共享 FlatPostingList，按 term 解析方式选择。">
+  <meta property="og:image" content="/og.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:image" content="/og.png">
+  <meta property="og:title" content="索引容器 — be_indexer">
+  <meta property="og:description" content="be_indexer 字段索引容器图例：FlatDict、MPH、FST、Aho-Corasick、ext_range 与 proximitygeo。共享 FlatPostingList，按 term 解析方式选择。">
+  <meta property="og:type" content="website">
+  <meta name="twitter:title" content="索引容器 — be_indexer">
+  <meta name="twitter:description" content="be_indexer 字段索引容器图例：FlatDict、MPH、FST、Aho-Corasick、ext_range 与 proximitygeo。共享 FlatPostingList，按 term 解析方式选择。">
+  <meta name="theme-color" content="#05080f">
+  <link rel="icon" href="./favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="./favicon.ico" sizes="any">
+  <link rel="stylesheet" href="./assets/site.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">跳到正文</a>
+  <div class="scroll-progress" data-scroll-progress></div>
+
+  <header class="site-header">
+    <div class="container nav-row">
+      <a class="brand" href="./index.html" aria-label="be_indexer 首页">
+        <svg class="brand-mark" viewBox="0 0 32 32" fill="none" aria-hidden="true"><rect x="1.25" y="1.25" width="29.5" height="29.5" rx="8" stroke="url(#bm-g)" stroke-width="1.5"/><path d="M9 10.5h7.5M9 16h13M9 21.5h5.5" stroke="#93a4ba" stroke-width="1.6" stroke-linecap="round"/><circle cx="22.5" cy="10.5" r="2.1" fill="#22d3ee"/><circle cx="26.5" cy="21.5" r="2.1" fill="#818cf8"/><defs><linearGradient id="bm-g" x1="4" y1="2" x2="29" y2="30" gradientUnits="userSpaceOnUse"><stop stop-color="#818cf8"/><stop offset="1" stop-color="#22d3ee"/></linearGradient></defs></svg>
+        <span class="brand-name">be<span>_</span>indexer</span>
+      </a>
+      <nav class="main-nav" data-main-nav aria-label="主导航">
+        <a class="nav-link" href="./index.html">首页</a>
+        <a class="nav-link" href="./architecture.html">架构</a>
+        <a class="nav-link" href="./containers.html" aria-current="page">索引容器</a>
+        <a class="nav-link" href="./topk.html">Top K</a>
+        <a class="nav-link" href="./performance.html">性能</a>
+        <a class="nav-link" href="./start.html">上手</a>
+      </nav>
+      <div class="nav-actions">
+        <a class="nav-github" href="https://github.com/echoface/be_indexer" target="_blank" rel="noopener" aria-label="GitHub 仓库"><svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82A7.66 7.66 0 0 1 8 3.8c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg><span>GitHub</span></a>
+        <button class="nav-toggle" type="button" data-nav-toggle aria-label="打开导航" aria-expanded="false" aria-controls="main-nav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+      </div>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="page-hero">
+      <div class="container page-hero-grid">
+        <div>
+          <span class="eyebrow"><span class="dot"></span> Pluggable field indexes</span>
+          <h1 class="h1">同一个倒排，<br><span class="grad-text">不同的入口。</span></h1>
+          <p class="lede">每个容器最终都指向 8 字节对齐的 <code>FlatPostingList</code>；差别只在“term 如何解析到 posting 偏移”。索引类型与值编码是两个正交轴，可以独立选择。</p>
+          <div class="chips">
+            <span class="tag tag-cyan">FlatDict</span>
+            <span class="tag tag-indigo">MPH</span>
+            <span class="tag tag-green">FST</span>
+            <span class="tag tag-amber">AC</span>
+            <span class="tag tag-red">Range</span>
+            <span class="tag">Geo</span>
+          </div>
+        </div>
+        <div class="panel panel-pad">
+          <div class="kv">
+            <dt>共性</dt><dd>EntryID 升序数组 + galloping SkipTo</dd>
+            <dt>差异</dt><dd>term → posting offset 的定位方式</dd>
+            <dt>默认</dt><dd><code>IndexType: "default"</code> 或空</dd>
+            <dt>扩展</dt><dd><code>segment.RegisterIndex(kind, IndexDef)</code></dd>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="container doc-layout">
+      <aside class="doc-toc" data-toc aria-label="本页目录">
+        <div class="toc-label">On this page</div>
+        <nav>
+          <a href="#axes">01 · 两个正交轴</a>
+          <a href="#matrix">02 · 选型矩阵</a>
+          <a href="#default">03 · Default FlatDict</a>
+          <a href="#mph">04 · mph_dict</a>
+          <a href="#fst">05 · fst_dict</a>
+          <a href="#ac">06 · ac_matcher</a>
+          <a href="#range">07 · ext_range</a>
+          <a href="#geo">08 · proximitygeo</a>
+          <a href="#extend">09 · 自定义容器</a>
+        </nav>
+      </aside>
+
+      <div class="doc-content">
+        <section id="axes">
+          <h2 class="h2">01 · 两个正交轴：容器与编码器</h2>
+          <p class="lead"><code>IndexType</code> 决定 posting 存在哪里、term 怎样被找到；<code>Encoder</code> 决定业务值怎样变成 term。它们可以自由组合，但必须与查询语义一致。</p>
+
+          <div class="grid grid-2">
+            <div class="panel panel-pad">
+              <div class="small-head"><span class="h4">IndexType</span><span class="tag tag-cyan">term → posting</span></div>
+              <p class="small muted">FlatDict 二分、MPH 常数哈希、FST 状态机、AC 自动机、Range 线段树。它们共享同一个 posting 原语。</p>
+            </div>
+            <div class="panel panel-pad">
+              <div class="small-head"><span class="h4">Encoder</span><span class="tag tag-indigo">value → term</span></div>
+              <p class="small muted"><code>default</code> 字符串恒等、<code>number</code> 整数、<code>ext_range</code> 区间、<code>proximitygeo</code> geohash 覆盖。编码失败会影响 Include 或 Exclude，生产建议开严格查询。</p>
+            </div>
+          </div>
+
+          <h3 class="h3">共享的 posting 原语</h3>
+          <div class="figure">
+            <div class="figure-head"><span class="label">figure 06</span><span>FlatPostingList · shared by every container</span></div>
+            <div class="figure-body flush">
+              <svg class="diagram" viewBox="0 0 980 240" role="img" aria-label="FlatPostingList 二进制布局：Count、Pad、EntryID 数组">
+                <rect x="40" y="52" width="80" height="52" rx="6" class="box box-c"/>
+                <text x="80" y="74" class="t" text-anchor="middle">Count</text>
+                <text x="80" y="91" class="tm" text-anchor="middle">u32 LE</text>
+                <rect x="120" y="52" width="80" height="52" rx="6" class="box box-a"/>
+                <text x="160" y="74" class="t" text-anchor="middle">Pad</text>
+                <text x="160" y="91" class="tm" text-anchor="middle">u32 = 0</text>
+                <rect x="200" y="52" width="360" height="52" rx="6" class="box box-i"/>
+                <text x="380" y="74" class="t" text-anchor="middle">EntryID × Count</text>
+                <text x="380" y="91" class="tm" text-anchor="middle">u64 LE · 8-byte aligned · ascending</text>
+                <rect x="560" y="52" width="150" height="52" rx="6" class="box"/>
+                <text x="635" y="74" class="t" text-anchor="middle">posting block</text>
+                <text x="635" y="91" class="tm" text-anchor="middle">mmap view</text>
+                <path d="M710 78h50" class="line" marker-end="url(#ar5)"/>
+                <rect x="760" y="52" width="180" height="52" rx="6" class="box box-g"/>
+                <text x="850" y="74" class="t" text-anchor="middle">FieldCursor</text>
+                <text x="850" y="91" class="tm" text-anchor="middle">lazy merge · SkipTo</text>
+                <text x="40" y="145" class="ts">Pad 的唯一职责是让 EntryID 数组从 8B 边界开始；Count 让 cursor 不必再读 header。</text>
+                <text x="40" y="166" class="tm">0 ───────── 4 ───────── 8 ───────────────────────── 8 + 8·Count bytes</text>
+                <path d="M8 132h964" class="line dash"/>
+                <text x="40" y="200" class="tc">zero-copy on aligned little-endian hosts</text>
+                <text x="560" y="200" class="ts">big-endian / unaligned → explicit decode</text>
+                <defs><marker id="ar5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 10 5 0 10z" fill="#64748b"/></marker></defs>
+              </svg>
+            </div>
+          </div>
+        </section>
+
+        <section id="matrix">
+          <h2 class="h2">02 · 选型矩阵</h2>
+          <div class="table-wrap">
+            <table class="data">
+              <thead><tr><th>容器</th><th>IndexType</th><th>最适合</th><th>查找成本</th><th>存 term？</th></tr></thead>
+              <tbody>
+                <tr><td>Default · FlatDict</td><td><code>default</code> / 空</td><td>小/中词表精确等值</td><td class="num">O(log n)</td><td>是（可枚举）</td></tr>
+                <tr><td>MPH · CHD</td><td><code>mph_dict</code></td><td>超大、高熵、不枚举的 key</td><td class="num good">O(1)</td><td>否</td></tr>
+                <tr><td>FST · vellum</td><td><code>fst_dict</code></td><td>超大、带前后缀结构的 key</td><td class="num good">O(len)</td><td>是（有序）</td></tr>
+                <tr><td>AC · Double-Array Trie</td><td><code>ac_matcher</code></td><td>多模式子串 / 关键词筛选</td><td class="num">O(len(text))</td><td>模式折进自动机</td></tr>
+                <tr><td>ext_range</td><td><code>ext_range</code></td><td>数值区间、点查询</td><td class="num">O(log P + log m)</td><td>否（键打包）</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="tiny dim">Encoder-only：<code>proximitygeo</code> 不注册容器，输出普通 geohash term 到 default FlatDict。</p>
+
+          <div class="grid grid-3" style="margin-top:22px">
+            <div class="card"><div class="card-top"><span class="icon-box cyan">≈</span><span class="card-num">≤ ~1M</span></div><h3 class="h4">先考虑 default</h3><p>无外部依赖、可枚举、缓存友好。大多数精确等值字段不需要更复杂的结构。</p></div>
+            <div class="card"><div class="card-top"><span class="icon-box green">O(1)</span><span class="card-num">opaque</span></div><h3 class="h4">高熵 key → MPH</h3><p>设备号、UUID、hash。查询域必须可信，或能容忍下游过滤假阳性。</p></div>
+            <div class="card"><div class="card-top"><span class="icon-box amber">↔</span><span class="card-num">structured</span></div><h3 class="h4">结构 key → FST</h3><p>URL、路径、类名。前缀/后缀共享越多，磁盘收益越大。</p></div>
+          </div>
+        </section>
+
+        <section id="default">
+          <h2 class="h2">03 · Default FlatDict：排序数组上的二分</h2>
+          <p class="lead">字段的去重 term 按字节序存放在一个扁平数组中。查找就是二分：term → 16 字节 item → <code>{PostingOffset, PostingCount}</code>。</p>
+
+          <div class="figure">
+            <div class="figure-head"><span class="label">figure 07</span><span>&lt;field&gt;_dict</span></div>
+            <div class="figure-body flush">
+              <svg class="diagram" viewBox="0 0 980 320" role="img" aria-label="FlatDict 布局：header、排序 item 数组、term 字节区">
+                <rect x="40" y="34" width="180" height="40" rx="6" class="box box-c"/>
+                <text x="130" y="58" class="t" text-anchor="middle">Count (u32) · TermDataOffset (u32)</text>
+                <rect x="40" y="90" width="660" height="44" rx="6" class="box box-i"/>
+                <text x="370" y="110" class="t" text-anchor="middle">item[0]</text>
+                <text x="370" y="126" class="tm" text-anchor="middle">KeyOffset u32 · PostingCount u32 · PostingOffset u64</text>
+                <rect x="40" y="134" width="660" height="44" rx="6" class="box box-i"/>
+                <text x="370" y="154" class="t" text-anchor="middle">item[1]</text>
+                <text x="370" y="170" class="tm" text-anchor="middle">… sorted by term bytes</text>
+                <rect x="40" y="178" width="660" height="44" rx="6" class="box box-i"/>
+                <text x="370" y="198" class="t" text-anchor="middle">item[n−1]</text>
+                <text x="370" y="214" class="tm" text-anchor="middle">16 bytes each</text>
+                <rect x="40" y="238" width="660" height="48" rx="6" class="box"/>
+                <text x="370" y="259" class="t" text-anchor="middle">term string area · raw bytes</text>
+                <text x="370" y="275" class="tm" text-anchor="middle">term length = next.KeyOffset − this.KeyOffset</text>
+                <path d="M700 112h60" class="line" marker-end="url(#ar6)"/>
+                <rect x="770" y="80" width="170" height="64" rx="6" class="box box-g"/>
+                <text x="855" y="104" class="t" text-anchor="middle">postings block</text>
+                <text x="855" y="122" class="tm" text-anchor="middle">FlatPostingList</text>
+                <text x="855" y="138" class="tm" text-anchor="middle">EntryID ascending</text>
+                <text x="40" y="308" class="ts">binary search over mapped item array → posting offset. O(log n), term bytes are not copied.</text>
+                <defs><marker id="ar6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 10 5 0 10z" fill="#64748b"/></marker></defs>
+              </svg>
+            </div>
+            <figcaption class="figure-caption">Item 自带 <code>PostingCount</code>，cursor 构造无需再读 posting header。词条元数据会解码到 heap，因此整体 Reader 不是零拷贝。</figcaption>
+          </div>
+
+          <div class="grid grid-2">
+            <div class="panel panel-pad"><div class="small-head"><span class="h4">适合</span><span class="tag tag-green">默认选择</span></div><p class="small muted">精确等值 / IN / NOT IN；词表 ≤ ~1M；需要枚举、调试或反向查找；不想引入外部依赖。</p></div>
+            <div class="panel panel-pad"><div class="small-head"><span class="h4">不适合</span><span class="tag tag-red">换容器</span></div><p class="small muted">数值区间用 ext_range；子串筛选用 ac_matcher；超大高熵 key 用 mph_dict；超大结构化 key 用 fst_dict。</p></div>
+          </div>
+        </section>
+
+        <section id="mph">
+          <h2 class="h2">04 · mph_dict：常数时间，不存 key</h2>
+          <p class="lead">CHD（Compress-Hash-Displace）为每个 key 分配一个无冲突槽位。查询做几次哈希与数组读取就能定位；term 字符串在构建后不再保留，只存 12 字节 posting 引用。</p>
+
+          <div class="figure">
+            <div class="figure-head"><span class="label">figure 08</span><span>CHD · minimal perfect hash</span></div>
+            <div class="figure-body flush">
+              <svg class="diagram" viewBox="0 0 980 280" role="img" aria-label="MPH 查找路径：key 哈希到 displacement 槽位，再得到 posting 引用">
+                <rect x="30" y="90" width="170" height="62" rx="8" class="box"/>
+                <text x="115" y="115" class="t" text-anchor="middle">"device-8f3a"</text>
+                <text x="115" y="133" class="ts" text-anchor="middle">query key</text>
+                <rect x="250" y="90" width="150" height="62" rx="8" class="box box-c"/>
+                <text x="325" y="114" class="t" text-anchor="middle">hash</text>
+                <text x="325" y="132" class="tm" text-anchor="middle">h = H(key)</text>
+                <rect x="450" y="90" width="190" height="62" rx="8" class="box box-i"/>
+                <text x="545" y="114" class="t" text-anchor="middle">displacement table</text>
+                <text x="545" y="132" class="tm" text-anchor="middle">slot = (h + d[h % len]) % n</text>
+                <rect x="690" y="90" width="130" height="62" rx="8" class="box box-g"/>
+                <text x="755" y="114" class="t" text-anchor="middle">slot i</text>
+                <text x="755" y="132" class="tm" text-anchor="middle">12 B value</text>
+                <rect x="850" y="90" width="100" height="62" rx="8" class="box"/>
+                <text x="900" y="114" class="t" text-anchor="middle">posting</text>
+                <text x="900" y="132" class="tm" text-anchor="middle">offset</text>
+                <path d="M200 121h50" class="line" marker-end="url(#ar7)"/>
+                <path d="M400 121h50" class="line" marker-end="url(#ar7)"/>
+                <path d="M640 121h50" class="line" marker-end="url(#ar7)"/>
+                <path d="M820 121h30" class="line" marker-end="url(#ar7)"/>
+                <rect x="690" y="196" width="130" height="44" rx="6" class="box box-a"/>
+                <text x="755" y="214" class="t" text-anchor="middle">Offset u64 · Count u32</text>
+                <text x="755" y="231" class="ts" text-anchor="middle">12 bytes per key</text>
+                <text x="30" y="232" class="ts">term strings are consumed at build time and not retained.</text>
+                <text x="30" y="252" class="tm">lookup latency is independent of vocabulary size and term length (beyond hashing).</text>
+                <defs><marker id="ar7" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 10 5 0 10z" fill="#64748b"/></marker></defs>
+              </svg>
+            </div>
+          </div>
+
+          <div class="callout bad">
+            <span class="callout-icon">!</span>
+            <p><strong>安全边界：</strong>因为不存 term，MPH 无法验证查询 key 是否真的在构建集合里。最小完美哈希对任何输入都会返回某个槽位，absent key 可能碰撞到无关槽位。仅用于查询域可信，或能接受下游过滤少量假阳性 posting 的场景。</p>
+          </div>
+
+          <div class="table-wrap">
+            <table class="data">
+              <thead><tr><th>操作</th><th>成本</th></tr></thead>
+              <tbody>
+                <tr><td>Term lookup</td><td>O(1) · 几次哈希 + 数组读（约 250 ns 常数）</td></tr>
+                <tr><td>Posting scan / merge</td><td>O(posting length) · galloping SkipTo</td></tr>
+                <tr><td>Build</td><td>O(n) 摊销 CHD 构建</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="fst">
+          <h2 class="h2">05 · fst_dict：把共享结构折进状态机</h2>
+          <p class="lead">FST（Finite State Transducer，基于 <code>blevesearch/vellum</code>）把 term 的共享前缀/后缀折叠成图。查找沿状态机走一遍，成本只与 term 长度有关，与词表大小无关。</p>
+
+          <div class="figure">
+            <div class="figure-head"><span class="label">figure 09</span><span>prefix sharing</span></div>
+            <div class="figure-body flush">
+              <svg class="diagram" viewBox="0 0 980 300" role="img" aria-label="FST 共享前缀示意：多个 URL 折叠为状态图">
+                <text x="30" y="38" class="ts">FlatDict: store every term verbatim</text>
+                <rect x="30" y="54" width="420" height="38" rx="6" class="box"/><text x="45" y="78" class="tm">/api/v1/users/1001</text>
+                <rect x="30" y="98" width="420" height="38" rx="6" class="box"/><text x="45" y="122" class="tm">/api/v1/users/1002</text>
+                <rect x="30" y="142" width="420" height="38" rx="6" class="box"/><text x="45" y="166" class="tm">/api/v1/orders/9001</text>
+                <rect x="30" y="186" width="420" height="38" rx="6" class="box"/><text x="45" y="210" class="tm">/api/v1/orders/9002</text>
+                <text x="30" y="258" class="tc">redundant bytes</text>
+                <path d="M490 140h60" class="line" marker-end="url(#ar8)"/>
+                <text x="560" y="38" class="ts">FST: shared affixes become one path</text>
+                <rect x="560" y="70" width="90" height="38" rx="18" class="box box-i"/><text x="605" y="94" class="t" text-anchor="middle">/api</text>
+                <rect x="690" y="48" width="70" height="34" rx="17" class="box box-c"/><text x="725" y="70" class="tm" text-anchor="middle">/v1</text>
+                <rect x="800" y="26" width="90" height="34" rx="17" class="box box-g"/><text x="845" y="48" class="tm" text-anchor="middle">users</text>
+                <rect x="800" y="84" width="90" height="34" rx="17" class="box box-a"/><text x="845" y="106" class="tm" text-anchor="middle">orders</text>
+                <text x="560" y="160" class="tm">walk cost = O(len(term))</text>
+                <text x="560" y="180" class="tm">vocabulary size does not affect depth</text>
+                <text x="560" y="212" class="tc">value = u64 posting offset</text>
+                <text x="560" y="232" class="ts">count recovered from FlatPostingList header</text>
+                <path d="M650 89h40" class="line" marker-end="url(#ar8)"/>
+                <path d="M760 63 800 45" class="line" marker-end="url(#ar8)"/>
+                <path d="M760 67 800 100" class="line" marker-end="url(#ar8)"/>
+                <defs><marker id="ar8" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 10 5 0 10z" fill="#64748b"/></marker></defs>
+              </svg>
+            </div>
+          </div>
+
+          <h3 class="h3">并发与零分配</h3>
+          <p>vellum 的普通 <code>FST.Get</code> 每次调用分配内部 state；它的零分配 <code>FST.Reader</code> 又要求单线程。为同时满足“查询热路径不分配”和“MatchQuery 可并发”，Reader 维护一个 <code>sync.Pool</code>：每次查询借一个带可复用 state 的 <code>*vellum.Reader</code>，用完归还。池空时回退到分配的 <code>FST.Get</code>。</p>
+          <p>查询 key 通过零拷贝 <code>unsafe.Slice</code> 借用字符串字节；<code>Get</code> 只读且不保留引用。</p>
+
+          <div class="table-wrap">
+            <table class="data">
+              <thead><tr><th>词表规模</th><th>命中</th><th>未命中</th></tr></thead>
+              <tbody>
+                <tr><td>100,000 terms</td><td class="num">~306 ns · 128 B · 5 allocs</td><td class="num good">~19 ns · 0 B · 0 allocs</td></tr>
+                <tr><td>1,000,000 terms</td><td class="num">~257 ns · 128 B · 5 allocs</td><td class="num good">~47 ns · 0 B · 0 allocs</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="tiny dim">来自 <code>BenchmarkFST_Find</code> 的参考机测量；延迟在 100K 与 1M 之间基本持平，说明与词表规模无关。命中路径的分配由 reader pool 与 vellum 内部行为决定，数字仅作相对参考。</p>
+        </section>
+
+        <section id="ac">
+          <h2 class="h2">06 · ac_matcher：一次扫描，命中所有模式</h2>
+          <p class="lead">Aho-Corasick 把字段里的所有模式编译进一个自动机，用 Double-Array Trie 存储。查询文本走一遍，所有模式同时被匹配；成本由文本长度决定，而不是模式数量。</p>
+
+          <div class="grid grid-2">
+            <div class="panel panel-pad">
+              <div class="small-head"><span class="h4">关键实现</span><span class="tag tag-cyan">DAT</span></div>
+              <ul class="note-list" style="margin:0">
+                <li class="note-item"><span class="bullet">1</span><span>模式中出现的 rune 映射为稠密 symbol id，<code>0</code> 保留给未知字符，地址空间不随 Unicode 全量膨胀。</span></li>
+                <li class="note-item"><span class="bullet">2</span><span>转移用 <code>base[state] + symbolID</code>，中间量 64 位，避免溢出伪造转移。</span></li>
+                <li class="note-item"><span class="bullet">3</span><span>fail 链预先展平，输出沿 fail 链合并；terminal state 直接列出所有在该状态结束的模式。</span></li>
+              </ul>
+            </div>
+            <div class="panel panel-pad">
+              <div class="small-head"><span class="h4">磁盘布局</span><span class="tag tag-indigo">&lt;field&gt;_ac_matcher</span></div>
+              <p class="small muted">Header（stateCount / symCount）→ symbol table → base / check / fail / outputPtrs 并行数组 → output data（count + posting refs）。base/check 等数组在 aligned LE 上借用 mmap。</p>
+            </div>
+          </div>
+
+          <div class="figure" style="margin-top:22px" data-ac-demo>
+            <div class="figure-head"><span class="label">interactive</span><span>AC automaton · text = "ushers"</span></div>
+            <div class="figure-body">
+              <div class="ac-demo">
+                <noscript><p class="small muted">AC 扫描演示需要 JavaScript；下方状态表给出完整扫描步骤。</p></noscript>
+                <div class="ac-text" data-ac-chars aria-label="扫描文本 ushers"></div>
+                <div class="ac-readout">
+                  <span>当前状态 <strong data-ac-current>等待输入</strong></span>
+                  <span>输出 <span class="ac-output" data-ac-output><span class="dim">尚未匹配</span></span></span>
+                </div>
+                <svg class="ac-svg diagram" viewBox="0 0 760 320" role="img" aria-label="Aho-Corasick 状态图，模式 he she his hers">
+                  <g class="ac-node" data-ac-state="root"><circle cx="50" cy="160" r="20"/><text x="50" y="160">0</text><text class="label" x="50" y="192">root</text></g>
+                  <g class="ac-node" data-ac-state="h"><circle cx="140" cy="80" r="20"/><text x="140" y="80">1</text><text class="label" x="140" y="112">h</text></g>
+                  <g class="ac-node" data-ac-state="s"><circle cx="140" cy="240" r="20"/><text x="140" y="240">2</text><text class="label" x="140" y="272">s</text></g>
+                  <g class="ac-node output" data-ac-state="he"><circle cx="240" cy="40" r="20"/><text x="240" y="40">3</text><text class="label" x="240" y="72">he</text></g>
+                  <g class="ac-node" data-ac-state="hi"><circle cx="240" cy="120" r="20"/><text x="240" y="120">4</text><text class="label" x="240" y="152">hi</text></g>
+                  <g class="ac-node" data-ac-state="sh"><circle cx="240" cy="240" r="20"/><text x="240" y="240">5</text><text class="label" x="240" y="272">sh</text></g>
+                  <g class="ac-node output" data-ac-state="his"><circle cx="340" cy="120" r="20"/><text x="340" y="120">6</text><text class="label" x="340" y="152">his</text></g>
+                  <g class="ac-node output" data-ac-state="she"><circle cx="340" cy="240" r="20"/><text x="340" y="240">7</text><text class="label" x="340" y="272">she</text></g>
+                  <g class="ac-node" data-ac-state="sher"><circle cx="440" cy="240" r="20"/><text x="440" y="240">8</text><text class="label" x="440" y="272">sher</text></g>
+                  <g class="ac-node output" data-ac-state="shers"><circle cx="540" cy="240" r="20"/><text x="540" y="240">9</text><text class="label" x="540" y="272">shers</text></g>
+
+                  <path d="M70 154 120 92" class="ac-edge"/><text x="88" y="116" class="ts">h</text>
+                  <path d="M70 166 120 228" class="ac-edge"/><text x="88" y="212" class="ts">s</text>
+                  <path d="M158 72 222 48" class="ac-edge"/><text x="184" y="52" class="ts">e</text>
+                  <path d="M158 88 222 112" class="ac-edge"/><text x="184" y="110" class="ts">i</text>
+                  <path d="M158 232 222 240" class="ac-edge"/><text x="184" y="226" class="ts">h</text>
+                  <path d="M258 120 320 120" class="ac-edge"/><text x="290" y="112" class="ts">s</text>
+                  <path d="M258 240 320 240" class="ac-edge"/><text x="290" y="232" class="ts">e</text>
+                  <path d="M360 240 420 240" class="ac-edge"/><text x="390" y="232" class="ts">r</text>
+                  <path d="M460 240 520 240" class="ac-edge"/><text x="490" y="232" class="ts">s</text>
+
+                  <path d="M228 226 160 94" class="ac-edge fail"/>
+                  <path d="M328 108 158 238" class="ac-edge fail"/>
+                  <path d="M328 226 258 48" class="ac-edge fail"/>
+                  <path d="M528 226 158 240" class="ac-edge fail"/>
+                  <text x="30" y="306" class="ts">虚线 = fail links · state 7 同时输出 she 与 he · state 9 输出 hers</text>
+                </svg>
+                <div class="merge-controls">
+                  <button class="btn btn-ghost btn-sm" type="button" data-ac-next>下一字符</button>
+                  <button class="btn btn-ghost btn-sm" type="button" data-ac-reset>重置</button>
+                  <span class="tiny dim mono">真实实现为 base/check 数组寻址，不是图形指针</span>
+                </div>
+                <div class="table-wrap">
+                  <table class="data" style="min-width:520px">
+                    <thead><tr><th>#</th><th>字符</th><th>状态</th><th>输出</th></tr></thead>
+                    <tbody data-ac-table></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <figcaption class="figure-caption">示例是经典 AC 状态图，用于解释 fail 链与输出合并。be_indexer 的实际模式来自字段值，状态数组以 Double-Array Trie 存储。</figcaption>
+          </div>
+
+          <div class="callout warn">
+            <span class="callout-icon">!</span>
+            <p><strong>语义提醒：</strong>AC 是子串包含，不是整值相等。精确等值请用 default / mph / fst；数值区间请用 ext_range。</p>
+          </div>
+        </section>
+
+        <section id="range">
+          <h2 class="h2">07 · ext_range：点索引 + 线段树</h2>
+          <p class="lead">区间谓词本质是 stabbing query：查询一个点，找出哪些 Document 的区间覆盖它。构建器按形状拆分：等值折成退化区间 <code>[v,v]</code> 进入点索引；真正的区间进入线段树。</p>
+
+          <div class="range-demo" data-range-demo><noscript><p class="small muted">区间演示需要 JavaScript；下方线段树图给出 canonical decomposition 的结构。</p></noscript>
+            <div class="range-track" data-range-track></div>
+            <input class="range-slider" data-range-slider type="range" min="0" max="100" value="42" aria-label="查询点 q">
+            <div class="range-readout" data-range-readout></div>
+          </div>
+          <p class="tiny dim">拖动滑块改变查询点。绿色为覆盖 q 的区间；真实实现中，点索引与线段树分别返回条目，二者构造上不相交，因此不会重复计数。</p>
+
+          <div class="figure">
+            <div class="figure-head"><span class="label">figure 10</span><span>canonical decomposition</span></div>
+            <div class="figure-body flush">
+              <svg class="diagram" viewBox="0 0 900 330" role="img" aria-label="线段树将区间分解为 canonical nodes，查询点沿根到叶路径收集 posting">
+                <g class="box box-i"><rect x="380" y="24" width="140" height="44" rx="7"/><text x="450" y="42" class="t" text-anchor="middle">[0, 8)</text><text x="450" y="58" class="tm" text-anchor="middle">root</text></g>
+                <g class="box box-i"><rect x="200" y="104" width="130" height="44" rx="7"/><text x="265" y="122" class="t" text-anchor="middle">[0, 4)</text><text x="265" y="138" class="tm" text-anchor="middle">path</text></g>
+                <g class="box"><rect x="570" y="104" width="130" height="44" rx="7"/><text x="635" y="122" class="t" text-anchor="middle">[4, 8)</text><text x="635" y="138" class="tm" text-anchor="middle">—</text></g>
+                <g class="box box-i"><rect x="100" y="188" width="120" height="44" rx="7"/><text x="160" y="206" class="t" text-anchor="middle">[0, 2)</text><text x="160" y="222" class="tm" text-anchor="middle">path</text></g>
+                <g class="box box-g"><rect x="310" y="188" width="120" height="44" rx="7"/><text x="370" y="206" class="t" text-anchor="middle">[2, 4)</text><text x="370" y="222" class="tm" text-anchor="middle">canonical</text></g>
+                <g class="box box-g"><rect x="490" y="188" width="120" height="44" rx="7"/><text x="550" y="206" class="t" text-anchor="middle">[4, 6)</text><text x="550" y="222" class="tm" text-anchor="middle">canonical</text></g>
+                <g class="box"><rect x="710" y="188" width="120" height="44" rx="7"/><text x="770" y="206" class="t" text-anchor="middle">[6, 8)</text><text x="770" y="222" class="tm" text-anchor="middle">—</text></g>
+                <path d="M410 68 300 104" class="line line-c" marker-end="url(#ar9)"/>
+                <path d="M490 68 600 104" class="line" marker-end="url(#ar9)"/>
+                <path d="M240 148 180 188" class="line line-c" marker-end="url(#ar9)"/>
+                <path d="M290 148 340 188" class="line line-c" marker-end="url(#ar9)"/>
+                <path d="M610 148 540 188" class="line" marker-end="url(#ar9)"/>
+                <path d="M660 148 740 188" class="line" marker-end="url(#ar9)"/>
+                <text x="30" y="286" class="tc">query q = 3</text>
+                <text x="135" y="286" class="ts">descent path: root → [0,4) → [2,4) → leaf</text>
+                <text x="30" y="310" class="ts">interval [2, 6) decomposes to canonical nodes [2,4) ∪ [4,6); each is stored once at build time.</text>
+                <defs><marker id="ar9" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 10 5 0 10z" fill="#64748b"/></marker></defs>
+              </svg>
+            </div>
+            <figcaption class="figure-caption">区间在构建期分解为 O(log m) 个 canonical nodes；点查询只走一条根→叶路径，收集路径上所有节点的 posting。路径上 canonical 覆盖互不重叠，条目至多收集一次。</figcaption>
+          </div>
+
+          <div class="grid grid-2">
+            <div class="panel panel-pad">
+              <div class="small-head"><span class="h4">点索引</span><span class="tag tag-cyan">P distinct keys</span></div>
+              <p class="small muted">升序 <code>int64</code> key 数组 + 并行 posting offset，无分配二分。等值、IN 走这里。</p>
+            </div>
+            <div class="panel panel-pad">
+              <div class="small-head"><span class="h4">线段树</span><span class="tag tag-green">m endpoints</span></div>
+              <p class="small muted">只对真正的区间端点建树；每节点 24 字节：<code>split i64 | left i32 | right i32 | postOff u32</code>。查询点沿一条路径下推。</p>
+            </div>
+          </div>
+          <p class="tiny dim">复杂度：点 <code>O(log P)</code>，树 <code>O(log m)</code>，posting 扫描 <code>O(posting length)</code>，构建 <code>O((P+m) log(P+m))</code>。空字段可省略 block。</p>
+        </section>
+
+        <section id="geo">
+          <h2 class="h2">08 · proximitygeo：把圆覆盖变成 term 匹配</h2>
+          <p class="lead">它不是容器，而是编码器。文档侧的 <code>(lat, lng, radius)</code> 用 proximityhash 展开成覆盖圆的 geohash cell；查询点编码为 geohash，并展开为多个前缀。之后就是普通 FlatDict 等值查询。</p>
+
+          <div class="figure">
+            <div class="figure-head"><span class="label">figure 11</span><span>radius → geohash covering</span></div>
+            <div class="figure-body flush">
+              <svg class="diagram" viewBox="0 0 980 300" role="img" aria-label="圆形半径覆盖被 geohash 网格单元近似，查询点编码为前缀">
+                <g opacity=".65">
+                  <path d="M60 40h840v210H60z" fill="none" stroke="rgba(148,163,184,.18)"/>
+                  <path d="M60 92h840M60 144h840M60 196h840M172 40v210M284 40v210M396 40v210M508 40v210M620 40v210M732 40v210M844 40v210" stroke="rgba(148,163,184,.12)"/>
+                </g>
+                <circle cx="500" cy="145" r="82" fill="rgba(34,211,238,.10)" stroke="#22d3ee" stroke-width="1.6"/>
+                <circle cx="500" cy="145" r="3.5" fill="#22d3ee"/>
+                <rect x="452" y="92" width="56" height="52" fill="rgba(52,211,153,.22)" stroke="#34d399"/>
+                <rect x="508" y="92" width="56" height="52" fill="rgba(52,211,153,.22)" stroke="#34d399"/>
+                <rect x="452" y="144" width="56" height="52" fill="rgba(52,211,153,.22)" stroke="#34d399"/>
+                <rect x="508" y="144" width="56" height="52" fill="rgba(52,211,153,.22)" stroke="#34d399"/>
+                <rect x="452" y="196" width="56" height="52" fill="rgba(52,211,153,.15)" stroke="#34d399"/>
+                <rect x="508" y="196" width="56" height="52" fill="rgba(52,211,153,.15)" stroke="#34d399"/>
+                <text x="70" y="62" class="tc">document side</text>
+                <text x="70" y="82" class="ts">(lat, lng, radius) → proximityhash covering</text>
+                <text x="70" y="238" class="tm">coarsest precision that fits radius</text>
+                <text x="70" y="258" class="tm">stored as ordinary geohash terms</text>
+                <text x="620" y="62" class="tc">query side</text>
+                <text x="620" y="82" class="ts">point → geohash at maxQueryPrecision</text>
+                <text x="620" y="102" class="tm">expand all prefixes [minPrecision, maxQueryPrecision]</text>
+                <text x="620" y="122" class="tm">≤ 6 FlatDict lookups</text>
+                <text x="620" y="238" class="tm">minPrecision = 3</text>
+                <text x="620" y="258" class="tm">maxQueryPrecision = 8 (~38 m)</text>
+                <text x="620" y="278" class="tm">maxRadius = 1,000,000 m</text>
+              </svg>
+            </div>
+          </div>
+
+          <div class="callout">
+            <span class="callout-icon">i</span>
+            <p><strong>精度边界：</strong>这是 proximity，不是精确几何。geohash cell 是近似，受 <code>maxQueryPrecision</code>（约 38 m）和 radius→precision 表约束；半径必须在 <code>(0, 1,000,000]</code> 米内。</p>
+          </div>
+        </section>
+
+        <section id="extend">
+          <h2 class="h2">09 · 自定义容器：注册即可插拔</h2>
+          <p class="lead">实现 <code>IndexBuilder</code> / <code>IndexReader</code>，在 <code>init</code> 注册；如果值还需要自定义编码，再注册一个 <code>PredicateEncoder</code>。跨 block 引用可实现 <code>IndexValidator</code> 做统一冷路径校验。</p>
+
+          <div class="codeblock">
+            <div class="codeblock-head"><span class="lang">go</span><span>custom container</span><button class="copy-btn" type="button" data-copy>复制</button></div>
+<pre><code>func init() {
+    segment.RegisterIndex("my_index", segment.IndexDef{
+        Reader:  newReaderFactory,
+        Builder: newBuilderFactory,
+    })
+    parser.RegisterPredicateEncoder("my_index", encoderFactory)
+}
+
+// 可选：在 SegmentReader 解析完所有 block 后做跨块校验。
+func (r *myReader) Validate(ctx segment.BlockContext) error {
+    return nil
+}</code></pre>
+          </div>
+          <p>完整模板见 <code>container/example/</code>；生产容器可参考 <code>container/fst/</code> 如何替换默认字典。自定义 Reader 的查询实现必须支持并发调用。</p>
+
+          <div class="callout good">
+            <span class="callout-icon">→</span>
+            <p><strong>决策顺序：</strong>先问“值的形状”（等值 / 子串 / 区间 / 地理），再问“词表规模和结构”（小、高熵、共享前缀），最后问“是否需要枚举与反向查找”。</p>
+          </div>
+
+          <div class="btn-row" style="margin-top:22px">
+            <a class="btn btn-primary" href="./topk.html">精确 Top K →</a>
+            <a class="btn btn-ghost" href="./architecture.html#segment">Segment 格式 →</a>
+          </div>
+        </section>
+      </div>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-main">
+        <div class="footer-brand"><a class="brand" href="./index.html"><svg class="brand-mark" viewBox="0 0 32 32" fill="none" aria-hidden="true"><rect x="1.25" y="1.25" width="29.5" height="29.5" rx="8" stroke="#3d4b63" stroke-width="1.5"/><path d="M9 10.5h7.5M9 16h13M9 21.5h5.5" stroke="#93a4ba" stroke-width="1.6" stroke-linecap="round"/><circle cx="22.5" cy="10.5" r="2.1" fill="#22d3ee"/><circle cx="26.5" cy="21.5" r="2.1" fill="#818cf8"/></svg><span class="brand-name">be<span>_</span>indexer</span></a><p>高性能布尔表达式索引 SDK。离线编译规则，在线只读归并。</p><div class="chips" style="margin-top:14px"><span class="chip">Go</span><span class="chip">MIT</span><span class="chip">mmap</span></div></div>
+        <div class="footer-col"><h4>原理</h4><a href="./architecture.html#entryid">EntryID 编码</a><a href="./architecture.html#kgroups">K-Groups 归并</a><a href="./architecture.html#segment">Segment v5</a><a href="./architecture.html#snapshot">full + delta</a></div>
+        <div class="footer-col"><h4>深入</h4><a href="./containers.html">索引容器</a><a href="./topk.html">精确 Top K</a><a href="./performance.html">性能数据</a><a href="./start.html">快速上手</a></div>
+        <div class="footer-col"><h4>资源</h4><a href="https://github.com/echoface/be_indexer" target="_blank" rel="noopener">GitHub</a><a href="https://github.com/echoface/be_indexer/blob/main/docs/README.md" target="_blank" rel="noopener">文档索引</a><a href="https://github.com/echoface/be_indexer/blob/main/README.md" target="_blank" rel="noopener">README</a><a href="https://github.com/echoface/be_indexer/blob/main/LICENSE" target="_blank" rel="noopener">License</a></div>
+      </div>
+      <div class="footer-bottom"><span>© <span data-year></span> be_indexer · MIT</span><span><i class="live-dot"></i> 静态站 · 可部署于 Cloudflare Pages / Workers</span></div>
+    </div>
+  </footer>
+
+  <script src="./assets/site.js" defer></script>
+</body>
+</html>

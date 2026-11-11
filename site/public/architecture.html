@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>架构与实现 — be_indexer</title>
+  <meta name="description" content="be_indexer 架构深度解析：EntryID 位编码、K-Groups 单次多路归并、galloping SkipTo、Segment v5 mmap 零拷贝、wildcard 懒归并、full + delta 快照发布与回收。">
+  <meta property="og:image" content="/og.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:image" content="/og.png">
+  <meta property="og:title" content="架构与实现 — be_indexer">
+  <meta property="og:description" content="be_indexer 架构深度解析：EntryID 位编码、K-Groups 单次多路归并、galloping SkipTo、Segment v5 mmap 零拷贝、wildcard 懒归并、full + delta 快照发布与回收。">
+  <meta property="og:type" content="website">
+  <meta name="twitter:title" content="架构与实现 — be_indexer">
+  <meta name="twitter:description" content="be_indexer 架构深度解析：EntryID 位编码、K-Groups 单次多路归并、galloping SkipTo、Segment v5 mmap 零拷贝、wildcard 懒归并、full + delta 快照发布与回收。">
+  <meta name="theme-color" content="#05080f">
+  <link rel="icon" href="./favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="./favicon.ico" sizes="any">
+  <link rel="stylesheet" href="./assets/site.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">跳到正文</a>
+  <div class="scroll-progress" data-scroll-progress></div>
+
+  <header class="site-header">
+    <div class="container nav-row">
+      <a class="brand" href="./index.html" aria-label="be_indexer 首页">
+        <svg class="brand-mark" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+          <rect x="1.25" y="1.25" width="29.5" height="29.5" rx="8" stroke="url(#bm-g)" stroke-width="1.5"/>
+          <path d="M9 10.5h7.5M9 16h13M9 21.5h5.5" stroke="#93a4ba" stroke-width="1.6" stroke-linecap="round"/>
+          <circle cx="22.5" cy="10.5" r="2.1" fill="#22d3ee"/><circle cx="26.5" cy="21.5" r="2.1" fill="#818cf8"/>
+          <defs><linearGradient id="bm-g" x1="4" y1="2" x2="29" y2="30" gradientUnits="userSpaceOnUse"><stop stop-color="#818cf8"/><stop offset="1" stop-color="#22d3ee"/></linearGradient></defs>
+        </svg>
+        <span class="brand-name">be<span>_</span>indexer</span>
+      </a>
+      <nav class="main-nav" data-main-nav aria-label="主导航">
+        <a class="nav-link" href="./index.html">首页</a>
+        <a class="nav-link" href="./architecture.html" aria-current="page">架构</a>
+        <a class="nav-link" href="./containers.html">索引容器</a>
+        <a class="nav-link" href="./topk.html">Top K</a>
+        <a class="nav-link" href="./performance.html">性能</a>
+        <a class="nav-link" href="./start.html">上手</a>
+      </nav>
+      <div class="nav-actions">
+        <a class="nav-github" href="https://github.com/echoface/be_indexer" target="_blank" rel="noopener" aria-label="GitHub 仓库">
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82A7.66 7.66 0 0 1 8 3.8c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+          <span>GitHub</span>
+        </a>
+        <button class="nav-toggle" type="button" data-nav-toggle aria-label="打开导航" aria-expanded="false" aria-controls="main-nav">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="page-hero">
+      <div class="container page-hero-grid">
+        <div>
+          <span class="eyebrow"><span class="dot"></span> Architecture · 当前实现</span>
+          <h1 class="h1">一次查询，<br><span class="grad-text">只有一次归并。</span></h1>
+          <p class="lede">从 DNF 到 EntryID，从 pivot 到 mmap。本文按数据实际流动的顺序拆解 be_indexer：先看规则怎样被编码，再看游标怎样竞速，最后看快照怎样发布与回收。</p>
+          <div class="chips">
+            <span class="tag tag-cyan">K-Groups</span>
+            <span class="tag tag-indigo">EntryID</span>
+            <span class="tag tag-green">Segment v5</span>
+            <span class="tag tag-amber">full + delta</span>
+          </div>
+        </div>
+        <div class="panel panel-pad">
+          <div class="kv">
+            <dt>在线目标</dt><dd>单次查询完成所有字段、所有段的布尔求交</dd>
+            <dt>离线目标</dt><dd>不可变 Segment，可校验、可回滚、可 mmap</dd>
+            <dt>核心循环</dt><dd>排序头部 → 读 K → pivot → SkipTo → 命中/短路</dd>
+            <dt>明确边界</dt><dd>posting 零拷贝成立；整个 Reader 零拷贝不成立</dd>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="container doc-layout">
+      <aside class="doc-toc" data-toc aria-label="本页目录">
+        <div class="toc-label">On this page</div>
+        <nav>
+          <a href="#split">01 · 读写分离</a>
+          <a href="#model">02 · 规则与 K</a>
+          <a href="#entryid">03 · EntryID 位编码</a>
+          <a href="#kgroups">04 · K-Groups 归并</a>
+          <a href="#segment">05 · Segment v5</a>
+          <a href="#zerocopy">06 · Wildcard 与零拷贝</a>
+          <a href="#snapshot">07 · full + delta</a>
+          <a href="#correctness">08 · 正确性与边界</a>
+        </nav>
+      </aside>
+
+      <div class="doc-content">
+        <section id="split">
+          <h2 class="h2">01 · 读写分离：复杂度留在离线</h2>
+          <p class="lead">构建器与查询引擎互不依赖。离线路径可以慢、可以外排、可以反复校验；在线路径只读不可变数据，尽量不分配、不查找、不复制。</p>
+
+          <div class="figure">
+            <div class="figure-head"><span class="label">figure 02</span><span>package dependency</span></div>
+            <div class="figure-body flush">
+              <svg class="diagram" viewBox="0 0 1040 420" role="img" aria-label="be_indexer 包依赖图">
+                <defs>
+                  <marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 10 5 0 10z" fill="#64748b"/></marker>
+                </defs>
+                <rect x="400" y="18" width="240" height="48" rx="9" class="box box-i"/>
+                <text x="520" y="39" class="t" text-anchor="middle">root · api_*.go</text>
+                <text x="520" y="55" class="ts" text-anchor="middle">document / query / score / build / snapshot</text>
+
+                <rect x="80" y="126" width="190" height="64" rx="9" class="box"/>
+                <text x="175" y="151" class="t" text-anchor="middle">builder</text>
+                <text x="175" y="169" class="ts" text-anchor="middle">full / delta · 外排 · 写入</text>
+
+                <rect x="306" y="126" width="190" height="64" rx="9" class="box"/>
+                <text x="401" y="151" class="t" text-anchor="middle">engine</text>
+                <text x="401" y="169" class="ts" text-anchor="middle">Boolean / Composite · 归并</text>
+
+                <rect x="532" y="126" width="190" height="64" rx="9" class="box"/>
+                <text x="627" y="151" class="t" text-anchor="middle">loader</text>
+                <text x="627" y="169" class="ts" text-anchor="middle">OpenIndex · Holder · 回收</text>
+
+                <rect x="758" y="126" width="190" height="64" rx="9" class="box"/>
+                <text x="853" y="151" class="t" text-anchor="middle">manifest</text>
+                <text x="853" y="169" class="ts" text-anchor="middle">不可变元数据 · CURRENT</text>
+
+                <rect x="306" y="250" width="190" height="60" rx="9" class="box box-c"/>
+                <text x="401" y="274" class="t" text-anchor="middle">parser</text>
+                <text x="401" y="292" class="ts" text-anchor="middle">SchemaCodec · tokenizer</text>
+
+                <rect x="532" y="250" width="190" height="60" rx="9" class="box box-c"/>
+                <text x="627" y="274" class="t" text-anchor="middle">segment</text>
+                <text x="627" y="292" class="ts" text-anchor="middle">v5 · dict · posting · container</text>
+
+                <rect x="400" y="350" width="240" height="48" rx="9" class="box box-g"/>
+                <text x="520" y="371" class="t" text-anchor="middle">core</text>
+                <text x="520" y="387" class="ts" text-anchor="middle">ID 编码 · cursor · collector · score</text>
+
+                <path d="M440 66 190 126" class="line" marker-end="url(#ar2)"/>
+                <path d="M500 66v60" class="line" marker-end="url(#ar2)"/>
+                <path d="M560 66 670 126" class="line" marker-end="url(#ar2)"/>
+                <path d="M600 66 850 126" class="line" marker-end="url(#ar2)"/>
+                <path d="M627 190v60" class="line" marker-end="url(#ar2)"/>
+                <path d="M720 166 853 166" class="line" marker-end="url(#ar2)"/>
+                <path d="M175 190v80h120v40" class="line dash" marker-end="url(#ar2)"/>
+                <path d="M401 190v60" class="line" marker-end="url(#ar2)"/>
+                <path d="M401 310v40" class="line" marker-end="url(#ar2)"/>
+                <path d="M627 310v40" class="line" marker-end="url(#ar2)"/>
+                <path d="M560 310 650 310" class="line" marker-end="url(#ar2)"/>
+                <text x="80" y="238" class="ts">builder 与 engine 互不依赖</text>
+                <text x="720" y="238" class="ts">loader 组合 engine + manifest</text>
+              </svg>
+            </div>
+            <figcaption class="figure-caption">依赖单向向下：<code>builder</code> 与 <code>engine</code> 都依赖 <code>parser</code> / <code>segment</code>，二者互不依赖；<code>parser</code> 不依赖 <code>segment</code>。</figcaption>
+          </div>
+
+          <h3 class="h3">构建路径</h3>
+          <div class="flow-line">
+            <span class="flow-node">Document</span><span class="arrow">→</span>
+            <span class="flow-node">Normalize / Validate</span><span class="arrow">→</span>
+            <span class="flow-node">SchemaCodec</span><span class="arrow">→</span>
+            <span class="flow-node">PredicateEncoder</span><span class="arrow">→</span>
+            <span class="flow-node">SegmentBuilder</span><span class="arrow">→</span>
+            <span class="flow-node hot">Segment v5</span>
+          </div>
+          <p>构建阶段完成所有昂贵工作：展开 DNF、校验同字段唯一 Include、编码值、外排大字典、压缩 interval、构建 AC 自动机、写 checksum。在线路径不重新解析规则，也不访问原始 Document。</p>
+
+          <h3 class="h3">查询路径</h3>
+          <div class="flow-line">
+            <span class="flow-node">Assignments</span><span class="arrow">→</span>
+            <span class="flow-node">EncodeAssignment</span><span class="arrow">→</span>
+            <span class="flow-node">MatchQuery</span><span class="arrow">→</span>
+            <span class="flow-node">FieldCursor × N</span><span class="arrow">→</span>
+            <span class="flow-node hot">matchConjunctions</span><span class="arrow">→</span>
+            <span class="flow-node">Collector</span>
+          </div>
+          <p>构造引擎时预解析字段，热路径不重复查 map。每个字段把多值、多 segment 的 posting 游标组合成一个 <code>FieldCursor</code>；所有字段游标在一次查询中串行归并，不自动并行。</p>
+
+          <div class="callout">
+            <span class="callout-icon">i</span>
+            <p><strong>为什么把 K 放进 ID 而不是单独分桶？</strong>因为 K 一旦参与排序，所有相同 K 的 Conjunction 就天然连续。查询无需先决定去哪个桶，也无需为每个 K 维护独立结构；只需在归并时从当前最小 EntryID 读出 K。</p>
+          </div>
+        </section>
+
+        <section id="model">
+          <h2 class="h2">02 · 规则模型：DNF、Include 与 K</h2>
+          <p class="lead">一个 Document 是一条完整规则；Document 内的 Conjunction 之间是 OR；Conjunction 内的 Predicate 之间是 AND。K 是该 Conjunction 中 Include 约束的数量。</p>
+
+          <div class="grid grid-2">
+            <div class="panel panel-pad">
+              <div class="small-head"><span class="h4">DNF 语义</span><span class="tag tag-cyan">OR of ANDs</span></div>
+              <pre class="mono small" style="margin:0;color:var(--muted);line-height:1.9;overflow-x:auto">Document 1
+├── Conjunction A  (K = 2)
+│   ├── age ∈ [18, 25]     Include
+│   └── city = "beijing"  Include
+└── Conjunction B  (K = 0)
+    └── city ∉ {"rural"}   Exclude</pre>
+            </div>
+            <div class="panel panel-pad">
+              <div class="small-head"><span class="h4">三个关键语义</span><span class="tag tag-indigo">语义正确优先</span></div>
+              <ul class="note-list" style="margin:0">
+                <li class="note-item"><span class="bullet">1</span><span>同字段在一个 Conjunction 内最多一个 Include；多个等值放进同一 Constraint，值之间是 OR。</span></li>
+                <li class="note-item"><span class="bullet">2</span><span>查询缺少某个 Include 字段时，该 Conjunction 必然不命中。这是 K 的设计，不是漏洞。</span></li>
+                <li class="note-item"><span class="bullet">3</span><span>Exclude 只在 Assignment 显式命中被排除值时否决；字段缺失不会触发排除。</span></li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="callout warn" style="margin-top:22px">
+            <span class="callout-icon">!</span>
+            <p><strong>K = 0 不是“空条件”。</strong>只带 Exclude 的 Conjunction 也会产生 wildcard 候选，但命中的 Exclude 仍能否决它；只有真正的空 <code>NewConjunction()</code> 才是无条件规则。</p>
+          </div>
+
+          <h3 class="h3">为什么“缺少字段”会直接不命中</h3>
+          <p>倒排索引只为查询实际提供的字段生成游标。一个需要 K 个 Include 的 Conjunction，如果要成立，就必须在 K 个不同字段上各有一个游标命中它。查询没提供字段，就少一个游标，永远凑不齐 K。这不是漏召回，而是 DNF 的 AND 语义在倒排上的自然结果。</p>
+        </section>
+
+        <section id="entryid">
+          <h2 class="h2">03 · EntryID：把 K 放进排序键</h2>
+          <p class="lead">EntryID 是一个 64 位整数。它不记录字段或 term 身份，只记录“这个倒排条目属于哪个 Conjunction、是 Include 还是 Exclude”。字段身份来自它所在的 Posting List。</p>
+
+          <div class="formula">
+            <strong>ConjID</strong> = reserved(4) | K(8) | index(8) | sign(1) | abs(DocID)(43)<br>
+            <strong>EntryID</strong> = ConjID &lt;&lt; 4 | include(1bit) &nbsp;→&nbsp; K(8) | index(8) | sign(1) | abs(DocID)(43) | reserved(3) | include(1)
+          </div>
+
+          <div class="panel panel-pad" style="margin-top:22px" data-bitfield>
+            <div class="small-head"><span class="h4">交互式位布局</span><span class="tag tag-cyan">EntryID · 64 bit</span></div>
+            <div class="bitfield-legend">
+              <span><i style="background:#818cf8"></i>K · bits 63–56</span>
+              <span><i style="background:#a78bfa"></i>index · 55–48</span>
+              <span><i style="background:#fbbf24"></i>sign · 47</span>
+              <span><i style="background:#22d3ee"></i>abs(DocID) · 46–4</span>
+              <span><i style="background:#334155"></i>reserved · 3–1</span>
+              <span><i style="background:#34d399"></i>include · 0</span>
+            </div>
+            <noscript><p class="small muted" style="margin:10px 0">位布局计算器需要 JavaScript；公式与字段顺序见上方。</p></noscript>
+            <div class="bitfield-scroll" style="margin-top:14px">
+              <div class="bitfield" data-bf-grid aria-live="polite"></div>
+            </div>
+            <div class="bitfield-ruler" style="margin-top:8px">
+              <span>63–56</span><span>55–48</span><span>47–40</span><span>39–32</span><span>31–24</span><span>23–16</span><span>15–8</span><span>7–0</span>
+            </div>
+            <div class="controls" style="margin-top:18px">
+              <div class="field"><label for="bf-k">K · Include count</label><input id="bf-k" data-bf-k type="number" min="0" max="255" value="2"></div>
+              <div class="field"><label for="bf-index">Conjunction index</label><input id="bf-index" data-bf-index type="number" min="0" max="255" value="0"></div>
+              <div class="field"><label for="bf-doc">signed DocID</label><input id="bf-doc" data-bf-doc type="number" min="-8796093022207" max="8796093022207" value="20"></div>
+              <div class="field" style="grid-column:1/-1">
+                <label>极性</label>
+                <label class="switch-row"><span class="switch"><input type="checkbox" data-bf-include checked aria-label="Include 标记"><span></span></span>Include（bit 0 = 1）；关闭则写 Exclude（bit 0 = 0）</label>
+              </div>
+            </div>
+            <div class="readout" style="margin-top:14px">
+              <span>EntryID hex <strong data-bf-hex></strong></span>
+              <span>decimal <strong data-bf-dec></strong></span>
+              <span>ConjID hex <strong class="alt" data-bf-conj></strong></span>
+            </div>
+            <div class="btn-row" style="margin-top:14px">
+              <button class="btn btn-ghost btn-sm" type="button" data-preset data-k="2" data-index="0" data-doc="20" data-include="1">K=2 · doc 20</button>
+              <button class="btn btn-ghost btn-sm" type="button" data-preset data-k="0" data-index="0" data-doc="7" data-include="1">K=0 wildcard</button>
+              <button class="btn btn-ghost btn-sm" type="button" data-preset data-k="1" data-index="0" data-doc="-3" data-include="0">Exclude · doc -3</button>
+              <button class="btn btn-ghost btn-sm" type="button" data-preset data-k="255" data-index="255" data-doc="8796093022207" data-include="1">边界值</button>
+            </div>
+            <p class="tiny dim" style="margin-top:14px">示意输入受 <code>DocID ∈ [-(2^43−1), 2^43−1]</code>、<code>K &lt; 256</code>、Conjunction 数 <code>&lt; 256</code> 约束。ConjID 低 4 位留给 EntryID 的极性位。</p>
+          </div>
+
+          <h3 class="h3">排序顺序为什么是这样</h3>
+          <p>EntryID 的字典序等价于：<code>K → Conjunction index → sign → abs(DocID) → Include</code>。这意味着：</p>
+          <ul>
+            <li><strong>同 K 的条目连续。</strong>查询可以从最小头部动态读取 K，不需要物理 K 分桶。</li>
+            <li><strong>conjunction 内 Exclude 在 Include 之前。</strong>同一 Conjunction 的 Exclude 条目低位为 0，Include 为 1。</li>
+            <li><strong>EntryID 顺序不是 signed DocID 顺序，也不是分数顺序。</strong>Top K 不能假设先遇到的 Document 分数更高。</li>
+          </ul>
+
+          <div class="entry-order" aria-label="EntryID 排序示意">
+            <span class="entry-chip k0">K=0 · wildcard</span>
+            <span class="entry-chip k1">K=1 · doc 10</span>
+            <span class="entry-chip k1">K=1 · doc 20</span>
+            <span class="entry-chip k1">K=1 · doc 30</span>
+            <span class="entry-chip k2">K=2 · doc 5</span>
+            <span class="entry-chip k2">K=2 · doc 10</span>
+            <span class="entry-chip k2">K=2 · doc 20</span>
+            <span class="entry-chip k3">K=3 · doc 8</span>
+          </div>
+          <p class="tiny dim" style="margin-top:8px">示意：升序排列后，相同 K 的条目自然聚成一段。K 越高，需要的字段游标越多。</p>
+        </section>
+
+        <section id="kgroups">
+          <h2 class="h2">04 · K-Groups：pivot 与单次多路归并</h2>
+          <p class="lead">所有字段游标（以及 wildcard 游标）按当前 EntryID 排序。取第 <code>max(K, 1)</code> 个头部作为 pivot。pivot 之前的 Conjunction 不可能凑齐 K 个字段，因此可以整段跳过。</p>
+
+          <div class="figure">
+            <div class="figure-head"><span class="label">interactive</span><span>pivot · SkipTo · match</span></div>
+            <div class="figure-body">
+              <div data-merge-demo><noscript><p class="small muted">交互归并演示需要 JavaScript；下方四步循环给出完整算法说明。</p></noscript></div>
+            </div>
+            <figcaption class="figure-caption">固定 K=2、index=0、全部为 Include 的简化示例。真实 EntryID 还包含 sign 与 Include 位；代码用 <code>NewEntryID(pivot, false)</code> 对齐 Exclude，再越过整个 Conjunction。</figcaption>
+          </div>
+
+          <h3 class="h3">四步循环</h3>
+          <div class="steps">
+            <div class="step">
+              <div><h3>排序头部，读取 K</h3><p>每个 FieldCursor 暴露当前最小 EntryID。按它排序后，从最小头部读出 K，所需字段数 <code>need = max(K, 1)</code>。</p></div>
+            </div>
+            <div class="step">
+              <div><h3>取 pivot，判断能否凑齐</h3><p>第 <code>need</code> 个头部形成 pivot。前 need 个头部若属于同一 ConjID，则该 Conjunction 的所有 Include 字段都命中；否则 pivot 之前的候选缺少足够字段，跳过。</p></div>
+            </div>
+            <div class="step">
+              <div><h3>命中则收集，Exclude 则短路</h3><p>Include 命中后交给 collector；若同一 Conjunction 的 Exclude 先被命中，则否决它，并把仍指向它的游标推进到该 Conjunction 之后。不影响同 Document 的其他 OR 子句。</p></div>
+            </div>
+            <div class="step">
+              <div><h3>SkipTo 推进，移除耗尽游标</h3><p>用 galloping + 二分把游标推到目标 EntryID。排序后用 <code>RemoveExhausted()</code> 移除尾部耗尽游标，直到全部耗尽或 collector 返回 <code>CollectStop</code>。</p></div>
+            </div>
+          </div>
+
+          <div class="callout good">
+            <span class="callout-icon">✓</span>
+            <p><strong>正确性直觉：</strong>pivot 之前的任何 Conjunction，最多只能由前 K−1 个字段游标贡献条目；其余游标已经在 pivot 或更后面，凑不齐 K 个 Include。K 又随 EntryID 不减，所以跨 K-group 也不会漏掉更小的候选。</p>
+          </div>
+
+          <h3 class="h3">Galloping SkipTo</h3>
+          <p><code>SkipTo(target)</code> 把游标移到第一个 <code>EntryID ≥ target</code> 的位置。它先检查当前条目，然后以指数增大的步长探测，找到目标所在的小区间后再二分。顺序推进和偶尔的大跨度跳转都能受益。</p>
+          <div class="table-wrap">
+            <table class="data">
+              <thead><tr><th>N = 100K</th><th>Binary Search</th><th>Galloping</th><th>Speedup</th></tr></thead>
+              <tbody>
+                <tr><td>Seq (+1)</td><td class="num">15.1 μs</td><td class="num good">4.1 μs</td><td class="good">3.7×</td></tr>
+                <tr><td>Stride 16</td><td class="num">167 μs</td><td class="num good">58 μs</td><td class="good">2.9×</td></tr>
+                <tr><td>Jump 64</td><td class="num">1.73 μs</td><td class="num">1.66 μs</td><td class="warn">≈ equal</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="tiny dim">历史合成测量，用于解释机制差异，不是当前性能保证。同一优化同时用于内存 <code>SliceIterator</code> 与 mmap <code>flatPostingCursor</code>；SkipTo 循环本身不分配。</p>
+        </section>
+
+        <section id="segment">
+          <h2 class="h2">05 · Segment v5：为 mmap 设计的文件</h2>
+          <p class="lead">Segment 是一串按 8 字节对齐的 block。所有整数小端序；posting 与 wildcard 块可以在对齐的小端主机上直接借用为 Go slice。</p>
+
+          <div class="figure">
+            <div class="figure-head"><span class="label">figure 03</span><span>Segment v5 binary anatomy</span></div>
+            <div class="figure-body">
+              <div class="segment-stack">
+                <div class="seg-row magic"><span class="seg-name">MagicNumber</span><span class="seg-size">"BEIDX\0\0\5" · 8 B</span></div>
+                <div class="seg-arrow">▼</div>
+                <div class="seg-row fields">
+                  <div style="display:flex;justify-content:space-between;gap:12px"><span class="seg-name">Per Field Blocks</span><span class="seg-size">按字段名排序</span></div>
+                  <div class="seg-inner">
+                    <span>field_postings · FlatPostingList</span>
+                    <span>field_dict · FlatDict</span>
+                    <span>field_ac_matcher · Double-Array Trie</span>
+                    <span>field_ext_range · Segment Tree</span>
+                  </div>
+                </div>
+                <div class="seg-arrow">▼</div>
+                <div class="seg-row wild"><span class="seg-name">__wildcards</span><span class="seg-size">BEIENT1 · magic + count + N×EntryID</span></div>
+                <div class="seg-arrow">▼</div>
+                <div class="seg-row meta"><span class="seg-name">MetaBlock</span><span class="seg-size">JSON · schema hash · block offsets · checksums</span></div>
+                <div class="seg-arrow">▼</div>
+                <div class="seg-row offset"><span class="seg-name">MetaOffset</span><span class="seg-size">uint64 LE · 8 B</span></div>
+              </div>
+            </div>
+            <figcaption class="figure-caption">term 容器把 posting 放在独立 block，索引只保存 <code>PostingRef{Offset, Count}</code>；range 容器把点表、树节点与 postings 嵌入自己的 block。空字段可省略 block。</figcaption>
+          </div>
+
+          <h3 class="h3">共享的 posting 原语</h3>
+          <div class="formula">FlatPostingList = Count(u32 LE) | Pad(u32 = 0) | EntryID × Count (u64 LE)</div>
+          <p><code>Pad</code> 的唯一职责是让 EntryID 数组从 8 字节边界开始。Reader 在 little-endian 且地址对齐时直接 <code>unsafe.Slice</code>；其他端序或非对齐输入显式逐项解码，保证正确性。</p>
+
+          <h3 class="h3">打开时校验：结构永远检查</h3>
+          <div class="grid grid-2">
+            <div class="panel panel-pad">
+              <div class="small-head"><span class="h4">始终校验</span><span class="tag tag-green">structure</span></div>
+              <ul class="note-list" style="margin:0">
+                <li class="note-item"><span class="bullet">✓</span><span>magic、版本、metadata 与 block 边界、schema hash</span></li>
+                <li class="note-item"><span class="bullet">✓</span><span>FlatDict 长度、偏移顺序与严格词典序</span></li>
+                <li class="note-item"><span class="bullet">✓</span><span>posting 引用长度、count 一致性与 padding</span></li>
+                <li class="note-item"><span class="bullet">✓</span><span>AC fail 链、output 引用；range 树拓扑、不可达节点与环</span></li>
+              </ul>
+            </div>
+            <div class="panel panel-pad">
+              <div class="small-head"><span class="h4">checksum 开关</span><span class="tag tag-amber">payload only</span></div>
+              <p class="small muted">开关只控制是否扫描 payload 哈希，不关闭结构校验。range 验证使用迭代遍历，避免坏树导致递归栈溢出。第三方容器仍负责自己的私有格式。</p>
+            </div>
+          </div>
+        </section>
+
+        <section id="zerocopy">
+          <h2 class="h2">06 · Wildcard 与零拷贝：把复制和排序消掉</h2>
+          <p class="lead">K=0 的 Conjunction 不产生任何 Include 条目，只产生 wildcard。Segment v5 把每段的 wildcard 内嵌为 <code>__wildcards</code> block；读取时借用 mmap，查询时用内部堆做懒 K 路归并。</p>
+
+          <div class="figure">
+            <div class="figure-head"><span class="label">figure 04</span><span>zero-copy decision path</span></div>
+            <div class="figure-body flush">
+              <svg class="diagram" viewBox="0 0 1040 320" role="img" aria-label="mmap 零拷贝路径：对齐的小端输入直接 unsafe.Slice，否则显式解码">
+                <defs>
+                  <marker id="ar3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 10 5 0 10z" fill="#64748b"/></marker>
+                  <marker id="ar3c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 10 5 0 10z" fill="#22d3ee"/></marker>
+                </defs>
+                <rect x="30" y="86" width="190" height="80" rx="9" class="box"/>
+                <text x="125" y="112" class="t" text-anchor="middle">Segment file</text>
+                <text x="125" y="130" class="ts" text-anchor="middle">mmap'd, immutable</text>
+                <text x="125" y="148" class="tm" text-anchor="middle">posting / wildcard block</text>
+
+                <rect x="270" y="86" width="180" height="80" rx="9" class="box box-c"/>
+                <text x="360" y="112" class="t" text-anchor="middle">aligned &amp; LE?</text>
+                <text x="360" y="130" class="ts" text-anchor="middle">address % 8 == 0</text>
+                <text x="360" y="148" class="tm" text-anchor="middle">little-endian host</text>
+
+                <rect x="510" y="30" width="220" height="76" rx="9" class="box box-g"/>
+                <text x="620" y="55" class="t" text-anchor="middle">unsafe.Slice</text>
+                <text x="620" y="73" class="ts" text-anchor="middle">borrow mapped bytes</text>
+                <text x="620" y="91" class="tm" text-anchor="middle">0 copy · 0 alloc</text>
+
+                <rect x="510" y="146" width="220" height="76" rx="9" class="box box-a"/>
+                <text x="620" y="171" class="t" text-anchor="middle">explicit LE decode</text>
+                <text x="620" y="189" class="ts" text-anchor="middle">big-endian / unaligned</text>
+                <text x="620" y="207" class="tm" text-anchor="middle">owned storage</text>
+
+                <rect x="790" y="86" width="210" height="80" rx="9" class="box"/>
+                <text x="895" y="111" class="t" text-anchor="middle">[]EntryID view</text>
+                <text x="895" y="129" class="ts" text-anchor="middle">FieldCursor / SliceIterator</text>
+                <text x="895" y="147" class="tm" text-anchor="middle">valid while Reader lives</text>
+
+                <path d="M220 126h50" class="line" marker-end="url(#ar3)"/>
+                <path d="M450 112 510 76" class="line-c" marker-end="url(#ar3c)"/>
+                <path d="M450 140 510 176" class="line" marker-end="url(#ar3)"/>
+                <path d="M730 68 790 108" class="line-c" marker-end="url(#ar3c)"/>
+                <path d="M730 184 790 146" class="line" marker-end="url(#ar3)"/>
+                <text x="488" y="60" class="tc">YES</text>
+                <text x="482" y="196" class="ts">NO</text>
+
+                <text x="30" y="270" class="ts">注意边界：FlatDict 的词条元数据、Range 的部分结构、AC 的索引元数据仍可能分配 heap；</text>
+                <text x="30" y="288" class="ts">“posting zero-copy”成立，“整个 SegmentReader zero-copy”不成立。</text>
+              </svg>
+            </div>
+            <figcaption class="figure-caption">mmap 文件必须保持不可变；Reader 关闭前必须等待所有引用其数组/游标的查询结束。</figcaption>
+          </div>
+
+          <h3 class="h3">Wildcard 的懒归并</h3>
+          <div class="compare">
+            <div class="bad-side">
+              <h4 style="color:var(--red)">朴素做法</h4>
+              <ul>
+                <li>每段 wildcard 载入时复制到 heap</li>
+                <li>所有段合并后再排序一次</li>
+                <li>3× copy + O(N log N) sort</li>
+              </ul>
+            </div>
+            <div class="good-side">
+              <h4 style="color:var(--green)">当前实现</h4>
+              <ul>
+                <li>每段 <code>SliceIterator</code> 直接引用 mmap</li>
+                <li>组合成单个 <code>FieldCursor</code></li>
+                <li>内部堆做懒 K 路归并：0 copies + 0 sort</li>
+              </ul>
+            </div>
+          </div>
+          <p>查询初始化时，每段 wildcard 的 <code>SliceIterator</code> 被放进同一个 <code>FieldCursor</code>。它和普通字段游标一起参与归并，不需要 load-time merge。只有实际被消费的条目才会从 mmap 页中缺页载入。</p>
+
+          <div class="callout warn">
+            <span class="callout-icon">!</span>
+            <p><strong>内存数字怎么读：</strong>404 MB 是 5M docs / ~50M EntryID 的示例 Segment 文件；Reader 常驻约 270 KB，其余是 mmap 虚拟地址。首次查询会触发缺页，RSS 约增长 5 MB；稳态 4–10 MB 取决于热点 posting 页。不要只按文件大小估算 RSS。</p>
+          </div>
+        </section>
+
+        <section id="snapshot">
+          <h2 class="h2">07 · full + delta：不可变快照与原子切换</h2>
+          <p class="lead">生产推荐一个 full 加一个累计 delta，各自可以包含多个 segment。每轮 delta 覆盖当前 full 截止位置之后的全部变更，发布时替换旧 delta。</p>
+
+          <div class="formula">
+            Result = (<strong>FullResult</strong> − ChangedDocs) ∪ (可见 <strong>DeltaResults</strong> − DeletedDocs)
+          </div>
+
+          <div class="figure" style="margin-top:22px">
+            <div class="figure-head"><span class="label">figure 05</span><span>snapshot layout &amp; publish</span></div>
+            <div class="figure-body flush">
+              <svg class="diagram" viewBox="0 0 1040 360" role="img" aria-label="full + delta 快照目录与 CURRENT 原子发布">
+                <defs><marker id="ar4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 10 5 0 10z" fill="#64748b"/></marker></defs>
+                <rect x="30" y="28" width="260" height="92" rx="9" class="box box-c"/>
+                <text x="45" y="52" class="t">index_root/</text>
+                <text x="45" y="71" class="tm">CURRENT → manifests/manifest-*.json</text>
+                <text x="45" y="89" class="tm">manifests/</text>
+                <text x="45" y="107" class="tm">full/ · delta/</text>
+
+                <rect x="350" y="28" width="290" height="92" rx="9" class="box box-g"/>
+                <text x="365" y="52" class="t">manifest-202407010001.json</text>
+                <text x="365" y="71" class="tm">schema hash · watermark chain</text>
+                <text x="365" y="89" class="tm">full desc + delta descriptors</text>
+                <text x="365" y="107" class="tm">不可覆盖 · 不可变</text>
+
+                <rect x="700" y="28" width="300" height="92" rx="9" class="box"/>
+                <text x="715" y="52" class="t">PublishManifest</text>
+                <text x="715" y="71" class="tm">1. 写入 manifests/&lt;name&gt;</text>
+                <text x="715" y="89" class="tm">2. 临时文件 + rename 原子切换 CURRENT</text>
+                <text x="715" y="107" class="tm">3. 失败时旧 CURRENT 继续服务</text>
+
+                <path d="M290 74h50" class="line" marker-end="url(#ar4)"/>
+                <path d="M640 74h50" class="line" marker-end="url(#ar4)"/>
+
+                <rect x="30" y="170" width="300" height="130" rx="9" class="box"/>
+                <text x="46" y="195" class="t">full/full-20240701/</text>
+                <text x="46" y="214" class="tm">segment-000000.bei</text>
+                <text x="46" y="232" class="tm">segment-000001.bei</text>
+                <text x="46" y="250" class="tm">…</text>
+                <text x="46" y="278" class="tc">SnapshotWatermark = 100</text>
+
+                <rect x="370" y="170" width="300" height="130" rx="9" class="box box-i"/>
+                <text x="386" y="195" class="t">delta/delta-202407010001/</text>
+                <text x="386" y="214" class="tm">segment-*.bei</text>
+                <text x="386" y="232" class="tm">changed_docs.bin</text>
+                <text x="386" y="250" class="tm">deleted_docs.bin</text>
+                <text x="386" y="278" class="tc">From 100 → To 110</text>
+
+                <rect x="710" y="170" width="290" height="130" rx="9" class="box box-g"/>
+                <text x="726" y="195" class="t">CompositeEngine</text>
+                <text x="726" y="214" class="tm">full bitmap − changed</text>
+                <text x="726" y="232" class="tm">∪ (delta − deleted)</text>
+                <text x="726" y="250" class="tm">Top K: 共享堆与阈值</text>
+                <text x="726" y="278" class="tc">每查询固定一份快照</text>
+
+                <path d="M330 235h40" class="line" marker-end="url(#ar4)"/>
+                <path d="M670 235h40" class="line" marker-end="url(#ar4)"/>
+              </svg>
+            </div>
+            <figcaption class="figure-caption">watermark 必须连续：<code>Full.SnapshotWatermark → delta[0].From → delta[0].To → …</code>，加载时强制校验。回滚只是把 CURRENT 指回旧 manifest。</figcaption>
+          </div>
+
+          <h3 class="h3">加载模式</h3>
+          <div class="table-wrap">
+            <table class="data">
+              <thead><tr><th>模式</th><th>校验</th><th>适用</th></tr></thead>
+              <tbody>
+                <tr><td><code>HeapVerify</code></td><td>读入 heap，核对大小与整文件 SHA-256</td><td>单测、小规模验证</td></tr>
+                <tr><td><code>MmapVerify</code> · 默认</td><td>同一文件句柄核对大小与 SHA-256 后 mmap</td><td>生产默认</td></tr>
+                <tr><td><code>MmapTrustPublished</code></td><td>核对大小并 mmap；保留结构校验，跳过 payload 哈希</td><td>发布链已做可信校验、冷启动优先</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3 class="h3">热更新与引用计数</h3>
+          <div class="timeline">
+            <div class="timeline-item"><div class="timeline-time">T0</div><div class="timeline-body"><h4>Holder 持有当前快照</h4><p>引擎与 Segment 不可变，<code>Retrieve</code> 可被高并发调用。</p></div></div>
+            <div class="timeline-item"><div class="timeline-time">T1</div><div class="timeline-body"><h4>Reload 读取 CURRENT</h4><p>只读一次；引用未变化则 no-op，不重复 mmap。</p></div></div>
+            <div class="timeline-item"><div class="timeline-time">T2</div><div class="timeline-body"><h4>完整加载并校验新快照</h4><p>任何一步失败，关闭已创建的 Engine/Reader，旧快照继续服务。</p></div></div>
+            <div class="timeline-item"><div class="timeline-time">T3</div><div class="timeline-body"><h4>原子发布新快照</h4><p>新查询立即使用新快照；在途查询继续持有旧 mmap。</p></div></div>
+            <div class="timeline-item"><div class="timeline-time">T4</div><div class="timeline-body"><h4>最后一个查询释放旧快照</h4><p>引用计数归零后 unmap。旧快照的读取失败不会影响当前服务。</p></div></div>
+          </div>
+        </section>
+
+        <section id="correctness">
+          <h2 class="h2">08 · 正确性与边界：哪些话不能说</h2>
+          <p class="lead">这个项目把“语义正确、数据完整性、线上可用”放在性能之前。因此文档里也明确写了哪些优化只是手段，哪些边界不能外推。</p>
+
+          <div class="grid grid-2">
+            <div class="panel panel-pad">
+              <div class="small-head"><span class="h4">验证手段</span><span class="tag tag-green">guarded</span></div>
+              <ul class="note-list" style="margin:0">
+                <li class="note-item"><span class="bullet">✓</span><span>GoConvey BDD 回归测试</span></li>
+                <li class="note-item"><span class="bullet">✓</span><span>与原始 Document 求值器做 Oracle Shadow Testing</span></li>
+                <li class="note-item"><span class="bullet">✓</span><span>坏 Reader 输入 fuzz；端序解码/对齐测试</span></li>
+                <li class="note-item"><span class="bullet">✓</span><span><code>go test -race ./core ./engine ./loader</code></span></li>
+              </ul>
+            </div>
+            <div class="panel panel-pad">
+              <div class="small-head"><span class="h4">硬限制</span><span class="tag tag-amber">build-time</span></div>
+              <div class="kv">
+                <dt>DocID</dt><dd>[-(2^43−1), 2^43−1]</dd>
+                <dt>Conjunction / doc</dt><dd>&lt; 256</dd>
+                <dt>K</dt><dd>&lt; 256</dd>
+                <dt>建议单段</dt><dd>≤ 5M docs（按内存/构建时间调参）</dd>
+              </div>
+            </div>
+          </div>
+
+          <h3 class="h3">三个常被误读的边界</h3>
+          <ul>
+            <li><strong>零拷贝不是零分配。</strong>完整 <code>Retrieve</code> 仍会为编码、游标组合和结果所有权分配；核心 SkipTo/归并循环才保持零分配。</li>
+            <li><strong>增加段数不会自动并行。</strong>单次查询串行组合所有段游标；并发查询才能利用多核。</li>
+            <li><strong>外排不是严格内存上限。</strong>它控制部分构建峰值，热点 posting、去重集、最终字典和 range 数据仍占内存。</li>
+          </ul>
+
+          <div class="callout good">
+            <span class="callout-icon">→</span>
+            <p><strong>下一步：</strong>看每个字段索引容器如何在同一个 posting 原语上做不同的 term 解析；或者直接进入 Top K 的分数上界与剪枝。</p>
+          </div>
+
+          <div class="btn-row" style="margin-top:22px">
+            <a class="btn btn-primary" href="./containers.html">索引容器 →</a>
+            <a class="btn btn-ghost" href="./topk.html">精确 Top K →</a>
+            <a class="btn btn-ghost" href="./performance.html">性能数据 →</a>
+          </div>
+        </section>
+      </div>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-main">
+        <div class="footer-brand">
+          <a class="brand" href="./index.html">
+            <svg class="brand-mark" viewBox="0 0 32 32" fill="none" aria-hidden="true"><rect x="1.25" y="1.25" width="29.5" height="29.5" rx="8" stroke="#3d4b63" stroke-width="1.5"/><path d="M9 10.5h7.5M9 16h13M9 21.5h5.5" stroke="#93a4ba" stroke-width="1.6" stroke-linecap="round"/><circle cx="22.5" cy="10.5" r="2.1" fill="#22d3ee"/><circle cx="26.5" cy="21.5" r="2.1" fill="#818cf8"/></svg>
+            <span class="brand-name">be<span>_</span>indexer</span>
+          </a>
+          <p>高性能布尔表达式索引 SDK。离线编译规则，在线只读归并。</p>
+          <div class="chips" style="margin-top:14px"><span class="chip">Go</span><span class="chip">MIT</span><span class="chip">mmap</span></div>
+        </div>
+        <div class="footer-col"><h4>原理</h4><a href="./architecture.html#entryid">EntryID 编码</a><a href="./architecture.html#kgroups">K-Groups 归并</a><a href="./architecture.html#segment">Segment v5</a><a href="./architecture.html#snapshot">full + delta</a></div>
+        <div class="footer-col"><h4>深入</h4><a href="./containers.html">索引容器</a><a href="./topk.html">精确 Top K</a><a href="./performance.html">性能数据</a><a href="./start.html">快速上手</a></div>
+        <div class="footer-col"><h4>资源</h4><a href="https://github.com/echoface/be_indexer" target="_blank" rel="noopener">GitHub</a><a href="https://github.com/echoface/be_indexer/blob/main/docs/README.md" target="_blank" rel="noopener">文档索引</a><a href="https://github.com/echoface/be_indexer/blob/main/README.md" target="_blank" rel="noopener">README</a><a href="https://github.com/echoface/be_indexer/blob/main/LICENSE" target="_blank" rel="noopener">License</a></div>
+      </div>
+      <div class="footer-bottom"><span>© <span data-year></span> be_indexer · MIT</span><span><i class="live-dot"></i> 静态站 · 可部署于 Cloudflare Pages / Workers</span></div>
+    </div>
+  </footer>
+
+  <script src="./assets/site.js" defer></script>
+</body>
+</html>

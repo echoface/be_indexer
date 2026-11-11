@@ -1,0 +1,10 @@
+{
+  "$schema": "https://unpkg.com/wrangler/config-schema.json",
+  "name": "be-indexer-site",
+  "compatibility_date": "2026-11-01",
+  "assets": {
+    "directory": "./public",
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "404-page"
+  }
+}

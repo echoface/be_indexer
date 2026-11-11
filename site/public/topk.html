@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>精确 Top K — be_indexer</title>
+  <meta name="description" content="be_indexer 精确 Top K 设计：独立分数 sidecar、BlockMaxScoreTable 块上界、布尔 pivot 之后的分数剪枝、延迟建堆与缺失分数策略。">
+  <meta property="og:image" content="/og.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:image" content="/og.png">
+  <meta property="og:title" content="精确 Top K — be_indexer">
+  <meta property="og:description" content="be_indexer 精确 Top K 设计：独立分数 sidecar、BlockMaxScoreTable 块上界、布尔 pivot 之后的分数剪枝、延迟建堆与缺失分数策略。">
+  <meta property="og:type" content="website">
+  <meta name="twitter:title" content="精确 Top K — be_indexer">
+  <meta name="twitter:description" content="be_indexer 精确 Top K 设计：独立分数 sidecar、BlockMaxScoreTable 块上界、布尔 pivot 之后的分数剪枝、延迟建堆与缺失分数策略。">
+  <meta name="theme-color" content="#05080f">
+  <link rel="icon" href="./favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="./favicon.ico" sizes="any">
+  <link rel="stylesheet" href="./assets/site.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">跳到正文</a>
+  <div class="scroll-progress" data-scroll-progress></div>
+
+  <header class="site-header">
+    <div class="container nav-row">
+      <a class="brand" href="./index.html" aria-label="be_indexer 首页">
+        <svg class="brand-mark" viewBox="0 0 32 32" fill="none" aria-hidden="true"><rect x="1.25" y="1.25" width="29.5" height="29.5" rx="8" stroke="url(#bm-g)" stroke-width="1.5"/><path d="M9 10.5h7.5M9 16h13M9 21.5h5.5" stroke="#93a4ba" stroke-width="1.6" stroke-linecap="round"/><circle cx="22.5" cy="10.5" r="2.1" fill="#22d3ee"/><circle cx="26.5" cy="21.5" r="2.1" fill="#818cf8"/><defs><linearGradient id="bm-g" x1="4" y1="2" x2="29" y2="30" gradientUnits="userSpaceOnUse"><stop stop-color="#818cf8"/><stop offset="1" stop-color="#22d3ee"/></linearGradient></defs></svg>
+        <span class="brand-name">be<span>_</span>indexer</span>
+      </a>
+      <nav class="main-nav" data-main-nav aria-label="主导航">
+        <a class="nav-link" href="./index.html">首页</a>
+        <a class="nav-link" href="./architecture.html">架构</a>
+        <a class="nav-link" href="./containers.html">索引容器</a>
+        <a class="nav-link" href="./topk.html" aria-current="page">Top K</a>
+        <a class="nav-link" href="./performance.html">性能</a>
+        <a class="nav-link" href="./start.html">上手</a>
+      </nav>
+      <div class="nav-actions">
+        <a class="nav-github" href="https://github.com/echoface/be_indexer" target="_blank" rel="noopener" aria-label="GitHub 仓库"><svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82A7.66 7.66 0 0 1 8 3.8c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg><span>GitHub</span></a>
+        <button class="nav-toggle" type="button" data-nav-toggle aria-label="打开导航" aria-expanded="false" aria-controls="main-nav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+      </div>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="page-hero">
+      <div class="container page-hero-grid">
+        <div>
+          <span class="eyebrow"><span class="dot"></span> Exact Top K · score sidecar</span>
+          <h1 class="h1">布尔决定谁匹配，<br><span class="grad-text">分数决定谁留下。</span></h1>
+          <p class="lede">分数不能把不满足布尔条件的 Document 变成匹配；它只能帮助跳过那些“即使匹配也进不了 Top N”的 Document。这个边界是整套设计的起点。</p>
+          <div class="chips">
+            <span class="tag tag-cyan">BlockMaxScoreTable</span>
+            <span class="tag tag-indigo">score sidecar</span>
+            <span class="tag tag-green">delayed heapify</span>
+            <span class="tag tag-amber">missing score</span>
+          </div>
+        </div>
+        <div class="panel panel-pad">
+          <div class="kv">
+            <dt>排序</dt><dd>score 降序 · 同分 signed DocID 升序</dd>
+            <dt>符号</dt><dd>N = 返回数量；K = Include 数（不是 N）</dd>
+            <dt>固定</dt><dd>一次查询只读一份不可变分数快照</dd>
+            <dt>边界</dt><dd>EntryID 不是分数顺序，收满 N 也不能 CollectStop</dd>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="container doc-layout">
+      <aside class="doc-toc" data-toc aria-label="本页目录">
+        <div class="toc-label">On this page</div>
+        <nav>
+          <a href="#idea">01 · 两阶段检索</a>
+          <a href="#sidecar">02 · 分数 sidecar</a>
+          <a href="#prune">03 · 块上界剪枝</a>
+          <a href="#heap">04 · 延迟建堆</a>
+          <a href="#missing">05 · 缺失分与可见性</a>
+          <a href="#bench">06 · 性能数据</a>
+          <a href="#paths">07 · 路径选择</a>
+        </nav>
+      </aside>
+
+      <div class="doc-content">
+        <section id="idea">
+          <h2 class="h2">01 · 两阶段检索：先布尔，再排序</h2>
+          <p class="lead">检索被拆成两个问题：哪些 Document 满足查询输入？在满足的 Document 中，哪些分数最高的 N 个？两者共享同一次布尔遍历，但正确性依据完全不同。</p>
+
+          <div class="figure">
+            <div class="figure-head"><span class="label">figure 12</span><span>two proofs, one cursor advance</span></div>
+            <div class="figure-body flush">
+              <svg class="diagram" viewBox="0 0 980 300" role="img" aria-label="TopK 剪枝：最小头部、布尔 pivot、分数 target 三段推进">
+                <defs><marker id="ar10" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 10 5 0 10z" fill="#64748b"/></marker></defs>
+                <line x1="40" y1="150" x2="940" y2="150" class="line" stroke-width="1.5"/>
+                <circle cx="130" cy="150" r="6" fill="#22d3ee"/>
+                <circle cx="420" cy="150" r="6" fill="#fbbf24"/>
+                <circle cx="770" cy="150" r="6" fill="#34d399"/>
+                <text x="130" y="126" class="tc" text-anchor="middle">最小头部</text>
+                <text x="420" y="126" class="ta" fill="#fbbf24" text-anchor="middle" style="font-size:11px;font-family:var(--mono)">布尔 pivot</text>
+                <text x="770" y="126" class="tg" text-anchor="middle">分数 target</text>
+                <text x="130" y="180" class="ts" text-anchor="middle">当前游标位置</text>
+                <text x="420" y="180" class="ts" text-anchor="middle">第 max(K,1) 个头部</text>
+                <text x="770" y="180" class="ts" text-anchor="middle">上界允许的下一个候选</text>
+                <rect x="160" y="62" width="190" height="36" rx="6" class="box box-c"/>
+                <text x="255" y="84" class="tc" text-anchor="middle">布尔证明：不足 K 个字段</text>
+                <rect x="470" y="62" width="220" height="36" rx="6" class="box box-a"/>
+                <text x="580" y="84" class="ts" text-anchor="middle" fill="#fbbf24">分数证明：上界 ≤ 阈值</text>
+                <path d="M255 98v38" class="line" marker-end="url(#ar10)"/>
+                <path d="M580 98v38" class="line" marker-end="url(#ar10)"/>
+                <text x="40" y="238" class="ts">一段 EntryID 区间若要被整体跳过，必须同时满足：</text>
+                <text x="40" y="260" class="tm">1. 布尔条件证明它不可能产生新的匹配；2. 分数上界证明即使匹配也进不了 Top N。</text>
+                <text x="40" y="282" class="tc">SkipTo 推进全部游标（包括 Exclude 与 wildcard）→ 不需要逐文档求值</text>
+              </svg>
+            </div>
+            <figcaption class="figure-caption">先做布尔 pivot，再从 pivot 请求分数上界。反过来“从最小头部逐文档查分”会破坏原有布尔逻辑已经能做到的长距离跳转。</figcaption>
+          </div>
+
+          <div class="callout">
+            <span class="callout-icon">i</span>
+            <p><strong>为什么 pivot 之后的分数上界是安全的？</strong>上界只用于“跳过不可能胜出的区间”，从不把不匹配的 Document 变成匹配。所有实际结果仍经过布尔匹配、liveDocs/full-delta 可见性过滤和去重。</p>
+          </div>
+        </section>
+
+        <section id="sidecar">
+          <h2 class="h2">02 · 分数 sidecar：独立于 Segment 的不可变表</h2>
+          <p class="lead"><code>core.NewBlockMaxScoreTable(ids, scores)</code> 接受按 signed DocID 严格递增的并行数组。它复制输入，按 EntryID 的 DocID 编码顺序重排，然后建块上界与上界树。</p>
+
+          <div class="grid grid-2">
+            <div class="panel panel-pad">
+              <div class="small-head"><span class="h4">结构</span><span class="tag tag-cyan">immutable</span></div>
+              <ul class="note-list" style="margin:0">
+                <li class="note-item"><span class="bullet">1</span><span>每 64 个已评分 Document 建一个块上界。</span></li>
+                <li class="note-item"><span class="bullet">2</span><span>在块上界之上再建二叉上界树。</span></li>
+                <li class="note-item"><span class="bullet">3</span><span>连续 key 的查分/定位用 O(1) 偏移；稀疏 key 用二分。</span></li>
+                <li class="note-item"><span class="bullet">4</span><span>跳转先检查当前块后缀，再用上界树拒绝整块；有效叶块至多顺序检查 64 个分数。</span></li>
+              </ul>
+            </div>
+            <div class="panel panel-pad">
+              <div class="small-head"><span class="h4">成本</span><span class="tag tag-indigo">O(D) build</span></div>
+              <div class="kv">
+                <dt>存储</dt><dd>约 16 B / 已评分 Document</dd>
+                <dt>上界树</dt><dd>大规模下 &lt; 1 B / Document</dd>
+                <dt>构建</dt><dd>O(D)</dd>
+                <dt>修改</dt><dd>不改 Segment；原子替换引用</dd>
+              </div>
+            </div>
+          </div>
+
+          <div class="codeblock" style="margin-top:22px">
+            <div class="codeblock-head"><span class="lang">go</span><span>publish a score snapshot</span><button class="copy-btn" type="button" data-copy>复制</button></div>
+<pre><code>// ids 按 signed DocID 严格递增；values 一一对应。
+scores, err := core.NewBlockMaxScoreTable(ids, values)
+if err != nil {
+    return err // 保留已发布的旧分数
+}
+holder.SetScoreSource(scores)
+
+// 查询只读取进入本次调用时取得的快照。
+ranked, err := holder.RetrieveTopK(assignments, 100, nil)</code></pre>
+          </div>
+
+          <div class="callout warn">
+            <span class="callout-icon">!</span>
+            <p><strong>不要混用：</strong>查询不会把旧分数与新上界拼在一起。周期任务应先完整获取并验证新分数，成功后只调用一次 <code>SetScoreSource</code>；失败时保留旧快照。</p>
+          </div>
+        </section>
+
+        <section id="prune">
+          <h2 class="h2">03 · 块上界剪枝：用 64 个 Document 换一次判断</h2>
+          <p class="lead">阈值来自当前 Top N 堆的根：最低分、同分时最大 signed DocID。上界树给出某段 DocID 区间内可能出现的最高排名；只有“上界仍可能胜出”的块才值得检查。</p>
+
+          <div class="figure">
+            <div class="figure-head"><span class="label">figure 13</span><span>block max upper-bound tree</span></div>
+            <div class="figure-body flush">
+              <svg class="diagram" viewBox="0 0 980 330" role="img" aria-label="块上界树：每 64 个文档一个块，内部节点保存区间最高分">
+                <g class="box box-i"><rect x="380" y="24" width="220" height="42" rx="7"/><text x="490" y="50" class="t" text-anchor="middle">max = 0.997</text></g>
+                <g class="box"><rect x="180" y="106" width="180" height="42" rx="7"/><text x="270" y="132" class="t" text-anchor="middle">max = 0.982</text></g>
+                <g class="box box-g"><rect x="620" y="106" width="180" height="42" rx="7"/><text x="710" y="132" class="t" text-anchor="middle">max = 0.997</text></g>
+                <g class="box"><rect x="80" y="192" width="150" height="42" rx="7"/><text x="155" y="218" class="tm" text-anchor="middle">block 0 · 64 docs</text></g>
+                <g class="box"><rect x="250" y="192" width="150" height="42" rx="7"/><text x="325" y="218" class="tm" text-anchor="middle">block 1 · 64 docs</text></g>
+                <g class="box box-g"><rect x="560" y="192" width="150" height="42" rx="7"/><text x="635" y="218" class="tm" text-anchor="middle">block k · 64 docs</text></g>
+                <g class="box box-g"><rect x="730" y="192" width="150" height="42" rx="7"/><text x="805" y="218" class="tm" text-anchor="middle">block k+1 · 64</text></g>
+                <path d="M460 66 290 106" class="line" marker-end="url(#ar11)"/>
+                <path d="M520 66 690 106" class="line" marker-end="url(#ar11)"/>
+                <path d="M240 148 170 192" class="line" marker-end="url(#ar11)"/>
+                <path d="M300 148 330 192" class="line" marker-end="url(#ar11)"/>
+                <path d="M660 148 640 192" class="line" marker-end="url(#ar11)"/>
+                <path d="M720 148 790 192" class="line" marker-end="url(#ar11)"/>
+                <text x="40" y="278" class="ts">阈值 = 当前第 N 名的 (score, signed DocID)。上界 ≤ 阈值 → 整段不可能进入 Top N。</text>
+                <text x="40" y="300" class="tc">stored in sidecar, not in mmap segment format</text>
+                <defs><marker id="ar11" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 10 5 0 10z" fill="#64748b"/></marker></defs>
+              </svg>
+            </div>
+            <figcaption class="figure-caption">上界包含同分时的 signed DocID 排序，不能仅凭 <code>score ≤ threshold.score</code> 丢弃整个同分区间。</figcaption>
+          </div>
+
+          <h3 class="h3">为什么是 64？</h3>
+          <p>每 64 个已评分 Document 建一个块上界，是一个工程折中：块越小，上界越紧、跳转越细，但上界树和元数据越多；块越大，结构越省，但一个低分文档会拖松整块上界，导致更多无效检查。当前实现的有效叶块至多顺序检查 64 个分数。</p>
+
+          <div class="callout good">
+            <span class="callout-icon">✓</span>
+            <p><strong>一个直观概率：</strong>假设分数独立均匀、阈值已到 0.999，则 64 个 Document 全部低于阈值的概率约为 <code>0.999^64 ≈ 93.8%</code>，很多块可以整体跳过。但这要求高分文档有机会较早满足布尔条件；若高分文档大多不匹配，它们就不能进入堆、抬高阈值。</p>
+          </div>
+
+          <h3 class="h3">执行顺序</h3>
+          <div class="steps">
+            <div class="step"><div><h3>布尔 pivot</h3><p>求现有 K-group merge 的布尔 pivot，即第 <code>max(K,1)</code> 个 FieldCursor 的头部 Conjunction。</p></div></div>
+            <div class="step"><div><h3>未满 N：正常匹配，不建堆</h3><p>继续追加有效结果，不维护堆、不查询分数上界树；首次收满 N 时统一建堆。</p></div></div>
+            <div class="step"><div><h3>已满 N：查上界，找下一个可能胜出的 DocID</h3><p>以堆根为阈值，在同一分数快照中寻找 pivot 之后下一个可能胜出的位置。</p></div></div>
+            <div class="step"><div><h3>推进全部游标，继续布尔匹配</h3><p>包括 Exclude 与 wildcard。跳过的一段同时被布尔与分数条件证明无用。</p></div></div>
+          </div>
+        </section>
+
+        <section id="heap">
+          <h2 class="h2">04 · 延迟建堆：先追加，满 N 再整理</h2>
+          <p class="lead">结果数组未满 N 时只追加；首次达到 N 个不同有效结果时，自底向上统一建堆。之后只保留 N 个赢家，用堆替换维护。这样把“前 N 个逐个维护堆”的最坏 O(N log N) 调整，改为追加加一次 O(N) 建堆。</p>
+
+          <div class="figure">
+            <div class="figure-head"><span class="label">figure 14</span><span>append → heapify → replace</span></div>
+            <div class="figure-body flush">
+              <svg class="diagram" viewBox="0 0 980 280" role="img" aria-label="延迟建堆：追加阶段、首次满 N 建堆、后续堆替换">
+                <rect x="40" y="58" width="220" height="110" rx="9" class="box box-c"/>
+                <text x="150" y="82" class="t" text-anchor="middle">1 · append</text>
+                <text x="150" y="103" class="ts" text-anchor="middle">未满 N</text>
+                <text x="150" y="123" class="tm" text-anchor="middle">只追加 · 不建堆</text>
+                <text x="150" y="143" class="tm" text-anchor="middle">不查上界树</text>
+
+                <rect x="330" y="58" width="220" height="110" rx="9" class="box box-a"/>
+                <text x="440" y="82" class="t" text-anchor="middle">2 · first full</text>
+                <text x="440" y="103" class="ts" text-anchor="middle">首次达到 N 个有效结果</text>
+                <text x="440" y="123" class="tm" text-anchor="middle">O(N) heapify</text>
+                <text x="440" y="143" class="tm" text-anchor="middle">建立第 N 名阈值</text>
+
+                <rect x="620" y="58" width="220" height="110" rx="9" class="box box-g"/>
+                <text x="730" y="82" class="t" text-anchor="middle">3 · replace</text>
+                <text x="730" y="103" class="ts" text-anchor="middle">已有 N 个赢家</text>
+                <text x="730" y="123" class="tm" text-anchor="middle">仅胜出者 O(log N)</text>
+                <text x="730" y="143" class="tm" text-anchor="middle">阈值单调提高</text>
+
+                <path d="M260 113h52" class="line" marker-end="url(#ar12)"/>
+                <path d="M550 113h52" class="line" marker-end="url(#ar12)"/>
+                <text x="40" y="218" class="ts">重复 DocID、MissingScoreSkip 缺分文档不会触发建堆；被淘汰文档的分数在同一次查询中不会改变。</text>
+                <text x="40" y="240" class="tm">N &gt; M 时始终只追加，不建堆；最终仍可返回全部 M 项，但需要打分与最终排序。</text>
+                <defs><marker id="ar12" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 10 5 0 10z" fill="#64748b"/></marker></defs>
+              </svg>
+            </div>
+          </div>
+
+          <div class="grid grid-2">
+            <div class="panel panel-pad"><div class="small-head"><span class="h4">容量策略没有改变</span><span class="tag tag-amber">O(N) memory</span></div><p class="small muted">构造器仍按请求 N 预分配结果数组和固定容量去重表。请求 Top 1,000,000、实际只命中 1,000 时，虽然不会建堆，预分配与 Reset 的清空成本仍可能明显。</p></div>
+            <div class="panel panel-pad"><div class="small-head"><span class="h4">复用仍会清空</span><span class="tag tag-red">Reset O(N)</span></div><p class="small muted">复用 collector 前必须 <code>Reset</code>，它会清空整个去重表。关闭分数剪枝也不会消除这些容量成本。</p></div>
+          </div>
+        </section>
+
+        <section id="missing">
+          <h2 class="h2">05 · 缺失分数、可见性与复用</h2>
+          <p class="lead">sidecar 可以比索引缺少或多出 DocID。默认把缺失分数视为 0；也可以选择直接排除缺分文档。两种策略对“阈值能否剪枝”有不同影响。</p>
+
+          <div class="grid grid-2">
+            <div class="panel panel-pad">
+              <div class="small-head"><span class="h4">MissingScoreZero · 默认</span><span class="tag tag-cyan">zero</span></div>
+              <p class="small muted">缺分文档按 0 分竞争。阈值不高于 0 时，无法从稀疏 sidecar 枚举所有缺失 ID，区间剪枝保守停用；这保证负分、缺分、零分平局都不漏结果。阈值高于 0 时缺失文档无法胜出，可以安全剪枝。</p>
+            </div>
+            <div class="panel panel-pad">
+              <div class="small-head"><span class="h4">MissingScoreSkip</span><span class="tag tag-amber">skip</span></div>
+              <p class="small muted">缺分文档不进入结果，可能返回不足 N 个。通过可复用 collector 选择：<code>SetMissingScoreMode(core.MissingScoreSkip)</code>。</p>
+            </div>
+          </div>
+
+          <h3 class="h3">Composite 的共享堆</h3>
+          <p>full 和各 delta 流式写入同一个 collector。累计满 N 后统一建堆，后续层共享已经抬高的阈值。full 的 ChangedDocs、delta 的 DeletedDocs 和各 engine 的 liveDocs 在加入 collector 之前生效；旧版本或删除文档不会抬高阈值。</p>
+
+          <div class="formula">Result = (FullResult − ChangedDocs) ∪ (可见 DeltaResults − DeletedDocs)</div>
+
+          <div class="callout bad">
+            <span class="callout-icon">!</span>
+            <p><strong>为什么 scored collector 收满 N 后不能返回 <code>CollectStop</code>？</strong>因为 EntryID 不是分数顺序，后面的 Document 仍可能分数更高。只有可靠上界允许提前结束。</p>
+          </div>
+
+          <h3 class="h3">复用示例</h3>
+          <div class="codeblock">
+            <div class="codeblock-head"><span class="lang">go</span><span>per-worker TopK collector</span><button class="copy-btn" type="button" data-copy>复制</button></div>
+<pre><code>collector := core.NewTopKCollector(100, scores.Snapshot())
+collector.SetMissingScoreMode(core.MissingScoreSkip)
+
+// 每次新查询重置，整次查询固定这个 snapshot。
+collector.Reset(scores.Snapshot())
+err := holder.RetrieveWithCollector(assignments, collector)
+ranked := collector.Scored() // 独立拥有的排序结果</code></pre>
+          </div>
+          <p class="tiny dim">构造后复用时，Add、去重、统一建堆、堆替换和上界查询不分配内存；完整查询的编码、PostingIterator 初始化和最终结果复制仍有原有分配。</p>
+        </section>
+
+        <section id="bench">
+          <h2 class="h2">06 · 性能数据：加速与倒退都列出来</h2>
+          <p class="lead">2026-11-09，Apple M3 Pro / darwin arm64，<code>-benchtime=200ms</code> 单轮合成基准，10 万 Document，Top 10。三条路径都先验证结果相同。</p>
+
+          <div class="table-wrap">
+            <table class="data">
+              <thead><tr><th>命中率</th><th>分数顺序</th><th>full_scan μs</th><th>score_check μs</th><th>block_max μs</th><th>OnConjunctionMatch</th></tr></thead>
+              <tbody>
+                <tr><td>100%</td><td>高分靠前</td><td class="num">16643.80</td><td class="num">19977.28</td><td class="num good">3.77</td><td class="num good">10</td></tr>
+                <tr><td>100%</td><td>随机</td><td class="num">16936.75</td><td class="num">16921.72</td><td class="num good">52.71</td><td class="num good">107</td></tr>
+                <tr><td>100%</td><td>高分靠后</td><td class="num">20927.17</td><td class="num">22619.67</td><td class="num bad">22195.38</td><td class="num bad">100000</td></tr>
+                <tr><td>10%</td><td>高分靠前</td><td class="num">3431.71</td><td class="num">2069.34</td><td class="num good">5.24</td><td class="num good">10</td></tr>
+                <tr><td>10%</td><td>随机</td><td class="num">3272.14</td><td class="num">2101.91</td><td class="num good">253.59</td><td class="num good">76</td></tr>
+                <tr><td>10%</td><td>高分靠后</td><td class="num">4817.00</td><td class="num">4235.15</td><td class="num warn">4052.73</td><td class="num">10000</td></tr>
+                <tr><td>0.1%</td><td>高分靠前</td><td class="num">36.95</td><td class="num">25.79</td><td class="num good">5.50</td><td class="num good">10</td></tr>
+                <tr><td>0.1%</td><td>随机</td><td class="num">39.32</td><td class="num">33.28</td><td class="num">35.97</td><td class="num">37</td></tr>
+                <tr><td>0.1%</td><td>高分靠后</td><td class="num">41.08</td><td class="num">45.62</td><td class="num">44.93</td><td class="num">100</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="grid grid-2" style="margin-top:22px">
+            <div class="panel panel-pad">
+              <div class="small-head"><span class="h4">宽查询 · 随机分数</span><span class="tag tag-green">最大收益</span></div>
+              <div class="bar-chart is-in">
+                <div class="bar-row"><span class="bar-label">full_scan</span><span class="bar-track"><span class="bar-fill red" style="--w:100%"></span></span><span class="bar-value">16,937 μs</span></div>
+                <div class="bar-row"><span class="bar-label">block_max</span><span class="bar-track"><span class="bar-fill green" style="--w:0.31%;min-width:4px"></span></span><span class="bar-value">52.7 μs</span></div>
+              </div>
+              <p class="tiny dim" style="margin-top:12px">About 321× on this synthetic row; not a general speedup.</p>
+            </div>
+            <div class="panel panel-pad">
+              <div class="small-head"><span class="h4">高分靠后 · 100% 命中</span><span class="tag tag-red">负收益</span></div>
+              <div class="bar-chart is-in">
+                <div class="bar-row"><span class="bar-label">full_scan</span><span class="bar-track"><span class="bar-fill amber" style="--w:94.3%"></span></span><span class="bar-value">20,927 μs</span></div>
+                <div class="bar-row"><span class="bar-label">block_max</span><span class="bar-track"><span class="bar-fill red" style="--w:100%"></span></span><span class="bar-value">22,195 μs</span></div>
+              </div>
+              <p class="tiny dim" style="margin-top:12px">高分单调靠后时仍需验证所有命中，上界树只有额外开销。</p>
+            </div>
+          </div>
+
+          <h3 class="h3">OnConjunctionMatch 的下降更直观</h3>
+          <div class="panel panel-pad">
+            <div class="small-head"><span class="h4">布尔匹配回调次数 · 对数刻度</span><span class="tag tag-cyan">100% / 10% / 0.1% · 随机</span></div>
+            <div class="bar-chart is-in">
+              <div class="bar-row"><span class="bar-label">100% · full_scan</span><span class="bar-track"><span class="bar-fill red" style="--w:100%"></span></span><span class="bar-value">100,000</span></div>
+              <div class="bar-row"><span class="bar-label">100% · block_max</span><span class="bar-track"><span class="bar-fill green" style="--w:40%"></span></span><span class="bar-value">107</span></div>
+              <div class="bar-row"><span class="bar-label">10% · full_scan</span><span class="bar-track"><span class="bar-fill red" style="--w:80%"></span></span><span class="bar-value">10,000</span></div>
+              <div class="bar-row"><span class="bar-label">10% · block_max</span><span class="bar-track"><span class="bar-fill green" style="--w:37%"></span></span><span class="bar-value">76</span></div>
+              <div class="bar-row"><span class="bar-label">0.1% · full_scan</span><span class="bar-track"><span class="bar-fill red" style="--w:25%"></span></span><span class="bar-value">100</span></div>
+              <div class="bar-row"><span class="bar-label">0.1% · block_max</span><span class="bar-track"><span class="bar-fill green" style="--w:14%"></span></span><span class="bar-value">37</span></div>
+            </div>
+          </div>
+          <p class="tiny dim" style="margin-top:10px">宽查询随机分数时，Top 10 的布尔匹配回调从 100,000 次降至 107 次；0.1% 命中率下，原有布尔 pivot 已能跨越大量文档，收益显著收窄。所有用例均为 38 allocs/op、约 832 B/op，来自查询初始化；分数查找和 collector 热路径无新增分配。</p>
+        </section>
+
+        <section id="paths">
+          <h2 class="h2">07 · 路径选择：没有一种策略覆盖全部分布</h2>
+          <div class="table-wrap">
+            <table class="data">
+              <thead><tr><th>路径</th><th>最有利场景</th><th>代价 / 边界</th><th>状态</th></tr></thead>
+              <tbody>
+                <tr><td>布尔 pivot + sidecar 区间上界</td><td>宽查询、小 N、能较早形成高阈值</td><td>单次查询固定分数；前缀边界、缺分保守处理</td><td class="good">已实现</td></tr>
+                <tr><td>普通布尔跳转 + 有界堆</td><td>极窄查询；高分沿 EntryID 一直递增</td><td>枚举全部布尔命中；不会因收满 N 提前停止</td><td class="good">已实现，可关闭剪枝</td></tr>
+                <tr><td>全局分数顺序 + forward matcher</td><td>分数与查询无关，命中率高，N 很小</td><td>需要可随机访问的前向求值器；验证 N 个命中即可停止</td><td class="warn">下一阶段验证</td></tr>
+                <tr><td>按上界优先访问 DocID 块</td><td>高分集中在 EntryID 后半部或少数块</td><td>需要可按块乱序 seek 的游标；随机 mmap 访问成本</td><td class="warn">设计候选</td></tr>
+                <tr><td>每 shard/layer 独立 Top N 再合并</td><td>多核 / 分布式检索</td><td>每层先做可见性过滤和去重；动态阈值只能由真实赢家形成</td><td class="warn">当前为串行共享堆</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="callout good">
+            <span class="callout-icon">→</span>
+            <p><strong>可关闭：</strong>对命中极少或上界不易剪枝的查询，传 <code>be_indexer.WithScorePruning(false)</code> 使用普通布尔跳转，结果仍是精确 Top K。</p>
+          </div>
+
+          <div class="btn-row" style="margin-top:22px">
+            <a class="btn btn-primary" href="./performance.html">完整性能数据 →</a>
+            <a class="btn btn-ghost" href="./start.html">接入 Top K →</a>
+          </div>
+        </section>
+      </div>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-main">
+        <div class="footer-brand"><a class="brand" href="./index.html"><svg class="brand-mark" viewBox="0 0 32 32" fill="none" aria-hidden="true"><rect x="1.25" y="1.25" width="29.5" height="29.5" rx="8" stroke="#3d4b63" stroke-width="1.5"/><path d="M9 10.5h7.5M9 16h13M9 21.5h5.5" stroke="#93a4ba" stroke-width="1.6" stroke-linecap="round"/><circle cx="22.5" cy="10.5" r="2.1" fill="#22d3ee"/><circle cx="26.5" cy="21.5" r="2.1" fill="#818cf8"/></svg><span class="brand-name">be<span>_</span>indexer</span></a><p>高性能布尔表达式索引 SDK。离线编译规则，在线只读归并。</p><div class="chips" style="margin-top:14px"><span class="chip">Go</span><span class="chip">MIT</span><span class="chip">mmap</span></div></div>
+        <div class="footer-col"><h4>原理</h4><a href="./architecture.html#entryid">EntryID 编码</a><a href="./architecture.html#kgroups">K-Groups 归并</a><a href="./architecture.html#segment">Segment v5</a><a href="./architecture.html#snapshot">full + delta</a></div>
+        <div class="footer-col"><h4>深入</h4><a href="./containers.html">索引容器</a><a href="./topk.html">精确 Top K</a><a href="./performance.html">性能数据</a><a href="./start.html">快速上手</a></div>
+        <div class="footer-col"><h4>资源</h4><a href="https://github.com/echoface/be_indexer" target="_blank" rel="noopener">GitHub</a><a href="https://github.com/echoface/be_indexer/blob/main/docs/README.md" target="_blank" rel="noopener">文档索引</a><a href="https://github.com/echoface/be_indexer/blob/main/README.md" target="_blank" rel="noopener">README</a><a href="https://github.com/echoface/be_indexer/blob/main/LICENSE" target="_blank" rel="noopener">License</a></div>
+      </div>
+      <div class="footer-bottom"><span>© <span data-year></span> be_indexer · MIT</span><span><i class="live-dot"></i> 静态站 · 可部署于 Cloudflare Pages / Workers</span></div>
+    </div>
+  </footer>
+
+  <script src="./assets/site.js" defer></script>
+</body>
+</html>

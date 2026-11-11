@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>快速上手 — be_indexer</title>
+  <meta name="description" content="be_indexer 快速上手：Schema、Document、构建 Segment、查询、full + delta、Manifest 发布、Holder 热更新、Top K 与可观测性。">
+  <meta property="og:image" content="/og.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:image" content="/og.png">
+  <meta property="og:title" content="快速上手 — be_indexer">
+  <meta property="og:description" content="be_indexer 快速上手：Schema、Document、构建 Segment、查询、full + delta、Manifest 发布、Holder 热更新、Top K 与可观测性。">
+  <meta property="og:type" content="website">
+  <meta name="twitter:title" content="快速上手 — be_indexer">
+  <meta name="twitter:description" content="be_indexer 快速上手：Schema、Document、构建 Segment、查询、full + delta、Manifest 发布、Holder 热更新、Top K 与可观测性。">
+  <meta name="theme-color" content="#05080f">
+  <link rel="icon" href="./favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="./favicon.ico" sizes="any">
+  <link rel="stylesheet" href="./assets/site.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">跳到正文</a>
+  <div class="scroll-progress" data-scroll-progress></div>
+
+  <header class="site-header">
+    <div class="container nav-row">
+      <a class="brand" href="./index.html" aria-label="be_indexer 首页">
+        <svg class="brand-mark" viewBox="0 0 32 32" fill="none" aria-hidden="true"><rect x="1.25" y="1.25" width="29.5" height="29.5" rx="8" stroke="url(#bm-g)" stroke-width="1.5"/><path d="M9 10.5h7.5M9 16h13M9 21.5h5.5" stroke="#93a4ba" stroke-width="1.6" stroke-linecap="round"/><circle cx="22.5" cy="10.5" r="2.1" fill="#22d3ee"/><circle cx="26.5" cy="21.5" r="2.1" fill="#818cf8"/><defs><linearGradient id="bm-g" x1="4" y1="2" x2="29" y2="30" gradientUnits="userSpaceOnUse"><stop stop-color="#818cf8"/><stop offset="1" stop-color="#22d3ee"/></linearGradient></defs></svg>
+        <span class="brand-name">be<span>_</span>indexer</span>
+      </a>
+      <nav class="main-nav" data-main-nav aria-label="主导航">
+        <a class="nav-link" href="./index.html">首页</a>
+        <a class="nav-link" href="./architecture.html">架构</a>
+        <a class="nav-link" href="./containers.html">索引容器</a>
+        <a class="nav-link" href="./topk.html">Top K</a>
+        <a class="nav-link" href="./performance.html">性能</a>
+        <a class="nav-link" href="./start.html" aria-current="page">上手</a>
+      </nav>
+      <div class="nav-actions">
+        <a class="nav-github" href="https://github.com/echoface/be_indexer" target="_blank" rel="noopener" aria-label="GitHub 仓库"><svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82A7.66 7.66 0 0 1 8 3.8c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg><span>GitHub</span></a>
+        <button class="nav-toggle" type="button" data-nav-toggle aria-label="打开导航" aria-expanded="false" aria-controls="main-nav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+      </div>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="page-hero">
+      <div class="container page-hero-grid">
+        <div>
+          <span class="eyebrow"><span class="dot"></span> Quick start · Go 1.24+</span>
+          <h1 class="h1">从一条规则，<br><span class="grad-text">到线上快照。</span></h1>
+          <p class="lede">先用单 Segment 验证语义，再切到 full + delta + manifest + Holder。两条路径共享同一套 Schema、Document 和查询 API。</p>
+          <div class="chips">
+            <span class="tag tag-cyan">build</span>
+            <span class="tag tag-indigo">publish</span>
+            <span class="tag tag-green">serve</span>
+            <span class="tag tag-amber">reload</span>
+          </div>
+        </div>
+        <div class="panel panel-pad">
+          <div class="small-head"><span class="h4">两条接入路径</span><span class="tag tag-cyan">choose</span></div>
+          <div class="compare" style="grid-template-columns:1fr;border:0;background:transparent">
+            <div class="good-side" style="border:1px solid var(--line);border-radius:8px">
+              <h4 style="color:var(--green)">单段 / 多段直连</h4>
+              <p class="small muted" style="margin:0">规则量小、可停机重建、单进程嵌入。验证语义与容器选型最快。</p>
+            </div>
+            <div class="good-side" style="border:1px solid var(--line);border-radius:8px;margin-top:8px">
+              <h4 style="color:var(--cyan)">full + delta + Holder</h4>
+              <p class="small muted" style="margin:0">规则持续更新、不能停服、需要回滚与热加载。生产推荐。</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="container doc-layout">
+      <aside class="doc-toc" data-toc aria-label="本页目录">
+        <div class="toc-label">On this page</div>
+        <nav>
+          <a href="#install">01 · 安装</a>
+          <a href="#schema">02 · Schema</a>
+          <a href="#document">03 · 规则建模</a>
+          <a href="#single">04 · 单段构建与查询</a>
+          <a href="#production">05 · full + delta</a>
+          <a href="#publish">06 · 发布与加载</a>
+          <a href="#reload">07 · 热更新</a>
+          <a href="#topk">08 · Top K</a>
+          <a href="#observe">09 · 可观测性</a>
+          <a href="#anti">10 · 反模式</a>
+        </nav>
+      </aside>
+
+      <div class="doc-content">
+        <section id="install">
+          <h2 class="h2">01 · 安装</h2>
+          <div class="codeblock">
+            <div class="codeblock-head"><span class="lang">bash</span><span>go.mod</span><button class="copy-btn" type="button" data-copy>复制</button></div>
+<pre><code>go get github.com/echoface/be_indexer
+
+# 可选：使用 mph_dict / fst_dict / proximitygeo 时，
+# 需要 side-effect import 对应包以完成 init 注册。</code></pre>
+          </div>
+          <p>模块路径为 <code>github.com/echoface/be_indexer</code>，Go 版本要求见仓库 <code>go.mod</code>（当前为 Go 1.24）。只使用默认容器时无需额外依赖。</p>
+        </section>
+
+        <section id="schema">
+          <h2 class="h2">02 · Schema：两个正交轴</h2>
+          <p class="lead"><code>IndexType</code> 决定 posting 的索引结构；<code>Encoder</code> 决定字段值如何变成 term。没有明确理由时，先用 <code>default</code>。</p>
+
+          <div class="codeblock">
+            <div class="codeblock-head"><span class="lang">go</span><span>schema</span><button class="copy-btn" type="button" data-copy>复制</button></div>
+<pre><code>import (
+    be_indexer "github.com/echoface/be_indexer"
+    // 可选容器需要 side-effect import：
+    _ "github.com/echoface/be_indexer/container/fst"
+    _ "github.com/echoface/be_indexer/container/mph"
+    _ "github.com/echoface/be_indexer/container/geo"
+)
+
+fields := be_indexer.Schema{
+    "age":     {IndexType: be_indexer.IndexNameExtendRange,
+                Encoder:   be_indexer.IndexNameExtendRange},
+    "city":    {IndexType: be_indexer.IndexNameDefault,
+                Encoder:   "default"},
+    "keyword": {IndexType: be_indexer.IndexNameACMatcher,
+                Encoder:   be_indexer.IndexNameACMatcher},
+}</code></pre>
+          </div>
+
+          <div class="table-wrap">
+            <table class="data">
+              <thead><tr><th>业务需求</th><th>IndexType</th><th>Encoder</th></tr></thead>
+              <tbody>
+                <tr><td>精确等值 / IN / NOT IN，词表 ≤ ~1M</td><td><code>default</code></td><td><code>default</code> / <code>number</code></td></tr>
+                <tr><td>超大高熵 key（设备号、UUID、hash）</td><td><code>mph_dict</code></td><td><code>default</code> / <code>number</code></td></tr>
+                <tr><td>超大结构化 key（URL、路径）</td><td><code>fst_dict</code></td><td><code>default</code></td></tr>
+                <tr><td>文本中筛多个关键词</td><td><code>ac_matcher</code></td><td><code>ac_matcher</code></td></tr>
+                <tr><td>数值区间（&gt;、&lt;、Between）</td><td><code>ext_range</code></td><td><code>ext_range</code></td></tr>
+                <tr><td>经纬度半径覆盖</td><td><code>default</code></td><td><code>proximitygeo</code></td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="callout warn">
+            <span class="callout-icon">!</span>
+            <p><strong>Schema 是索引身份的一部分。</strong>改字段名、<code>IndexType</code> 或 <code>Encoder</code> 都必须重新全量构建；delta 只能追加在同一 schema 下，否则 <code>OpenIndex</code> 会以 schema hash mismatch 拒绝加载。</p>
+          </div>
+        </section>
+
+        <section id="document">
+          <h2 class="h2">03 · 规则建模：DNF 的三个硬约束</h2>
+          <div class="grid grid-2">
+            <div class="panel panel-pad">
+              <div class="small-head"><span class="h4">正确写法</span><span class="tag tag-green">valid</span></div>
+              <pre class="mono small" style="margin:0;color:var(--muted);line-height:1.8;overflow-x:auto">doc := be_indexer.NewDocument(1).AddConjunction(
+  be_indexer.NewConjunction().
+    Between("age", 18, 25).
+    In("city", be_indexer.NewStrValues("beijing")).
+    NotIn("city", be_indexer.NewStrValues("rural")),
+)</pre>
+            </div>
+            <div class="panel panel-pad">
+              <div class="small-head"><span class="h4">常见错误</span><span class="tag tag-red">rejected</span></div>
+              <ul class="note-list" style="margin:0">
+                <li class="note-item"><span class="bullet">×</span><span>同一字段两个 Include：<code>In("city", "bj")</code> + <code>In("city", "sh")</code>。应合并为一个 Constraint。</span></li>
+                <li class="note-item"><span class="bullet">×</span><span>同字段区间叠加：<code>&gt;18</code> + <code>&lt;35</code>。应写 <code>Between(19, 34)</code>。</span></li>
+                <li class="note-item"><span class="bullet">×</span><span>指望 Exclude 表达“字段缺失即不匹配”。字段缺失时没有游标，Exclude 不生效。</span></li>
+              </ul>
+            </div>
+          </div>
+
+          <h3 class="h3">K 与通配</h3>
+          <ul>
+            <li><strong>K = Include 字段数。</strong>查询必须同时提供这 K 个字段，Conjunction 才可能命中。</li>
+            <li><strong>K=0 的纯 Exclude Conjunction 仍产生 wildcard 候选</strong>，但命中的 Exclude 能否决它。</li>
+            <li><strong>空 <code>NewConjunction()</code></strong> 才是无条件规则。</li>
+            <li><strong>DocID 更新用同一 ID + 新 Version</strong>，不要换新 DocID；删除用 Delete tombstone。</li>
+          </ul>
+
+          <div class="table-wrap">
+            <table class="data">
+              <thead><tr><th>硬限制</th><th>范围</th></tr></thead>
+              <tbody>
+                <tr><td>DocID</td><td>[-(2^43−1), 2^43−1]</td></tr>
+                <tr><td>单 Document 的 Conjunction 数</td><td>&lt; 256</td></tr>
+                <tr><td>K（单 Conjunction Include 数）</td><td>&lt; 256</td></tr>
+                <tr><td>全量构建内 DocID</td><td>必须唯一</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="single">
+          <h2 class="h2">04 · 单段构建与查询</h2>
+          <div class="codeblock">
+            <div class="codeblock-head"><span class="lang">go</span><span>build → load → query</span><button class="copy-btn" type="button" data-copy>复制</button></div>
+<pre><code>import "github.com/echoface/be_indexer"
+
+docs := []*be_indexer.Document{
+    be_indexer.NewDocument(1).AddConjunction(
+        be_indexer.NewConjunction().
+            Between("age", 18, 25).
+            In("city", be_indexer.NewStrValues("beijing")),
+    ),
+    be_indexer.NewDocument(2).AddConjunction(
+        be_indexer.NewConjunction().
+            NotIn("city", be_indexer.NewStrValues("rural")),
+    ),
+}
+
+// 1. Build
+var buf bytes.Buffer
+if err := be_indexer.BuildSegment(&amp;buf, fields, docs,
+    be_indexer.BuildSegmentOptions{}); err != nil {
+    return err
+}
+
+// 2. Load
+reader, err := be_indexer.NewSegmentReader(buf.Bytes())
+if err != nil { return err }
+defer reader.Close()
+
+engine, err := be_indexer.NewEngine(
+    fields, []*be_indexer.SegmentReader{reader})
+if err != nil { return err }
+defer engine.Close()
+
+// 3. Query
+res, err := engine.Retrieve(be_indexer.Assignments{
+    "age":  []int{20},
+    "city": []string{"beijing"},
+})
+// res → *BitmapDocSet; DocID 1 与 2 命中</code></pre>
+          </div>
+
+          <h3 class="h3">复用 collector，减少分配</h3>
+          <div class="codeblock">
+            <div class="codeblock-head"><span class="lang">go</span><span>per-worker collector</span><button class="copy-btn" type="button" data-copy>复制</button></div>
+<pre><code>collector := be_indexer.NewDocIDCollector() // 每个 worker 一个
+collector.Reset()                           // 每次查询前重置
+
+if err := engine.RetrieveWithCollector(query, collector); err != nil {
+    return err
+}
+collector.Bitmap().ForEach(func(id be_indexer.DocID) {
+    // 注意：Bitmap() 是借用视图，Reset 后会变化。
+})
+
+// 需要长期持有时：
+owned := collector.Bitmap().Clone()</code></pre>
+          </div>
+
+          <div class="callout">
+            <span class="callout-icon">i</span>
+            <p><strong>未知字段会被静默忽略。</strong>业务入口应按 Schema 白名单过滤字段名，避免上游拼错导致“静默漏召回”。数据质量要求高时用 <code>WithStrictQuery()</code>。</p>
+          </div>
+        </section>
+
+        <section id="production">
+          <h2 class="h2">05 · 生产路径：full + delta</h2>
+          <p class="lead">推荐一个 full 加一个累计 delta。每轮 delta 覆盖当前 full 截止位置之后的全部变更，发布时替换旧 delta；一个 full 或 delta 都可以包含多个 segment。</p>
+
+          <div class="formula">Result = (Full − Changed) ∪ (Delta − Deleted)</div>
+
+          <h3 class="h3">Full build</h3>
+          <div class="codeblock">
+            <div class="codeblock-head"><span class="lang">go</span><span>daily full</span><button class="copy-btn" type="button" data-copy>复制</button></div>
+<pre><code>full, err := be_indexer.NewFullIndexBuilder(be_indexer.FullIndexBuildOptions{
+    Root:              "/data/index",
+    Generation:        20240701,
+    SnapshotWatermark: 100,
+    Fields:            fields,
+    Options: be_indexer.BuildDirectoryOptions{
+        MaxDocsPerSegment:       5_000_000,
+        MaxDistinctKeysInMemory: 2_000_000,
+        MaxWildcardEntriesInMemory: 1_000_000,
+    },
+    FailMode: builder.FailFast,
+})
+if err != nil { return err }
+defer full.Close()
+
+for _, doc := range docs {
+    if err := full.AddDocument(doc); err != nil {
+        return err // FailFast 下 builder 已被 poison
+    }
+}
+fullDesc, err := full.Build()
+// 成功边界 = 临时目录原子 rename 到最终代目录</code></pre>
+          </div>
+
+          <h3 class="h3">Cumulative delta</h3>
+          <div class="codeblock">
+            <div class="codeblock-head"><span class="lang">go</span><span>every 5 min</span><button class="copy-btn" type="button" data-copy>复制</button></div>
+<pre><code>delta, err := be_indexer.NewDeltaIndexBuilder(be_indexer.DeltaIndexBuildOptions{
+    Root:                   "/data/index",
+    Generation:             202407010001,
+    FromWatermarkExclusive: 100,
+    ToWatermarkInclusive:   110,
+    Fields:                 fields,
+    MaxMutations:           1_000_000,
+    FailMode:               builder.FailFast,
+})
+if err != nil { return err }
+defer delta.Close()
+
+for _, m := range mutations {
+    if err := delta.AddMutation(m); err != nil { return err }
+}
+deltaDesc, err := delta.Build()
+// → segment-*.bei + changed_docs.bin + deleted_docs.bin</code></pre>
+          </div>
+
+          <div class="callout warn">
+            <span class="callout-icon">!</span>
+            <p><strong>Delta 必须累计。</strong>假设 full 截止 100，第一轮 delta 覆盖 (100,110]；下一轮应构建 (100,120] 并替换上一轮。只用 (110,120] 会丢失前一轮变更，也不满足 Manifest 的连续性校验。</p>
+          </div>
+        </section>
+
+        <section id="publish">
+          <h2 class="h2">06 · 发布与加载</h2>
+          <div class="codeblock">
+            <div class="codeblock-head"><span class="lang">go</span><span>manifest → CURRENT</span><button class="copy-btn" type="button" data-copy>复制</button></div>
+<pre><code>m, err := be_indexer.NewSnapshotManifest(be_indexer.SnapshotManifestRequest{
+    IndexName:  "targeting",
+    Generation: 202407010001,
+    Fields:     fields,
+    Full:       fullDesc,
+    Deltas:     []be_indexer.DeltaIndexDescriptor{deltaDesc},
+})
+if err != nil { return err }
+
+if err := be_indexer.PublishManifest(
+    "/data/index", "manifest-202407010001.json", m,
+); err != nil {
+    return err
+}
+// → 写入 manifests/，再原子切换 CURRENT</code></pre>
+          </div>
+
+          <div class="grid grid-2">
+            <div class="panel panel-pad">
+              <div class="small-head"><span class="h4">加载</span><span class="tag tag-cyan">mmap</span></div>
+              <pre class="mono small" style="margin:0;color:var(--muted);line-height:1.8;overflow-x:auto">engine, err := be_indexer.OpenIndex(
+  "/data/index", fields,
+  be_indexer.LoaderOptions{
+    SegmentLoad: be_indexer.SegmentLoadMmapVerify,
+  },
+)
+defer engine.Close()
+res, err := engine.Retrieve(assignments)</pre>
+            </div>
+            <div class="panel panel-pad">
+              <div class="small-head"><span class="h4">常驻 Holder</span><span class="tag tag-green">live</span></div>
+              <pre class="mono small" style="margin:0;color:var(--muted);line-height:1.8;overflow-x:auto">holder, err := be_indexer.NewIndexHolder(
+  "/data/index", fields,
+  be_indexer.LoaderOptions{
+    SegmentLoad: be_indexer.SegmentLoadMmapVerify,
+  },
+)
+defer holder.Close()
+
+res, err := holder.Retrieve(assignments)</pre>
+            </div>
+          </div>
+
+          <div class="table-wrap" style="margin-top:18px">
+            <table class="data">
+              <thead><tr><th>发布约束</th><th>行为</th></tr></thead>
+              <tbody>
+                <tr><td>watermark 连续</td><td>Full → delta[0] → delta[1] 不允许断档；<code>Manifest.Validate</code> 强制校验</td></tr>
+                <tr><td>同名 manifest</td><td>不可覆盖，返回 <code>ErrManifestExists</code>；每代用新文件名</td></tr>
+                <tr><td>CURRENT 切换</td><td>临时文件 + rename 原子切换；回滚 = 指回旧 manifest</td></tr>
+                <tr><td>代目录 / manifest</td><td>发布后不可变；不原地修改线上文件</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="reload">
+          <h2 class="h2">07 · 热更新：加载失败，旧快照继续服务</h2>
+          <div class="codeblock">
+            <div class="codeblock-head"><span class="lang">go</span><span>reload on manifest change</span><button class="copy-btn" type="button" data-copy>复制</button></div>
+<pre><code>holder, err := be_indexer.NewIndexHolder("/data/index", fields,
+    be_indexer.LoaderOptions{SegmentLoad: be_indexer.SegmentLoadMmapVerify})
+if err != nil { return err }
+defer holder.Close()
+
+// 收到 manifest 更新通知后：
+if err := holder.Reload(); err != nil {
+    // 记录告警即可；旧快照继续服务。
+}
+
+res, err := holder.Retrieve(assignments)</code></pre>
+          </div>
+
+          <ul>
+            <li><strong>每进程一个 Holder 单例即可。</strong>引擎与快照不可变，<code>Retrieve</code> 并发安全。</li>
+            <li><strong>CURRENT 未变化时 Reload 是 no-op</strong>，不会重新 mmap。</li>
+            <li><strong>旧快照按引用计数回收。</strong>在途查询继续持有旧 mmap，最后一个查询结束后才 unmap。</li>
+            <li><strong>不要跨 Reload 持有 <code>UnsafeCurrent()</code> 返回的引擎</strong>；它仅供诊断。</li>
+          </ul>
+
+          <div class="compare">
+            <div class="good-side"><h4 style="color:var(--green)">Reload 成功</h4><ul><li>新查询立即使用新快照</li><li>在途查询继续读旧快照</li><li>旧 mmap 引用归零后释放</li></ul></div>
+            <div class="bad-side"><h4 style="color:var(--red)">Reload 失败</h4><ul><li>关闭已创建的新 Engine/Reader</li><li>当前快照完全不受影响</li><li>记录告警并等待下一次通知</li></ul></div>
+          </div>
+        </section>
+
+        <section id="topk">
+          <h2 class="h2">08 · Top K：独立分数快照</h2>
+          <div class="codeblock">
+            <div class="codeblock-head"><span class="lang">go</span><span>score sidecar</span><button class="copy-btn" type="button" data-copy>复制</button></div>
+<pre><code>// ids 按 signed DocID 严格递增，values 一一对应。
+scores, err := be_indexer.NewBlockMaxScoreTable(ids, values)
+if err != nil {
+    return err // 构建失败时保留已发布的旧分数
+}
+holder.SetScoreSource(scores)
+
+ranked, err := holder.RetrieveTopK(assignments, 100, nil)
+// ranked 按 score 降序、同分 signed DocID 升序</code></pre>
+          </div>
+
+          <div class="grid grid-2">
+            <div class="panel panel-pad"><div class="small-head"><span class="h4">默认缺分</span><span class="tag tag-cyan">zero</span></div><p class="small muted">缺失分数按 0 分竞争。阈值不高于 0 时区间剪枝保守停用，保证负分、缺分、零分平局不漏。</p></div>
+            <div class="panel panel-pad"><div class="small-head"><span class="h4">缺分排除</span><span class="tag tag-amber">skip</span></div><p class="small muted"><code>MissingScoreSkip</code> 让缺分文档不进入结果，可能返回不足 N 个。每次查询固定一份 snapshot。</p></div>
+          </div>
+
+          <p class="small muted">索引 Reload 不会清空分数；分数刷新不需要重建 Segment。对命中极少或上界不易剪枝的查询，可传 <code>WithScorePruning(false)</code> 使用普通布尔跳转，结果仍是精确 Top K。</p>
+        </section>
+
+        <section id="observe">
+          <h2 class="h2">09 · 可观测性：把“无匹配”和“字段错误”分开</h2>
+          <div class="codeblock">
+            <div class="codeblock-head"><span class="lang">go</span><span>retrieve observer</span><button class="copy-btn" type="button" data-copy>复制</button></div>
+<pre><code>type obs struct{ matches int }
+
+func (o *obs) OnRetrieveStart(ctx *be_indexer.RetrieveContext) {}
+func (o *obs) OnRetrieveEnd(ctx *be_indexer.RetrieveContext)   {}
+func (o *obs) OnConjunctionMatch(docID be_indexer.DocID,
+    conjID be_indexer.ConjID) { o.matches++ }
+func (o *obs) OnExcludeSkip(docID be_indexer.DocID) {}
+func (o *obs) OnCursorInit(fieldCount int)          {}
+
+res, err := engine.Retrieve(assignments,
+    be_indexer.WithObserver(&obs{}))</code></pre>
+          </div>
+
+          <p>实现 <code>core.FieldErrorObserver</code> 还能收到 <code>OnFieldError</code>。建议至少采集：命中数、耗时、被跳过的字段错误数、exclude skip 次数。核心检索改动上线前，用原始规则逐条求值做 Shadow Testing，保证随机查询结果 100% 一致。</p>
+        </section>
+
+        <section id="anti">
+          <h2 class="h2">10 · 反模式：上线前逐条排除</h2>
+          <div class="table-wrap">
+            <table class="data">
+              <thead><tr><th>反模式</th><th>后果</th></tr></thead>
+              <tbody>
+                <tr><td>长期持有 BooleanEngine，不走 Holder</td><td>无法热更新，旧 mmap 无法及时回收</td></tr>
+                <tr><td>用大 delta 代替全量重建</td><td>delta 全内存累积；<code>MaxMutations</code> 就是拦这个</td></tr>
+                <tr><td>换新 DocID 表达更新，或 Version 不单调</td><td>旧规则残留或新规则被遮蔽</td></tr>
+                <tr><td>同名 manifest 反复覆盖 / watermark 断档</td><td>发布或加载失败</td></tr>
+                <tr><td>同字段两个 Include；指望 Exclude 处理字段缺失</td><td>构建失败或静默漏召回</td></tr>
+                <tr><td>生产用 <code>MmapTrustPublished</code> 但发布链未可信校验</td><td>跳过整文件哈希，数据完整性风险</td></tr>
+                <tr><td>查询字段拼错后依赖报错</td><td>未知字段被静默忽略，漏召回</td></tr>
+                <tr><td>热路径重复分配 collector / 拼临时结构</td><td>抵消零拷贝收益</td></tr>
+                <tr><td>Schema 改了却沿用旧 delta / 旧 full</td><td>schema hash mismatch，加载失败</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="callout good">
+            <span class="callout-icon">→</span>
+            <p><strong>下一步：</strong>跑通单段示例，再用 <code>examples/push_builder</code> 的 full + delta + publish + load 端到端流程替换临时目录。</p>
+          </div>
+
+          <div class="btn-row" style="margin-top:22px">
+            <a class="btn btn-primary" href="https://github.com/echoface/be_indexer" target="_blank" rel="noopener">查看源码</a>
+            <a class="btn btn-ghost" href="./performance.html">性能与边界 →</a>
+            <a class="btn btn-ghost" href="./architecture.html">回到架构 →</a>
+          </div>
+        </section>
+      </div>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-main">
+        <div class="footer-brand"><a class="brand" href="./index.html"><svg class="brand-mark" viewBox="0 0 32 32" fill="none" aria-hidden="true"><rect x="1.25" y="1.25" width="29.5" height="29.5" rx="8" stroke="#3d4b63" stroke-width="1.5"/><path d="M9 10.5h7.5M9 16h13M9 21.5h5.5" stroke="#93a4ba" stroke-width="1.6" stroke-linecap="round"/><circle cx="22.5" cy="10.5" r="2.1" fill="#22d3ee"/><circle cx="26.5" cy="21.5" r="2.1" fill="#818cf8"/></svg><span class="brand-name">be<span>_</span>indexer</span></a><p>高性能布尔表达式索引 SDK。离线编译规则，在线只读归并。</p><div class="chips" style="margin-top:14px"><span class="chip">Go</span><span class="chip">MIT</span><span class="chip">mmap</span></div></div>
+        <div class="footer-col"><h4>原理</h4><a href="./architecture.html#entryid">EntryID 编码</a><a href="./architecture.html#kgroups">K-Groups 归并</a><a href="./architecture.html#segment">Segment v5</a><a href="./architecture.html#snapshot">full + delta</a></div>
+        <div class="footer-col"><h4>深入</h4><a href="./containers.html">索引容器</a><a href="./topk.html">精确 Top K</a><a href="./performance.html">性能数据</a><a href="./start.html">快速上手</a></div>
+        <div class="footer-col"><h4>资源</h4><a href="https://github.com/echoface/be_indexer" target="_blank" rel="noopener">GitHub</a><a href="https://github.com/echoface/be_indexer/blob/main/docs/README.md" target="_blank" rel="noopener">文档索引</a><a href="https://github.com/echoface/be_indexer/blob/main/README.md" target="_blank" rel="noopener">README</a><a href="https://github.com/echoface/be_indexer/blob/main/LICENSE" target="_blank" rel="noopener">License</a></div>
+      </div>
+      <div class="footer-bottom"><span>© <span data-year></span> be_indexer · MIT</span><span><i class="live-dot"></i> 静态站 · 可部署于 Cloudflare Pages / Workers</span></div>
+    </div>
+  </footer>
+
+  <script src="./assets/site.js" defer></script>
+</body>
+</html>

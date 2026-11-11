@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased] - 2026-11-10
+
+### Added
+
+#### segmentindex 不可变索引二进制持久化
+
+`segmentindex.Index` 支持自定义二进制 `MarshalBinary` / `LoadIndex`，包含 `storage.Segment`、DNF group metadata 以及 `queryIndex` 查询缓存。服务器加载 version 2 文件时直接恢复 term/range 查询结构，不需要遍历 posting 重建 `queryIndex`；version 1 文件保持兼容并按旧行为重建查询索引。
+
+- 外层格式包含 magic/version、group payload、query cache payload 和 CRC32 校验
+- query cache 包含 dense slot 数组、term lookup maps、range trees、Roaring bitmaps，并在加载时做结构和 group slot 一致性校验
+- `LoadIndex` 损坏、截断、query cache 格式错误均返回 `ErrInvalidIndex`
+- 测试覆盖确定性 round-trip、查询结果等价、空索引、legacy version 加载和 query cache 损坏
+
 ## [Unreleased] - 2026-11-06
 
 ### Added

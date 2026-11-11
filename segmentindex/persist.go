@@ -13,10 +13,11 @@ import (
 )
 
 const (
-	indexMagic       = "BESIDX01"
-	indexVersion     = uint16(1)
-	indexHeaderSize  = 8 + 2 + 2 + 4 + 8
-	indexChecksumLen = 4
+	indexMagic         = "BESIDX01"
+	indexVersion       = uint16(2)
+	legacyIndexVersion = uint16(1)
+	indexHeaderSize    = 8 + 2 + 2 + 4 + 8
+	indexChecksumLen   = 4
 
 	indexShapeHasInclude = uint8(1 << 0)
 	indexShapeHasExclude = uint8(1 << 1)
@@ -27,7 +28,8 @@ var ErrInvalidIndex = errors.New("segmentindex: invalid index binary")
 
 // MarshalBinary serializes an immutable Index into a versioned binary container.
 // The posting/term portion of every group is delegated to storage.Segment;
-// group metadata needed to preserve DNF and range semantics is encoded here.
+// group metadata and the derived queryIndex cache are encoded here so a server
+// can load the query-ready representation without replaying every posting.
 func (i *Index) MarshalBinary() ([]byte, error) {
 	if i == nil {
 		return nil, fmt.Errorf("%w: nil index", ErrInvalidIndex)
@@ -55,6 +57,13 @@ func (i *Index) MarshalBinary() ([]byte, error) {
 		}
 	}
 
+	queryCache, err := appendQueryIndex(nil, i.query, i.groups)
+	if err != nil {
+		return nil, fmt.Errorf("marshal query cache: %w", err)
+	}
+	payload = appendUint64(payload, uint64(len(queryCache)))
+	payload = append(payload, queryCache...)
+
 	result := make([]byte, 0, indexHeaderSize+len(payload)+indexChecksumLen)
 	result = append(result, indexMagic...)
 	result = appendUint16(result, indexVersion)
@@ -69,6 +78,8 @@ func (i *Index) MarshalBinary() ([]byte, error) {
 }
 
 // LoadIndex validates and loads an immutable Index produced by MarshalBinary.
+// Version 2 restores queryIndex directly from its binary cache. Version 1 is
+// retained for compatibility and rebuilds queryIndex from the decoded groups.
 func LoadIndex(data []byte) (*Index, error) {
 	if len(data) < indexHeaderSize+indexChecksumLen {
 		return nil, fmt.Errorf("%w: short file", ErrInvalidIndex)
@@ -92,7 +103,7 @@ func LoadIndex(data []byte) (*Index, error) {
 			return nil, fmt.Errorf("%w: header: %v", ErrInvalidIndex, err)
 		}
 	}
-	if version != indexVersion {
+	if version != indexVersion && version != legacyIndexVersion {
 		return nil, fmt.Errorf("%w: unsupported version %d", ErrInvalidIndex, version)
 	}
 	if reserved != 0 {
@@ -135,11 +146,33 @@ func LoadIndex(data []byte) (*Index, error) {
 		segments = append(segments, segment)
 		groups = append(groups, meta)
 	}
+	if version == legacyIndexVersion {
+		if reader.Len() != 0 {
+			return nil, fmt.Errorf("%w: %d trailing legacy payload bytes", ErrInvalidIndex, reader.Len())
+		}
+		return newIndex(segments, groups), nil
+	}
+
+	queryCacheLen, err := readUint64(reader)
+	if err != nil {
+		return nil, fmt.Errorf("%w: query cache length: %v", ErrInvalidIndex, err)
+	}
+	if queryCacheLen > uint64(reader.Len()) {
+		return nil, fmt.Errorf("%w: query cache length %d exceeds payload", ErrInvalidIndex, queryCacheLen)
+	}
+	queryCache := make([]byte, int(queryCacheLen))
+	if _, err := io.ReadFull(reader, queryCache); err != nil {
+		return nil, fmt.Errorf("%w: query cache: %v", ErrInvalidIndex, err)
+	}
 	if reader.Len() != 0 {
 		return nil, fmt.Errorf("%w: %d trailing payload bytes", ErrInvalidIndex, reader.Len())
 	}
 
-	return newIndex(segments, groups), nil
+	query, err := readQueryIndex(queryCache, groups)
+	if err != nil {
+		return nil, err
+	}
+	return newIndexWithQuery(segments, groups, query), nil
 }
 
 func appendGroupMeta(dst []byte, meta groupMeta) ([]byte, error) {

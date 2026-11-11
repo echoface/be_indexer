@@ -220,11 +220,15 @@ type Index struct {
 }
 
 func newIndex(segments []*storage.Segment, groups []groupMeta) *Index {
+	return newIndexWithQuery(segments, groups, newQueryIndex(groups, segments))
+}
+
+func newIndexWithQuery(segments []*storage.Segment, groups []groupMeta, query *queryIndex) *Index {
 	return &Index{
 		segments: segments,
 		groups:   groups,
 		planner:  planner.New(),
-		query:    newQueryIndex(groups, segments),
+		query:    query,
 	}
 }
 
